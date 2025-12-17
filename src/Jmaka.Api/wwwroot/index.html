@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jmaka 0.1.0g</title>
-  <link rel="stylesheet" href="app.css" />
+  <title>Jmaka 0.1.0h</title>
+  <link rel="stylesheet" href="app.css?v=0.1.0h" />
 </head>
 <body>
   <main class="page">
@@ -17,15 +17,22 @@
       </button>
 
       <div class="preview-wrap">
-        <div class="preview-title">Jmaka 0.1.0g</div>
+        <div class="preview-title">Jmaka 0.1.0h</div>
 
         <div class="preview-body">
-          <div id="sizeButtons" class="size-buttons" aria-label="Размеры" hidden>
-            <button class="size-btn" type="button" data-w="2440" disabled>2440</button>
-            <button class="size-btn" type="button" data-w="1920" disabled>1920</button>
-            <button class="size-btn" type="button" data-w="1260" disabled>1260</button>
-            <button class="size-btn" type="button" data-w="1080" disabled>1080</button>
-            <button class="size-btn" type="button" data-w="720" disabled>720</button>
+          <div class="preview-controls" aria-label="Панель управления">
+            <div id="sizeButtons" class="size-buttons" aria-label="Размеры" hidden>
+              <button class="size-btn" type="button" data-w="2440" disabled>2440</button>
+              <button class="size-btn" type="button" data-w="1920" disabled>1920</button>
+              <button class="size-btn" type="button" data-w="1280" disabled>1280</button>
+              <button class="size-btn" type="button" data-w="1080" disabled>1080</button>
+              <button class="size-btn" type="button" data-w="720" disabled>720</button>
+            </div>
+
+            <div class="tool-buttons" aria-label="Инструменты" hidden>
+              <button id="cropToolBtn" class="btn tool-btn" type="button">Crop</button>
+              <button id="splitToolBtn" class="btn tool-btn" type="button">Split</button>
+            </div>
           </div>
 
           <img id="preview" class="preview" alt="" />
@@ -34,7 +41,7 @@
         <div id="hint" class="hint">Нажмите на дискету, выберите изображение — и оно загрузится.</div>
       </div>
 
-      <input id="fileInput" class="file-input" type="file" accept="image/*" />
+      <input id="fileInput" class="file-input" type="file" accept="image/*" multiple />
     </section>
 
     <div class="links-wrap" aria-label="Таблица файлов">
@@ -47,9 +54,10 @@
               <th class="col-orig">Оригинал</th>
               <th class="col-size">720</th>
               <th class="col-size">1080</th>
-              <th class="col-size">1260</th>
+              <th class="col-size">1280</th>
               <th class="col-size">1920</th>
               <th class="col-size">2440</th>
+              <th class="col-split">Split</th>
               <th class="col-del"></th>
             </tr>
           </thead>
@@ -61,13 +69,115 @@
     <pre id="result" class="result" aria-label="Результат"></pre>
   </main>
 
-  <!-- Модалка кадрирования (16:9) -->
+  <!-- Модалка подтверждения удаления -->
+  <div id="deleteModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Удаление">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-title">Удаление</div>
+          <div class="modal-sub">
+            <span class="modal-subtext">Удалить запись и все связанные файлы безвозвратно?</span>
+          </div>
+        </div>
+        <button id="deleteClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="checkbox-row">
+          <input id="deleteSkipConfirm" type="checkbox" />
+          <span>Больше не спрашивать (удалять сразу)</span>
+        </label>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-hint">Можно включить обратно, очистив настройку в LocalStorage.</div>
+        <div class="modal-actions">
+          <button id="deleteCancel" class="btn" type="button">Отмена</button>
+          <button id="deleteConfirm" class="btn danger" type="button">Удалить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Просмотр изображения -->
+  <div id="viewerModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card viewer-card" role="dialog" aria-modal="true" aria-label="Просмотр изображения">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-title">Просмотр</div>
+          <div class="modal-sub">
+            <span id="viewerLabel" class="modal-subtext"></span>
+            <a id="viewerOpen" class="modal-sublink" href="#" target="_blank" rel="noreferrer" hidden>Открыть в новой вкладке</a>
+          </div>
+        </div>
+        <button id="viewerClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body viewer-body">
+        <img id="viewerImg" class="viewer-img" alt="" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Split -->
+  <div id="splitModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card split-card" role="dialog" aria-modal="true" aria-label="Split">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-title">Split (2 изображения → 16:9)</div>
+          <div class="modal-sub">
+            <span class="modal-subtext">Поле 1280×720. Перетаскивайте и масштабируйте изображения, пропорции сохраняются.</span>
+          </div>
+        </div>
+        <button id="splitClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="split-controls" aria-label="Выбор изображений">
+          <div class="split-label">Выберите слот, затем кликните по превью из списка 1280:</div>
+          <div class="split-targets">
+            <button id="splitPickTargetA" class="split-target is-active" type="button" aria-label="Выбор для картинки 1">
+              <div class="split-target-title">#1</div>
+              <img id="splitTargetImgA" class="split-target-img" alt="" />
+            </button>
+            <button id="splitPickTargetB" class="split-target" type="button" aria-label="Выбор для картинки 2">
+              <div class="split-target-title">#2</div>
+              <img id="splitTargetImgB" class="split-target-img" alt="" />
+            </button>
+          </div>
+          <div id="splitGallery" class="split-gallery" aria-label="Превью (1280)"></div>
+        </div>
+        <div id="splitStage" class="split-stage" aria-label="Поле 16:9">
+          <div id="splitHalfLeft" class="split-half left" aria-label="Левая половина">
+            <div id="splitItemA" class="split-item" data-i="a" hidden>
+              <img class="split-img" alt="" />
+              <div class="split-handle br" data-h="br"></div>
+            </div>
+          </div>
+          <div id="splitHalfRight" class="split-half right" aria-label="Правая половина">
+            <div id="splitItemB" class="split-item" data-i="b" hidden>
+              <img class="split-img" alt="" />
+              <div class="split-handle br" data-h="br"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div id="splitHint" class="modal-hint">Выберите две картинки из готового размера 1280.</div>
+        <div class="modal-actions">
+          <button id="splitCancel" class="btn" type="button">Отмена</button>
+          <button id="splitApply" class="btn primary" type="button">Склеить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка кадрирования -->
   <div id="cropModal" class="modal" hidden>
     <div class="modal-backdrop" data-close="1"></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-label="Кадрирование">
       <div class="modal-header">
         <div class="modal-title-wrap">
-          <div class="modal-title">Кадрирование (16:9)</div>
+          <div class="modal-title">Кадрирование</div>
           <div class="modal-sub">
             <span id="cropSourceLabel" class="modal-subtext"></span>
             <a id="cropOpenOriginal" class="modal-sublink" href="#" target="_blank" rel="noreferrer" hidden>Открыть оригинал</a>
@@ -87,7 +197,14 @@
         </div>
       </div>
       <div class="modal-footer">
-        <div class="modal-hint">Перетаскивайте рамку и её углы. Соотношение сторон фиксировано 16:9.</div>
+        <div class="modal-hint">
+          Перетаскивайте рамку и её углы. Выберите пропорции:
+          <div class="aspect-buttons" aria-label="Пропорции кадрирования">
+            <button class="btn aspect-btn" type="button" data-aw="1" data-ah="1">1:1</button>
+            <button class="btn aspect-btn" type="button" data-aw="2" data-ah="3">2:3</button>
+            <button class="btn aspect-btn is-active" type="button" data-aw="16" data-ah="9">16:9</button>
+          </div>
+        </div>
         <div class="modal-actions">
           <button id="cropCancel" class="btn" type="button">Отмена</button>
           <button id="cropApply" class="btn primary" type="button">Обрезать</button>
@@ -96,6 +213,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=0.1.0h"></script>
 </body>
 </html>

@@ -13,7 +13,7 @@ const long MaxUploadBytes = 75L * 1024 * 1024; // 75 MB
 const int PreviewWidthPx = 320;
 
 // Целевые ширины для ресайза изображений
-var resizeWidths = new[] { 720, 1080, 1260, 1920, 2440 };
+var resizeWidths = new[] { 720, 1080, 1280, 1920, 2440 };
 
 // Лимиты на multipart/form-data
 builder.Services.Configure<FormOptions>(options =>
@@ -65,13 +65,17 @@ if (string.IsNullOrWhiteSpace(storageRoot))
 }
 
 var uploadDir = Path.Combine(storageRoot, "upload");
+var uploadOriginalDir = Path.Combine(storageRoot, "upload-original");
 var resizedDir = Path.Combine(storageRoot, "resized");
 var previewDir = Path.Combine(storageRoot, "preview");
+var splitDir = Path.Combine(storageRoot, "split");
 var dataDir = Path.Combine(storageRoot, "data");
 var historyPath = Path.Combine(dataDir, "history.json");
 Directory.CreateDirectory(uploadDir);
+Directory.CreateDirectory(uploadOriginalDir);
 Directory.CreateDirectory(resizedDir);
 Directory.CreateDirectory(previewDir);
+Directory.CreateDirectory(splitDir);
 Directory.CreateDirectory(dataDir);
 foreach (var w in resizeWidths)
 {
@@ -79,6 +83,206 @@ foreach (var w in resizeWidths)
 }
 
 var historyLock = new SemaphoreSlim(1, 1);
+
+// Retention: delete entries/files older than N hours (default 48h)
+var retentionHours = 48;
+var retentionEnv = Environment.GetEnvironmentVariable("JMAKA_RETENTION_HOURS");
+if (!string.IsNullOrWhiteSpace(retentionEnv)
+    && int.TryParse(retentionEnv, out var parsedRetentionHours)
+    && parsedRetentionHours > 0)
+{
+    retentionHours = parsedRetentionHours;
+}
+var retention = TimeSpan.FromHours(retentionHours);
+
+string GetSplitFileName(string storedName)
+{
+    // One split result per source image (slot #1): split/<storedName-noext>.jpg
+    var name = Path.GetFileNameWithoutExtension(storedName);
+    return $"{name}.jpg";
+}
+
+void DeleteAllFilesForStoredName(string storedName)
+{
+    // originals
+    TryDeleteFile(Path.Combine(uploadDir, storedName));
+    TryDeleteFile(Path.Combine(uploadOriginalDir, storedName));
+
+    // preview
+    TryDeleteFile(Path.Combine(previewDir, storedName));
+
+    // split
+    TryDeleteFile(Path.Combine(splitDir, GetSplitFileName(storedName)));
+
+    // resized
+    foreach (var w in resizeWidths)
+    {
+        TryDeleteFile(Path.Combine(resizedDir, w.ToString(), storedName));
+    }
+}
+
+var migrate1260Lock = new SemaphoreSlim(1, 1);
+
+async Task Migrate1260To1280Async(CancellationToken ct)
+{
+    // Old versions used resized/1260/<storedName>. New version uses resized/1280/<storedName>.
+    // We migrate history.json and move files if present.
+    await migrate1260Lock.WaitAsync(ct);
+    try
+    {
+        await historyLock.WaitAsync(ct);
+        try
+        {
+            if (!File.Exists(historyPath))
+            {
+                return;
+            }
+
+            var json = await File.ReadAllTextAsync(historyPath, ct);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            var items = JsonSerializer.Deserialize<List<UploadHistoryItem>>(json) ?? new List<UploadHistoryItem>();
+            if (items.Count == 0)
+            {
+                return;
+            }
+
+            var changed = false;
+            for (var i = 0; i < items.Count; i++)
+            {
+                var it = items[i];
+                var resized = it.Resized;
+                if (resized is null || resized.Count == 0)
+                {
+                    continue;
+                }
+
+                if (!resized.ContainsKey(1260) || resized.ContainsKey(1280))
+                {
+                    continue;
+                }
+
+                // Try moving file on disk
+                var srcPath = Path.Combine(resizedDir, "1260", it.StoredName);
+                var dstDir = Path.Combine(resizedDir, "1280");
+                Directory.CreateDirectory(dstDir);
+                var dstPath = Path.Combine(dstDir, it.StoredName);
+
+                if (File.Exists(srcPath) && !File.Exists(dstPath))
+                {
+                    try
+                    {
+                        File.Move(srcPath, dstPath);
+                    }
+                    catch
+                    {
+                        try
+                        {
+                            File.Copy(srcPath, dstPath, overwrite: true);
+                            File.Delete(srcPath);
+                        }
+                        catch
+                        {
+                            // ignore
+                        }
+                    }
+                }
+
+                var newResized = new Dictionary<int, string>(resized);
+                newResized.Remove(1260);
+                newResized[1280] = $"resized/1280/{it.StoredName}";
+                items[i] = it with { Resized = newResized };
+                changed = true;
+            }
+
+            if (!changed)
+            {
+                return;
+            }
+
+            var outJson = JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(historyPath, outJson, ct);
+        }
+        catch
+        {
+            // ignore
+        }
+        finally
+        {
+            historyLock.Release();
+        }
+    }
+    finally
+    {
+        migrate1260Lock.Release();
+    }
+}
+
+async Task PruneExpiredAsync(CancellationToken ct)
+{
+    // First, do a small legacy migration: old builds used width 1260, now it's 1280.
+    // This keeps history + files consistent for existing installs.
+    await Migrate1260To1280Async(ct);
+
+    var cutoff = DateTimeOffset.UtcNow - retention;
+    List<UploadHistoryItem> removed = new();
+
+    await historyLock.WaitAsync(ct);
+    try
+    {
+        if (!File.Exists(historyPath))
+        {
+            return;
+        }
+
+        var json = await File.ReadAllTextAsync(historyPath, ct);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return;
+        }
+
+        var items = JsonSerializer.Deserialize<List<UploadHistoryItem>>(json) ?? new List<UploadHistoryItem>();
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        removed = items.Where(x => x.CreatedAt < cutoff).ToList();
+        if (removed.Count == 0)
+        {
+            return;
+        }
+
+        var kept = items.Where(x => x.CreatedAt >= cutoff).ToList();
+        var outJson = JsonSerializer.Serialize(kept, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(historyPath, outJson, ct);
+    }
+    catch
+    {
+        // ignore retention failures
+        return;
+    }
+    finally
+    {
+        historyLock.Release();
+    }
+
+    // Delete files outside lock
+    foreach (var it in removed)
+    {
+        try
+        {
+            DeleteAllFilesForStoredName(it.StoredName);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -118,8 +322,30 @@ app.UseStaticFiles(new StaticFileOptions
 });
 app.UseStaticFiles(new StaticFileOptions
 {
+    FileProvider = new PhysicalFileProvider(uploadOriginalDir),
+    RequestPath = "/upload-original",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
+app.UseStaticFiles(new StaticFileOptions
+{
     FileProvider = new PhysicalFileProvider(previewDir),
     RequestPath = "/preview",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(splitDir),
+    RequestPath = "/split",
     OnPrepareResponse = ctx =>
     {
         ctx.Context.Response.Headers["Cache-Control"] = "no-store";
@@ -132,12 +358,14 @@ app.UseAntiforgery();
 
 app.MapGet("/history", async Task<IResult> (CancellationToken ct) =>
 {
+    await PruneExpiredAsync(ct);
     var items = await ReadHistoryAsync(historyPath, historyLock, ct);
     return Results.Ok(items.OrderByDescending(x => x.CreatedAt).Take(200));
 });
 
 app.MapPost("/delete", async Task<IResult> (DeleteRequest req, CancellationToken ct) =>
 {
+    await PruneExpiredAsync(ct);
     if (string.IsNullOrWhiteSpace(req.StoredName))
     {
         return Results.BadRequest(new { error = "storedName is required" });
@@ -156,17 +384,8 @@ app.MapPost("/delete", async Task<IResult> (DeleteRequest req, CancellationToken
         return Results.NotFound(new { error = "not found" });
     }
 
-    // Удаляем оригинал
-    TryDeleteFile(Path.Combine(uploadDir, storedName));
-
-    // Удаляем превью
-    TryDeleteFile(Path.Combine(previewDir, storedName));
-
-    // Удаляем все ресайзы
-    foreach (var w in resizeWidths)
-    {
-        TryDeleteFile(Path.Combine(resizedDir, w.ToString(), storedName));
-    }
+    // Delete all related files
+    DeleteAllFilesForStoredName(storedName);
 
     return Results.Ok(new { ok = true, storedName });
 })
@@ -176,79 +395,123 @@ app.MapPost("/delete", async Task<IResult> (DeleteRequest req, CancellationToken
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
 
-app.MapPost("/upload", async Task<IResult> (IFormFile file, CancellationToken ct) =>
+app.MapPost("/upload", async Task<IResult> (HttpRequest request, CancellationToken ct) =>
 {
-    if (file is null)
+    await PruneExpiredAsync(ct);
+
+    IFormCollection form;
+    try
+    {
+        form = await request.ReadFormAsync(ct);
+    }
+    catch
+    {
+        return Results.BadRequest(new { error = "invalid multipart form" });
+    }
+
+    var files = form.Files;
+    if (files is null || files.Count == 0)
     {
         return Results.BadRequest(new { error = "file is required" });
     }
 
-    if (file.Length <= 0)
+    if (files.Count > 15)
     {
-        return Results.BadRequest(new { error = "file is empty" });
+        return Results.BadRequest(new { error = "too many files (max 15)" });
     }
 
-    if (file.Length > MaxUploadBytes)
+    async Task<object> SaveOneAsync(IFormFile file)
     {
-        return Results.BadRequest(new { error = $"file is too large (max {MaxUploadBytes} bytes)" });
+        if (file.Length <= 0)
+        {
+            throw new InvalidOperationException("file is empty");
+        }
+
+        if (file.Length > MaxUploadBytes)
+        {
+            throw new InvalidOperationException($"file is too large (max {MaxUploadBytes} bytes)");
+        }
+
+        var ext = SanitizeExtension(Path.GetExtension(file.FileName));
+        var storedName = $"{Guid.NewGuid():N}{ext}";
+
+        // Оригинал всегда сохраняем в upload/
+        var originalAbsolutePath = Path.Combine(uploadDir, storedName);
+
+        await using (var stream = File.Create(originalAbsolutePath))
+        {
+            await file.CopyToAsync(stream, ct);
+        }
+
+        var imageInfo = await TryGetImageInfoAsync(originalAbsolutePath, ct);
+
+        // Генерируем миниатюру для превью (если это изображение)
+        string? previewRelativePath = null;
+        if (imageInfo.Width > 0 && imageInfo.Height > 0)
+        {
+            // Сохраняем неизменённую копию для crop (чтобы каждый раз резать заново исходник)
+            var originalCopyAbsolutePath = Path.Combine(uploadOriginalDir, storedName);
+            if (!File.Exists(originalCopyAbsolutePath))
+            {
+                File.Copy(originalAbsolutePath, originalCopyAbsolutePath);
+            }
+
+            var previewAbsolutePath = Path.Combine(previewDir, storedName);
+            previewRelativePath = $"preview/{storedName}";
+            await CreatePreviewImageAsync(originalAbsolutePath, previewAbsolutePath, PreviewWidthPx, ct);
+        }
+
+        var entry = new UploadHistoryItem(
+            StoredName: storedName,
+            OriginalName: file.FileName,
+            CreatedAt: DateTimeOffset.UtcNow,
+            Size: file.Length,
+            OriginalRelativePath: $"upload/{storedName}",
+            PreviewRelativePath: previewRelativePath,
+            ImageWidth: imageInfo.Width > 0 ? imageInfo.Width : null,
+            ImageHeight: imageInfo.Height > 0 ? imageInfo.Height : null,
+            Resized: new Dictionary<int, string>()
+        );
+
+        await AppendHistoryAsync(historyPath, historyLock, entry, ct);
+
+        return new
+        {
+            originalName = entry.OriginalName,
+            storedName = entry.StoredName,
+            createdAt = entry.CreatedAt,
+            size = entry.Size,
+            originalRelativePath = entry.OriginalRelativePath,
+            previewRelativePath = entry.PreviewRelativePath,
+            imageWidth = entry.ImageWidth,
+            imageHeight = entry.ImageHeight,
+            resized = entry.Resized
+        };
     }
 
-    var ext = SanitizeExtension(Path.GetExtension(file.FileName));
-    var storedName = $"{Guid.NewGuid():N}{ext}";
-
-    // Оригинал всегда сохраняем в upload/
-    var originalAbsolutePath = Path.Combine(uploadDir, storedName);
-
-    await using (var stream = File.Create(originalAbsolutePath))
+    try
     {
-        await file.CopyToAsync(stream, ct);
+        var results = new List<object>(files.Count);
+        foreach (var f in files)
+        {
+            results.Add(await SaveOneAsync(f));
+        }
+
+        return Results.Ok(results);
     }
-
-    var imageInfo = await TryGetImageInfoAsync(originalAbsolutePath, ct);
-
-    // Генерируем миниатюру для превью (если это изображение)
-    string? previewRelativePath = null;
-    if (imageInfo.Width > 0 && imageInfo.Height > 0)
+    catch (Exception ex)
     {
-        var previewAbsolutePath = Path.Combine(previewDir, storedName);
-        previewRelativePath = $"preview/{storedName}";
-        await CreatePreviewImageAsync(originalAbsolutePath, previewAbsolutePath, PreviewWidthPx, ct);
+        return Results.BadRequest(new { error = ex.Message });
     }
-
-    var entry = new UploadHistoryItem(
-        StoredName: storedName,
-        OriginalName: file.FileName,
-        CreatedAt: DateTimeOffset.UtcNow,
-        Size: file.Length,
-        OriginalRelativePath: $"upload/{storedName}",
-        PreviewRelativePath: previewRelativePath,
-        ImageWidth: imageInfo.Width > 0 ? imageInfo.Width : null,
-        ImageHeight: imageInfo.Height > 0 ? imageInfo.Height : null,
-        Resized: new Dictionary<int, string>()
-    );
-
-    await AppendHistoryAsync(historyPath, historyLock, entry, ct);
-
-    return Results.Ok(new
-    {
-        originalName = entry.OriginalName,
-        storedName = entry.StoredName,
-        createdAt = entry.CreatedAt,
-        size = entry.Size,
-        originalRelativePath = entry.OriginalRelativePath,
-        previewRelativePath = entry.PreviewRelativePath,
-        imageWidth = entry.ImageWidth,
-        imageHeight = entry.ImageHeight,
-        resized = entry.Resized
-    });
 })
 .DisableAntiforgery()
-.Accepts<IFormFile>("multipart/form-data")
+.Accepts<IFormFileCollection>("multipart/form-data")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
 
 app.MapPost("/resize", async Task<IResult> (ResizeRequest req, CancellationToken ct) =>
 {
+    await PruneExpiredAsync(ct);
     if (req.Width <= 0)
     {
         return Results.BadRequest(new { error = "width must be > 0" });
@@ -277,17 +540,14 @@ app.MapPost("/resize", async Task<IResult> (ResizeRequest req, CancellationToken
         return Results.NotFound(new { error = "original file not found" });
     }
 
-    // Проверим, что это изображение и что не делаем апскейл
+    // Проверим, что это изображение
     var info = await TryGetImageInfoAsync(originalAbsolutePath, ct);
     if (info.Width <= 0 || info.Height <= 0)
     {
         return Results.BadRequest(new { error = "file is not a supported image" });
     }
 
-    if (req.Width >= info.Width)
-    {
-        return Results.BadRequest(new { error = "upscale is not allowed" });
-    }
+    // Разрешаем апскейл (пользователи хотят уметь увеличивать даже маленькие изображения)
 
     var outDir = Path.Combine(resizedDir, req.Width.ToString());
     Directory.CreateDirectory(outDir);
@@ -314,8 +574,114 @@ app.MapPost("/resize", async Task<IResult> (ResizeRequest req, CancellationToken
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
 
+app.MapPost("/split", async Task<IResult> (SplitRequest req, CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+
+    if (string.IsNullOrWhiteSpace(req.StoredNameA) || string.IsNullOrWhiteSpace(req.StoredNameB))
+    {
+        return Results.BadRequest(new { error = "storedNameA and storedNameB are required" });
+    }
+
+    // sanitize
+    var storedNameA = Path.GetFileName(req.StoredNameA);
+    var storedNameB = Path.GetFileName(req.StoredNameB);
+    if (!string.Equals(storedNameA, req.StoredNameA, StringComparison.Ordinal)
+        || !string.Equals(storedNameB, req.StoredNameB, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "invalid storedName" });
+    }
+
+    // we build split from resized/1280 assets
+    var srcA = Path.Combine(resizedDir, "1280", storedNameA);
+    var srcB = Path.Combine(resizedDir, "1280", storedNameB);
+    if (!File.Exists(srcA) || !File.Exists(srcB))
+    {
+        return Results.BadRequest(new { error = "both images must have resized 1280 generated" });
+    }
+
+    const int outW = 1280;
+    const int outH = 720;
+    const int dividerW = 7;
+    var leftW = (outW - dividerW) / 2; // 636
+    var rightW = outW - dividerW - leftW; // 637
+
+    var outFileName = GetSplitFileName(storedNameA);
+    var outAbsolutePath = Path.Combine(splitDir, outFileName);
+    var relPath = $"split/{outFileName}";
+
+    try
+    {
+        using var left = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(leftW, outH, new SixLabors.ImageSharp.PixelFormats.Rgba32(0, 0, 0, 255));
+        using var right = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(rightW, outH, new SixLabors.ImageSharp.PixelFormats.Rgba32(0, 0, 0, 255));
+
+        static (int x, int y, int w, int h) MapRect(SplitViewRect r, int outHalfW, int outH)
+        {
+            var vw = r.ViewW <= 0 ? 1 : r.ViewW;
+            var vh = r.ViewH <= 0 ? 1 : r.ViewH;
+            var sx = outHalfW / vw;
+            var sy = outH / vh;
+
+            var x = (int)Math.Round(r.X * sx);
+            var y = (int)Math.Round(r.Y * sy);
+            var w = (int)Math.Round(r.W * sx);
+            var h = (int)Math.Round(r.H * sy);
+            return (x, y, Math.Max(1, w), Math.Max(1, h));
+        }
+
+        static async Task DrawAsync(Image<SixLabors.ImageSharp.PixelFormats.Rgba32> canvas, string srcPath, SplitViewRect r, int outHalfW, int outH, CancellationToken ct)
+        {
+            var (x, y, w, h) = MapRect(r, outHalfW, outH);
+            await using var input = File.OpenRead(srcPath);
+            using var img = await Image.LoadAsync<SixLabors.ImageSharp.PixelFormats.Rgba32>(input, ct);
+            img.Mutate(p => p.Resize(w, h));
+            canvas.Mutate(p => p.DrawImage(img, new Point(x, y), 1f));
+        }
+
+        await DrawAsync(left, srcA, req.A, leftW, outH, ct);
+        await DrawAsync(right, srcB, req.B, rightW, outH, ct);
+
+        using var output = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(outW, outH, new SixLabors.ImageSharp.PixelFormats.Rgba32(0, 0, 0, 255));
+        output.Mutate(p =>
+        {
+            p.DrawImage(left, new Point(0, 0), 1f);
+            p.DrawImage(right, new Point(leftW + dividerW, 0), 1f);
+        });
+
+        // White divider (7px)
+        var white = new SixLabors.ImageSharp.PixelFormats.Rgba32(255, 255, 255, 255);
+        output.ProcessPixelRows(accessor =>
+        {
+            for (var yy = 0; yy < outH; yy++)
+            {
+                var row = accessor.GetRowSpan(yy);
+                for (var xx = leftW; xx < leftW + dividerW; xx++)
+                {
+                    row[xx] = white;
+                }
+            }
+        });
+
+        await SaveImageWithSafeTempAsync(output, outAbsolutePath, ct);
+
+        // Update history for image A
+        await UpsertSplitInHistoryAsync(historyPath, historyLock, storedNameA, relPath, ct);
+
+        return Results.Ok(new { ok = true, storedName = storedNameA, splitRelativePath = relPath });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+})
+.DisableAntiforgery()
+.Accepts<SplitRequest>("application/json")
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest);
+
 app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct) =>
 {
+    await PruneExpiredAsync(ct);
     if (string.IsNullOrWhiteSpace(req.StoredName))
     {
         return Results.BadRequest(new { error = "storedName is required" });
@@ -333,16 +699,37 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
         return Results.BadRequest(new { error = "invalid crop size" });
     }
 
-    var originalAbsolutePath = Path.Combine(uploadDir, storedName);
-    if (!File.Exists(originalAbsolutePath))
+    var outAbsolutePath = Path.Combine(uploadDir, storedName);
+    if (!File.Exists(outAbsolutePath))
     {
         return Results.NotFound(new { error = "original file not found" });
     }
 
+    // Всегда пытаемся резать от неизменённого исходника (upload-original/...).
+    // Для старых записей (до введения upload-original) создаём эту копию перед тем, как перезаписать upload/.
+    var sourceAbsolutePath = Path.Combine(uploadOriginalDir, storedName);
+    if (!File.Exists(sourceAbsolutePath))
+    {
+        try
+        {
+            // This preserves the pre-crop state for legacy items.
+            File.Copy(outAbsolutePath, sourceAbsolutePath);
+        }
+        catch
+        {
+            // ignore (we'll fallback)
+        }
+    }
+
+    if (!File.Exists(sourceAbsolutePath))
+    {
+        // Fallback (if copy failed or storage is read-only)
+        sourceAbsolutePath = outAbsolutePath;
+    }
+
     // Загружаем изображение
-    // IMPORTANT: do not keep the file stream open while overwriting the original.
     Image image;
-    await using (var input = new FileStream(originalAbsolutePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+    await using (var input = new FileStream(sourceAbsolutePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
     {
         image = await Image.LoadAsync(input, ct);
     }
@@ -362,35 +749,18 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
         var w = Math.Clamp(req.Width, 1, imgW - x);
         var h = Math.Clamp(req.Height, 1, imgH - y);
 
-        // Принудительно приводим к 16:9 (на всякий случай)
-        // Берём ширину как базу и пересчитываем высоту.
-        var targetH = (int)Math.Round(w * 9.0 / 16.0);
-        if (targetH <= 0) targetH = 1;
-        if (targetH > h)
-        {
-            // если высоты не хватает — подгоняем ширину под высоту
-            var targetW = (int)Math.Round(h * 16.0 / 9.0);
-            targetW = Math.Max(1, targetW);
-            w = Math.Min(w, targetW);
-            h = Math.Min(h, (int)Math.Round(w * 9.0 / 16.0));
-        }
-        else
-        {
-            h = targetH;
-        }
-
-        // Переклэмпим после подгонки
+        // Переклэмпим после расчёта
         if (x + w > imgW) w = imgW - x;
         if (y + h > imgH) h = imgH - y;
 
         image.Mutate(ctx => ctx.Crop(new Rectangle(x, y, w, h)));
 
-        // Сохраняем поверх оригинала (атомарно)
-        await SaveImageWithSafeTempAsync(image, originalAbsolutePath, ct);
+        // Сохраняем результат в upload/<storedName> (атомарно)
+        await SaveImageWithSafeTempAsync(image, outAbsolutePath, ct);
 
         // Пересоздаём preview
         var previewAbsolutePath = Path.Combine(previewDir, storedName);
-        await CreatePreviewImageAsync(originalAbsolutePath, previewAbsolutePath, PreviewWidthPx, ct);
+        await CreatePreviewImageAsync(outAbsolutePath, previewAbsolutePath, PreviewWidthPx, ct);
 
         // Удаляем все ресайзы, т.к. они больше не соответствуют новому оригиналу
         foreach (var rw in resizeWidths)
@@ -398,7 +768,10 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
             TryDeleteFile(Path.Combine(resizedDir, rw.ToString(), storedName));
         }
 
-        // Обновляем историю: размеры и сброс resized
+        // Удаляем split (если был) — он больше не соответствует текущему изображению
+        TryDeleteFile(Path.Combine(splitDir, GetSplitFileName(storedName)));
+
+        // Обновляем историю: размеры и сброс resized (+ сброс split)
         await UpdateHistoryAfterCropAsync(historyPath, historyLock, storedName, w, h, ct);
 
         return Results.Ok(new
@@ -408,7 +781,8 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
             imageWidth = w,
             imageHeight = h,
             previewRelativePath = $"preview/{storedName}",
-            originalRelativePath = $"upload/{storedName}"
+            originalRelativePath = $"upload/{storedName}",
+            originalSourceRelativePath = $"upload-original/{storedName}"
         });
     }
 })
@@ -457,10 +831,6 @@ static async Task CreateResizedImageAsync(
         throw new InvalidOperationException("Invalid image");
     }
 
-    if (targetWidthPx >= imageWidth)
-    {
-        throw new InvalidOperationException("Upscale is not allowed");
-    }
 
     var newHeight = (int)Math.Round(imageHeight * (targetWidthPx / (double)imageWidth));
     newHeight = Math.Max(1, newHeight);
@@ -673,6 +1043,27 @@ static async Task UpsertResizedInHistoryAsync(
     }
 }
 
+static async Task UpsertSplitInHistoryAsync(
+    string historyPath,
+    SemaphoreSlim historyLock,
+    string storedName,
+    string splitRelativePath,
+    CancellationToken ct)
+{
+    var items = await ReadHistoryAsync(historyPath, historyLock, ct);
+    for (var i = items.Count - 1; i >= 0; i--)
+    {
+        if (!string.Equals(items[i].StoredName, storedName, StringComparison.Ordinal))
+        {
+            continue;
+        }
+
+        items[i] = items[i] with { SplitRelativePath = splitRelativePath };
+        await WriteHistoryAsync(historyPath, historyLock, items, ct);
+        return;
+    }
+}
+
 static async Task UpdateHistoryAfterCropAsync(
     string historyPath,
     SemaphoreSlim historyLock,
@@ -694,7 +1085,8 @@ static async Task UpdateHistoryAfterCropAsync(
             ImageWidth = newWidth,
             ImageHeight = newHeight,
             PreviewRelativePath = $"preview/{storedName}",
-            Resized = new Dictionary<int, string>()
+            Resized = new Dictionary<int, string>(),
+            SplitRelativePath = null
         };
         await WriteHistoryAsync(historyPath, historyLock, items, ct);
         return;
@@ -705,6 +1097,8 @@ record ImageInfo(int Width, int Height);
 record ResizeRequest(string StoredName, int Width);
 record DeleteRequest(string StoredName);
 record CropRequest(string StoredName, int X, int Y, int Width, int Height);
+record SplitViewRect(double X, double Y, double W, double H, double ViewW, double ViewH);
+record SplitRequest(string StoredNameA, string StoredNameB, SplitViewRect A, SplitViewRect B);
 record UploadHistoryItem(
     string StoredName,
     string OriginalName,
@@ -714,5 +1108,6 @@ record UploadHistoryItem(
     string? PreviewRelativePath,
     int? ImageWidth,
     int? ImageHeight,
-    Dictionary<int, string> Resized
+    Dictionary<int, string> Resized,
+    string? SplitRelativePath = null
 );
