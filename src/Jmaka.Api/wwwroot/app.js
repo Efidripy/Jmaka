@@ -7,6 +7,159 @@ const filesTbody = document.getElementById('filesTbody');
 const sizeButtons = document.getElementById('sizeButtons');
 const sizeBtns = sizeButtons ? Array.from(sizeButtons.querySelectorAll('button.size-btn')) : [];
 
+// viewer modal elements
+const viewerModal = document.getElementById('viewerModal');
+const viewerCloseBtn = document.getElementById('viewerClose');
+const viewerImg = document.getElementById('viewerImg');
+const viewerLabel = document.getElementById('viewerLabel');
+const viewerOpen = document.getElementById('viewerOpen');
+
+function isLikelyImageUrl(url) {
+  if (!url) return false;
+  // Strip query/hash (we often add ?v=... for cache-busting)
+  const raw = String(url);
+  const base = raw.split('?')[0].split('#')[0].toLowerCase();
+  return base.endsWith('.jpg')
+    || base.endsWith('.jpeg')
+    || base.endsWith('.png')
+    || base.endsWith('.webp')
+    || base.endsWith('.gif')
+    || base.endsWith('.bmp');
+}
+
+function openViewer(href, label) {
+  if (!href) return;
+  if (!viewerModal || !viewerImg) {
+    window.open(href, '_blank', 'noreferrer');
+    return;
+  }
+
+  viewerModal.hidden = false;
+  viewerImg.src = href;
+  viewerImg.alt = label || 'image';
+
+  if (viewerLabel) {
+    viewerLabel.textContent = label || href;
+  }
+  if (viewerOpen) {
+    viewerOpen.href = href;
+    viewerOpen.hidden = false;
+  }
+}
+
+function closeViewer() {
+  if (!viewerModal) return;
+  viewerModal.hidden = true;
+  if (viewerImg) {
+    viewerImg.removeAttribute('src');
+    viewerImg.alt = '';
+  }
+  if (viewerLabel) viewerLabel.textContent = '';
+  if (viewerOpen) {
+    viewerOpen.href = '#';
+    viewerOpen.hidden = true;
+  }
+}
+
+if (viewerModal) {
+  viewerModal.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.close) {
+      closeViewer();
+    }
+  });
+}
+if (viewerCloseBtn) viewerCloseBtn.addEventListener('click', closeViewer);
+
+// Intercept clicks on preview/size links in the table and show in-app viewer
+if (filesTbody) {
+  filesTbody.addEventListener('click', (e) => {
+    const a = e.target && e.target.closest ? e.target.closest('a') : null;
+    if (!a) return;
+
+    const href = a.getAttribute('href');
+    if (!href) return;
+
+    // Only intercept for image links.
+    if (!isLikelyImageUrl(href)) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Try to provide a short label
+    const label = a.textContent && a.textContent.trim() ? a.textContent.trim() : href;
+    openViewer(href, label);
+  });
+}
+
+// delete modal elements
+const deleteModal = document.getElementById('deleteModal');
+const deleteCloseBtn = document.getElementById('deleteClose');
+const deleteCancelBtn = document.getElementById('deleteCancel');
+const deleteConfirmBtn = document.getElementById('deleteConfirm');
+const deleteSkipConfirmEl = document.getElementById('deleteSkipConfirm');
+
+const DELETE_SKIP_KEY = 'jmaka_delete_skip_confirm';
+
+function getDeleteSkipConfirm() {
+  try { return localStorage.getItem(DELETE_SKIP_KEY) === '1'; } catch { return false; }
+}
+
+function setDeleteSkipConfirm(v) {
+  try { localStorage.setItem(DELETE_SKIP_KEY, v ? '1' : '0'); } catch { /* ignore */ }
+}
+
+let pendingDeleteResolve = null;
+
+function closeDeleteModal(ok) {
+  if (!deleteModal) return;
+  deleteModal.hidden = true;
+  const r = pendingDeleteResolve;
+  pendingDeleteResolve = null;
+
+  if (ok && deleteSkipConfirmEl && deleteSkipConfirmEl.checked) {
+    setDeleteSkipConfirm(true);
+  }
+
+  if (deleteSkipConfirmEl) {
+    deleteSkipConfirmEl.checked = false;
+  }
+
+  if (r) r(!!ok);
+}
+
+function confirmDeleteAsync(storedName) {
+  if (getDeleteSkipConfirm()) {
+    return Promise.resolve(true);
+  }
+
+  if (!deleteModal) {
+    // fallback
+    return Promise.resolve(confirm('Удалить запись и все связанные файлы безвозвратно?'));
+  }
+
+  deleteModal.hidden = false;
+
+  return new Promise((resolve) => {
+    pendingDeleteResolve = resolve;
+  });
+}
+
+if (deleteModal) {
+  // backdrop click
+  deleteModal.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.close) {
+      closeDeleteModal(false);
+    }
+  });
+}
+if (deleteCloseBtn) deleteCloseBtn.addEventListener('click', () => closeDeleteModal(false));
+if (deleteCancelBtn) deleteCancelBtn.addEventListener('click', () => closeDeleteModal(false));
+if (deleteConfirmBtn) deleteConfirmBtn.addEventListener('click', () => closeDeleteModal(true));
+
 // crop modal elements
 const cropModal = document.getElementById('cropModal');
 const cropStage = document.getElementById('cropStage');
@@ -17,8 +170,53 @@ const cropCancelBtn = document.getElementById('cropCancel');
 const cropCloseBtn = document.getElementById('cropClose');
 const cropSourceLabel = document.getElementById('cropSourceLabel');
 const cropOpenOriginal = document.getElementById('cropOpenOriginal');
+const cropAspectBtns = cropModal ? Array.from(cropModal.querySelectorAll('button.aspect-btn')) : [];
 
-const TARGET_WIDTHS = [720, 1080, 1260, 1920, 2440];
+// tool buttons (Crop/Split)
+const toolButtons = document.querySelector('.tool-buttons');
+const cropToolBtn = document.getElementById('cropToolBtn');
+const splitToolBtn = document.getElementById('splitToolBtn');
+
+// split modal elements
+const splitModal = document.getElementById('splitModal');
+const splitCloseBtn = document.getElementById('splitClose');
+const splitCancelBtn = document.getElementById('splitCancel');
+const splitApplyBtn = document.getElementById('splitApply');
+const splitPickTargetA = document.getElementById('splitPickTargetA');
+const splitPickTargetB = document.getElementById('splitPickTargetB');
+const splitTargetImgA = document.getElementById('splitTargetImgA');
+const splitTargetImgB = document.getElementById('splitTargetImgB');
+const splitGallery = document.getElementById('splitGallery');
+const splitStage = document.getElementById('splitStage');
+const splitHalfLeft = document.getElementById('splitHalfLeft');
+const splitHalfRight = document.getElementById('splitHalfRight');
+const splitItemA = document.getElementById('splitItemA');
+const splitItemB = document.getElementById('splitItemB');
+const splitHint = document.getElementById('splitHint');
+
+function syncCropAspectButtons() {
+  if (!cropAspectBtns || cropAspectBtns.length === 0) return;
+  for (const b of cropAspectBtns) {
+    const aw = Number(b.dataset.aw);
+    const ah = Number(b.dataset.ah);
+    const label = (aw > 0 && ah > 0) ? `${aw}:${ah}` : '';
+    b.classList.toggle('is-active', label === (cropState && cropState.aspectLabel));
+  }
+}
+
+function setCropAspect(aw, ah) {
+  if (!aw || !ah || aw <= 0 || ah <= 0) return;
+  cropState.aspect = aw / ah;
+  cropState.aspectLabel = `${aw}:${ah}`;
+  syncCropAspectButtons();
+
+  // If modal is open and we already computed the image box, re-init the rect for the new aspect.
+  if (cropState.open && cropState.imgBox) {
+    initCropRect();
+  }
+}
+
+const TARGET_WIDTHS = [720, 1080, 1280, 1920, 2440];
 
 let selectedFile = null;
 let lastUpload = null; // { storedName, originalRelativePath, previewRelativePath, imageWidth, imageHeight }
@@ -39,13 +237,554 @@ function withCacheBust(relativeUrl, storedName) {
   return `${relativeUrl}${sep}v=${v}`;
 }
 
+// -------- Split tool --------
+
+function getSplitHalfRect(which) {
+  const el = which === 'a' ? splitHalfLeft : splitHalfRight;
+  if (!el) return null;
+  return el.getBoundingClientRect();
+}
+
+function splitGetPointerPosInHalf(which, e) {
+  const r = getSplitHalfRect(which);
+  if (!r) return { x: 0, y: 0 };
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function splitBringToFront(which) {
+  if (!splitItemA || !splitItemB) return;
+  if (which === 'a') {
+    splitItemA.style.zIndex = '2';
+    splitItemB.style.zIndex = '1';
+  } else {
+    splitItemA.style.zIndex = '1';
+    splitItemB.style.zIndex = '2';
+  }
+}
+
+function splitGetHalfSize(which) {
+  const r = getSplitHalfRect(which);
+  if (!r) return { w: 0, h: 0 };
+  return { w: r.width, h: r.height };
+}
+
+const splitState = {
+  open: false,
+  history: [],
+  action: null,
+  a: { storedName: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 },
+  b: { storedName: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 }
+};
+
+function splitShowItem(which) {
+  const st = which === 'a' ? splitState.a : splitState.b;
+  const el = which === 'a' ? splitItemA : splitItemB;
+  if (!el) return;
+
+  el.style.left = `${st.x}px`;
+  el.style.top = `${st.y}px`;
+  el.style.width = `${st.w}px`;
+  el.style.height = `${st.h}px`;
+}
+
+function splitClampMove(which, st, halfW, halfH) {
+  // Allow moving/scale freely inside each half container.
+  // Anything outside the half is clipped by CSS overflow hidden.
+  // Keep at least a small visible portion so you don't lose the image completely.
+  const minVisible = 24;
+
+  const minX = -st.w + minVisible;
+  const maxX = halfW - minVisible;
+
+  const minY = -st.h + minVisible;
+  const maxY = halfH - minVisible;
+
+  st.x = Math.min(Math.max(st.x, minX), maxX);
+  st.y = Math.min(Math.max(st.y, minY), maxY);
+}
+
+function splitClampResize(which, st, halfW, halfH, aspect) {
+  const minW = 60;
+  const maxWHard = 20000;
+
+  // In half mode there is no "forbidden" crossing; the other side is simply clipped.
+  st.w = Math.max(minW, Math.min(st.w, maxWHard));
+  st.h = st.w / aspect;
+
+  splitClampMove(which, st, halfW, halfH);
+}
+
+function splitLayoutDefaults() {
+  // Layout inside each half container.
+  for (const which of ['a', 'b']) {
+    const st = which === 'a' ? splitState.a : splitState.b;
+    if (!st.url || !st.natW || !st.natH) continue;
+
+    const { w: halfW, h: halfH } = splitGetHalfSize(which);
+    if (!halfW || !halfH) continue;
+
+    const aspect = st.natW / st.natH;
+    const targetW = halfW * 1.15;
+    st.w = targetW;
+    st.h = st.w / aspect;
+
+    if (st.h > halfH * 0.9) {
+      st.h = halfH * 0.9;
+      st.w = st.h * aspect;
+    }
+
+    st.x = (halfW - st.w) / 2;
+    st.y = (halfH - st.h) / 2;
+    splitClampMove(which, st, halfW, halfH);
+    splitShowItem(which);
+  }
+}
+
+async function fetchHistoryRaw() {
+  try {
+    const res = await fetch('history', { cache: 'no-store' });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = []; }
+    if (!res.ok || !Array.isArray(data)) return [];
+    return data;
+  } catch {
+    return [];
+  }
+}
+
+function splitGetPreviewUrl(item) {
+  if (!item) return null;
+  const rel = item.previewRelativePath ? item.previewRelativePath : item.originalRelativePath;
+  if (!rel) return null;
+  return withCacheBust(String(rel), item.storedName);
+}
+
+function splitUpdateTargetThumb(which) {
+  const st = which === 'a' ? splitState.a : splitState.b;
+  const img = which === 'a' ? splitTargetImgA : splitTargetImgB;
+  if (!img) return;
+
+  if (!st || !st.storedName) {
+    img.removeAttribute('src');
+    img.alt = '';
+    return;
+  }
+
+  const item = splitState.history.find(x => x && x.storedName === st.storedName);
+  const src = item ? splitGetPreviewUrl(item) : null;
+  if (!src) {
+    img.removeAttribute('src');
+    img.alt = '';
+    return;
+  }
+
+  img.src = src;
+  img.alt = item.originalName || item.storedName || '';
+}
+
+function splitSyncGallerySelection() {
+  if (!splitGallery) return;
+  const a = splitState.a && splitState.a.storedName;
+  const b = splitState.b && splitState.b.storedName;
+
+  for (const btn of Array.from(splitGallery.querySelectorAll('button.split-thumb'))) {
+    const sn = btn.dataset && btn.dataset.sn ? btn.dataset.sn : '';
+    btn.classList.toggle('is-selected', sn && (sn === a || sn === b));
+  }
+}
+
+function splitGet1280Url(item) {
+  if (!item || !item.resized) return null;
+  const rel = item.resized['1280'] || item.resized[1280];
+  if (!rel) return null;
+  return withCacheBust(String(rel), item.storedName);
+}
+
+function splitSetItemFromStoredName(which, storedName) {
+  const el = which === 'a' ? splitItemA : splitItemB;
+  if (!el) return;
+
+  const img = el.querySelector('img.split-img');
+  if (!img) return;
+
+  const item = splitState.history.find(x => x && x.storedName === storedName);
+  if (!item) {
+    el.hidden = true;
+    return;
+  }
+
+  const url = splitGet1280Url(item);
+  if (!url) {
+    el.hidden = true;
+    return;
+  }
+
+  const st = which === 'a' ? splitState.a : splitState.b;
+  st.storedName = item.storedName;
+  st.url = url;
+
+  el.hidden = false;
+  splitBringToFront(which);
+
+  img.onload = () => {
+    st.natW = img.naturalWidth || 0;
+    st.natH = img.naturalHeight || 0;
+    // if it was not laid out yet, do a default layout pass
+    splitLayoutDefaults();
+  };
+
+  img.onerror = () => {
+    if (splitHint) splitHint.textContent = 'Не удалось загрузить 1280-картинку для Split.';
+  };
+
+  img.src = url;
+  img.alt = item.originalName || item.storedName || '';
+}
+
+async function openSplitModal() {
+  if (!splitModal) return;
+
+  splitModal.hidden = false;
+  splitState.open = true;
+  splitState.pickTarget = 'a';
+
+  if (splitPickTargetA) splitPickTargetA.classList.add('is-active');
+  if (splitPickTargetB) splitPickTargetB.classList.remove('is-active');
+
+  if (splitHint) {
+    splitHint.textContent = 'Загружаю список...';
+  }
+
+  splitState.history = await fetchHistoryRaw();
+  const candidates = splitState.history.filter(it => !!splitGet1280Url(it));
+
+  // build gallery
+  if (splitGallery) {
+    splitGallery.textContent = '';
+
+    for (const it of candidates) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'split-thumb';
+      btn.dataset.sn = it.storedName;
+      btn.title = it.originalName || it.storedName || '';
+
+      const img = document.createElement('img');
+      img.alt = it.originalName || it.storedName || '';
+      img.loading = 'lazy';
+      img.src = splitGetPreviewUrl(it) || '';
+
+      btn.appendChild(img);
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const which = splitState.pickTarget || 'a';
+        splitSetItemFromStoredName(which, it.storedName);
+        splitUpdateTargetThumb(which);
+        splitSyncGallerySelection();
+      });
+
+      splitGallery.appendChild(btn);
+    }
+  }
+
+  // default picks: prefer current active image for slot #1 (if it has 1280)
+  const preferredA = (lastUpload && lastUpload.storedName && candidates.some(x => x && x.storedName === lastUpload.storedName))
+    ? lastUpload.storedName
+    : (candidates[0] && candidates[0].storedName);
+
+  const first = preferredA;
+  const second = candidates.find(x => x && x.storedName !== first) && candidates.find(x => x && x.storedName !== first).storedName;
+
+  if (splitItemA) splitItemA.hidden = true;
+  if (splitItemB) splitItemB.hidden = true;
+
+  if (first) {
+    splitSetItemFromStoredName('a', first);
+    splitUpdateTargetThumb('a');
+  }
+  if (second || first) {
+    splitSetItemFromStoredName('b', second || first);
+    splitUpdateTargetThumb('b');
+  }
+
+  splitSyncGallerySelection();
+
+  if (splitHint) {
+    splitHint.textContent = candidates.length > 0
+      ? 'Выберите слот (#1/#2), затем кликните по превью. Дальше перетаскивайте/масштабируйте.'
+      : 'Нет картинок с готовым размером 1280. Сначала сделайте resize 1280.';
+  }
+
+  if (splitApplyBtn) {
+    splitApplyBtn.disabled = candidates.length === 0;
+  }
+}
+
+function closeSplitModal() {
+  if (!splitModal) return;
+  splitModal.hidden = true;
+  splitState.open = false;
+  splitState.action = null;
+
+  if (splitItemA) splitItemA.hidden = true;
+  if (splitItemB) splitItemB.hidden = true;
+
+  if (splitGallery) {
+    splitGallery.textContent = '';
+  }
+
+  if (splitTargetImgA) splitTargetImgA.removeAttribute('src');
+  if (splitTargetImgB) splitTargetImgB.removeAttribute('src');
+
+  // stop image loading
+  if (splitItemA) {
+    const img = splitItemA.querySelector('img.split-img');
+    if (img) img.removeAttribute('src');
+  }
+  if (splitItemB) {
+    const img = splitItemB.querySelector('img.split-img');
+    if (img) img.removeAttribute('src');
+  }
+}
+
+async function applySplit() {
+  if (!splitState.open) return;
+
+  const a = splitState.a;
+  const b = splitState.b;
+
+  if (!a || !a.storedName || !b || !b.storedName) {
+    if (splitHint) splitHint.textContent = 'Выберите две картинки.';
+    return;
+  }
+
+  const halfA = splitGetHalfSize('a');
+  const halfB = splitGetHalfSize('b');
+
+  if (!halfA.w || !halfA.h || !halfB.w || !halfB.h) {
+    if (splitHint) splitHint.textContent = 'Не удалось определить размер поля.';
+    return;
+  }
+
+  const req = {
+    storedNameA: a.storedName,
+    storedNameB: b.storedName,
+    a: { x: a.x, y: a.y, w: a.w, h: a.h, viewW: halfA.w, viewH: halfA.h },
+    b: { x: b.x, y: b.y, w: b.w, h: b.h, viewW: halfB.w, viewH: halfB.h }
+  };
+
+  try {
+    if (splitApplyBtn) splitApplyBtn.disabled = true;
+    setBusy(true);
+    if (splitHint) splitHint.textContent = 'Склеиваю...';
+
+    const res = await fetch('split', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req)
+    });
+
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = text; }
+
+    if (!res.ok) {
+      if (splitHint) splitHint.textContent = 'Ошибка split.';
+      showResult(data);
+      return;
+    }
+
+    showResult(data);
+
+    // split output is associated with storedNameA (slot #1)
+    cacheBust.set(a.storedName, Date.now());
+
+    await loadHistory(a.storedName);
+
+    hint.textContent = 'Split создан.';
+    closeSplitModal();
+  } catch (e) {
+    if (splitHint) splitHint.textContent = 'Ошибка split.';
+    showResult(String(e));
+  } finally {
+    setBusy(false);
+    if (splitApplyBtn) splitApplyBtn.disabled = false;
+  }
+}
+
+function wireSplitUI() {
+  if (!splitModal || !splitStage || !splitHalfLeft || !splitHalfRight) return;
+
+  // open button
+  if (splitToolBtn) {
+    splitToolBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openSplitModal();
+    });
+  }
+
+  // close controls
+  const close = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    closeSplitModal();
+  };
+
+  if (splitCloseBtn) splitCloseBtn.addEventListener('click', close);
+  if (splitCancelBtn) splitCancelBtn.addEventListener('click', close);
+
+  // backdrop click
+  splitModal.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.close) {
+      closeSplitModal();
+    }
+  });
+
+  // picking target (#1/#2)
+  const setPickTarget = (which) => {
+    splitState.pickTarget = which;
+    if (splitPickTargetA) splitPickTargetA.classList.toggle('is-active', which === 'a');
+    if (splitPickTargetB) splitPickTargetB.classList.toggle('is-active', which === 'b');
+  };
+
+  if (splitPickTargetA) {
+    splitPickTargetA.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setPickTarget('a');
+    });
+  }
+  if (splitPickTargetB) {
+    splitPickTargetB.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setPickTarget('b');
+    });
+  }
+
+  // drag/resize on items
+  const wireItem = (which, el) => {
+    if (!el) return;
+
+    el.addEventListener('pointerdown', (e) => {
+      if (!splitState.open) return;
+
+      const t = e.target;
+      const handle = t && t.dataset ? t.dataset.h : null;
+      const p = splitGetPointerPosInHalf(which, e);
+
+      const st = which === 'a' ? splitState.a : splitState.b;
+      if (!st || !st.url) return;
+
+      splitBringToFront(which);
+
+      // If user starts interacting, set active pick target too (convenience).
+      splitState.pickTarget = which;
+      if (splitPickTargetA) splitPickTargetA.classList.toggle('is-active', which === 'a');
+      if (splitPickTargetB) splitPickTargetB.classList.toggle('is-active', which === 'b');
+
+      if (handle === 'br') {
+        splitState.action = {
+          type: 'resize',
+          which,
+          startX: p.x,
+          startY: p.y,
+          startW: st.w,
+          startH: st.h
+        };
+      } else {
+        splitState.action = {
+          type: 'move',
+          which,
+          offsetX: p.x - st.x,
+          offsetY: p.y - st.y
+        };
+      }
+
+      try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      e.preventDefault();
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      if (!splitState.open || !splitState.action) return;
+      if (splitState.action.which !== which) return;
+
+      const { w: halfW, h: halfH } = splitGetHalfSize(which);
+      if (!halfW || !halfH) return;
+
+      const st = which === 'a' ? splitState.a : splitState.b;
+      if (!st || !st.url) return;
+
+      const p = splitGetPointerPosInHalf(which, e);
+
+      if (splitState.action.type === 'move') {
+        st.x = p.x - splitState.action.offsetX;
+        st.y = p.y - splitState.action.offsetY;
+        splitClampMove(which, st, halfW, halfH);
+        splitShowItem(which);
+        return;
+      }
+
+      // resize
+      const dx = p.x - splitState.action.startX;
+      const desiredW = splitState.action.startW + dx;
+
+      const aspect = st.natW && st.natH ? (st.natW / st.natH) : 1;
+      st.w = desiredW;
+      splitClampResize(which, st, halfW, halfH, aspect);
+      splitShowItem(which);
+    });
+
+    const end = (e) => {
+      if (!splitState.action || splitState.action.which !== which) return;
+      splitState.action = null;
+      try { el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    };
+
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+  };
+
+  wireItem('a', splitItemA);
+  wireItem('b', splitItemB);
+
+  // apply
+  if (splitApplyBtn) {
+    splitApplyBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applySplit();
+    });
+  }
+
+  window.addEventListener('resize', () => {
+    if (!splitState.open) return;
+    splitLayoutDefaults();
+  });
+}
+
 // crop state (coords are in cropStage coordinate space)
-const CROP_ASPECT = 16 / 9;
 const CROP_MIN_W = 60;
+
+function getCropAspect() {
+  // width / height
+  const a = cropState && cropState.aspect ? cropState.aspect : (16 / 9);
+  return a > 0 ? a : (16 / 9);
+}
+
 let cropState = {
   open: false,
   storedName: null,
-  originalRelativePath: null,
+  originalRelativePath: null, // current working file (upload/<storedName>)
+  sourceRelativePath: null,   // immutable source (upload-original/<storedName>)
+  aspect: 16 / 9,
+  aspectLabel: '16:9',
   imgBox: null, // { x, y, w, h } in stage coords
   rect: { x: 0, y: 0, w: 0, h: 0 },
   action: null, // { type: 'move'|'resize', handle?: 'tl'|'tr'|'bl'|'br', startRect, startX, startY, offsetX, offsetY }
@@ -68,6 +807,11 @@ function setMainPreviewFromItem(item) {
     preview.style.display = 'none';
     preview.removeAttribute('src');
     preview.alt = '';
+
+    if (toolButtons) {
+      toolButtons.hidden = true;
+    }
+
     return;
   }
 
@@ -77,6 +821,10 @@ function setMainPreviewFromItem(item) {
   preview.src = withCacheBust(src, item.storedName);
   preview.style.display = 'block';
   preview.alt = item.originalName || item.storedName || 'original';
+
+  if (toolButtons) {
+    toolButtons.hidden = false;
+  }
 }
 
 function pad2(n) {
@@ -126,7 +874,7 @@ function setActiveRow(storedName) {
 }
 
 async function deleteRow(storedName) {
-  const ok = confirm('Удалить запись и все связанные файлы безвозвратно?');
+  const ok = await confirmDeleteAsync(storedName);
   if (!ok) return;
 
   try {
@@ -226,6 +974,12 @@ function ensureTableRowForUpload(data, opts) {
     cells.set(w, td);
   }
 
+  // Split result cell
+  const tdSplit = document.createElement('td');
+  tdSplit.className = 'split-cell empty col-split';
+  tdSplit.textContent = '—';
+  tr.appendChild(tdSplit);
+
   // Кнопка удаления (крестик)
   const tdDel = document.createElement('td');
   tdDel.className = 'col-del';
@@ -248,13 +1002,17 @@ function ensureTableRowForUpload(data, opts) {
   // новая запись сверху
   filesTbody.insertBefore(tr, filesTbody.firstChild);
 
-  uploads.set(storedName, { tr, cells, created: new Set() });
+  uploads.set(storedName, { tr, cells, splitTd: tdSplit, created: new Set() });
   if (makeActive) {
     setActiveRow(storedName);
   }
 
   // Клик по строке делает её "активной" (т.е. на неё будут применяться кнопки размеров)
-  tr.addEventListener('click', () => {
+  tr.addEventListener('click', (e) => {
+    // If user clicked a link inside the row, the viewer/link handler should handle it.
+    const a = e && e.target && e.target.closest ? e.target.closest('a') : null;
+    if (a) return;
+
     const sn = tr.dataset.storedName;
     if (!sn) return;
 
@@ -289,6 +1047,10 @@ function hydrateRowFromHistory(item) {
       setCellLink(item.storedName, w, rel);
       u.created.add(w);
     }
+  }
+
+  if (item.splitRelativePath) {
+    setSplitCellLink(item.storedName, item.splitRelativePath);
   }
 }
 
@@ -353,6 +1115,18 @@ function setCellLink(storedName, width, relativePath) {
   td.appendChild(makeA(withCacheBust(relativePath, storedName), String(width)));
 }
 
+function setSplitCellLink(storedName, relativePath) {
+  const u = uploads.get(storedName);
+  if (!u || !u.splitTd) return;
+
+  const td = u.splitTd;
+  td.classList.remove('empty');
+  td.textContent = '';
+
+  const href = withCacheBust(relativePath, storedName);
+  td.appendChild(makeImageLink(href, href, 'split'));
+}
+
 function resetSizeButtons() {
   if (!sizeButtons) return;
   sizeButtons.hidden = true;
@@ -385,8 +1159,8 @@ function updateSizeButtonsForCurrent() {
     }
 
     const already = u && u.created && u.created.has(w);
-    const tooBig = w >= imageWidth;
-    btn.disabled = !!already || tooBig;
+    // Allow upscaling: even if original is small, user may want to generate bigger sizes.
+    btn.disabled = !!already;
   }
 }
 
@@ -465,14 +1239,28 @@ if (sizeButtons) {
   });
 }
 
-async function upload(file) {
+async function upload(files) {
+  const list = Array.isArray(files) ? files : Array.from(files || []);
+
+  if (list.length <= 0) {
+    return;
+  }
+
+  if (list.length > 15) {
+    hint.textContent = 'Можно загрузить максимум 15 файлов за раз.';
+    showResult({ error: 'too_many_files', max: 15, selected: list.length });
+    return;
+  }
+
   setBusy(true);
   showResult('Загрузка...');
   resetSizeButtons();
 
   try {
     const fd = new FormData();
-    fd.append('file', file);
+    for (const f of list) {
+      fd.append('files', f);
+    }
 
     const res = await fetch('upload', {
       method: 'POST',
@@ -489,30 +1277,32 @@ async function upload(file) {
       return;
     }
 
-    showResult(data);
+    // Backend returns an array for multi-upload; keep backward compatibility.
+    const items = Array.isArray(data) ? data : [data];
+    showResult(items);
 
-    // Запоминаем загруженный файл как "текущий"
-    lastUpload = {
-      storedName: data && data.storedName,
-      originalRelativePath: data && data.originalRelativePath,
-      previewRelativePath: data && data.previewRelativePath,
-      imageWidth: data && data.imageWidth,
-      imageHeight: data && data.imageHeight
-    };
+    // Create rows for each uploaded file; make last one active.
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const makeActive = i === items.length - 1;
+      ensureTableRowForUpload(it, { createdAt: it && it.createdAt, makeActive });
 
-    // Создаём строку в таблице (для каждого оригинала — отдельная строка)
-    ensureTableRowForUpload(data, { createdAt: data.createdAt, makeActive: true });
+      if (makeActive) {
+        lastUpload = {
+          storedName: it && it.storedName,
+          originalRelativePath: it && it.originalRelativePath,
+          previewRelativePath: it && it.previewRelativePath,
+          imageWidth: it && it.imageWidth,
+          imageHeight: it && it.imageHeight
+        };
+      }
+    }
 
-    // Обновляем кнопки размеров (активны только допустимые и ещё не созданные)
     updateSizeButtonsForCurrent();
 
-    if (data && data.imageWidth && data.imageHeight) {
-      hint.textContent = 'Выберите размер слева от превью.';
-    } else if (data && data.originalRelativePath) {
-      hint.textContent = 'Файл загружен (не изображение).';
-    } else {
-      hint.textContent = 'Файл загружен, но ссылка недоступна.';
-    }
+    hint.textContent = items.length === 1
+      ? 'Файл загружен.'
+      : `Загружено файлов: ${items.length}.`; 
   } catch (e) {
     showResult(String(e));
   } finally {
@@ -527,37 +1317,43 @@ saveBtn.addEventListener('click', () => {
 });
 
 fileInput.addEventListener('change', () => {
-  const file = fileInput.files && fileInput.files[0];
-  selectedFile = file || null;
+  const files = fileInput.files ? Array.from(fileInput.files) : [];
+
+  selectedFile = files[0] || null;
 
   if (!selectedFile) {
     preview.style.display = 'none';
     preview.removeAttribute('src');
     resetSizeButtons();
-    hint.textContent = 'Нажмите на дискету, выберите изображение — и оно загрузится.';
+    hint.textContent = 'Нажмите на дискету, выберите изображения — и они загрузятся.';
     showResult('');
     return;
   }
 
-  // Пока файл не загружен — сбрасываем lastUpload, чтобы клик по превью не пытался кадрировать старую запись
+  if (files.length > 15) {
+    preview.style.display = 'none';
+    preview.removeAttribute('src');
+    resetSizeButtons();
+    hint.textContent = 'Можно выбрать максимум 15 файлов за раз.';
+    showResult({ error: 'too_many_files', max: 15, selected: files.length });
+    return;
+  }
+
+  // Пока файлы не загружены — сбрасываем lastUpload, чтобы клик по превью не пытался кадрировать старую запись
   lastUpload = null;
   resetSizeButtons();
 
-  // Превью локального файла
+  // Превью первого локального файла
   preview.src = URL.createObjectURL(selectedFile);
   preview.style.display = 'block';
   preview.alt = selectedFile.name;
 
-  hint.textContent = 'Загружаю файл...';
+  hint.textContent = files.length === 1 ? 'Загружаю файл...' : `Загружаю файлов: ${files.length}...`;
   showResult({
-    selectedFile: {
-      name: selectedFile.name,
-      size: selectedFile.size,
-      type: selectedFile.type
-    }
+    selectedFiles: files.map(f => ({ name: f.name, size: f.size, type: f.type }))
   });
 
-  upload(selectedFile);
+  upload(files);
 });
 
 function setCropBusy(busy) {
@@ -607,11 +1403,12 @@ function initCropRect() {
   const b = cropState.imgBox;
   if (!b) return;
 
-  // стараемся взять ~80% площади по ширине, но чтобы влезало по высоте и держало 16:9
+  // стараемся взять ~80% площади по ширине, но чтобы влезало по высоте и держало выбранные пропорции
+  const aspect = getCropAspect();
   const maxW = b.w * 0.85;
-  const maxWByH = b.h * CROP_ASPECT;
+  const maxWByH = b.h * aspect;
   const w = Math.max(CROP_MIN_W, Math.min(maxW, maxWByH));
-  const h = w / CROP_ASPECT;
+  const h = w / aspect;
 
   const x = b.x + (b.w - w) / 2;
   const y = b.y + (b.h - h) / 2;
@@ -629,22 +1426,46 @@ function openCropModal() {
   cropState.open = true;
   cropState.storedName = lastUpload.storedName;
   cropState.originalRelativePath = lastUpload.originalRelativePath;
+  cropState.sourceRelativePath = `upload-original/${lastUpload.storedName}`;
   cropState.action = null;
   setCropBusy(false);
 
+  // Keep current aspect selection (default 16:9)
+  syncCropAspectButtons();
+
   cropModal.hidden = false;
+
+  const v = Date.now();
+  const sourceUrl = `${cropState.sourceRelativePath}?v=${v}`;
+  const fallbackUrl = `${cropState.originalRelativePath}?v=${v}`;
 
   // UI hint: show which file we are cropping + link to open it.
   if (cropSourceLabel) {
-    cropSourceLabel.textContent = `Режем оригинал: ${cropState.originalRelativePath}`;
+    cropSourceLabel.textContent = `Режем оригинал: ${cropState.sourceRelativePath}`;
   }
   if (cropOpenOriginal) {
-    cropOpenOriginal.href = `${cropState.originalRelativePath}?v=${Date.now()}`;
+    cropOpenOriginal.href = sourceUrl;
     cropOpenOriginal.hidden = false;
   }
 
-  // Загружаем оригинал в модалку; добавляем cache-buster, чтобы после crop браузер не показывал старую картинку
-  cropImg.src = `${cropState.originalRelativePath}?v=${Date.now()}`;
+  // Загружаем неизменённый оригинал в модалку. Если файла нет (старые записи), fallback на upload/.
+  cropImg.dataset.fallbackTried = '';
+  cropImg.onerror = () => {
+    if (cropImg.dataset.fallbackTried) return;
+    cropImg.dataset.fallbackTried = '1';
+
+    if (cropSourceLabel) {
+      cropSourceLabel.textContent = `Режем (fallback): ${cropState.originalRelativePath}`;
+    }
+    if (cropOpenOriginal) {
+      cropOpenOriginal.href = fallbackUrl;
+      cropOpenOriginal.hidden = false;
+    }
+
+    cropImg.src = fallbackUrl;
+  };
+
+  cropImg.src = sourceUrl;
   cropImg.alt = lastUpload.originalName || lastUpload.storedName || 'crop';
 
   // После загрузки картинки вычислим box и инициализируем прямоугольник
@@ -670,9 +1491,12 @@ function closeCropModal() {
   cropModal.hidden = true;
   cropState.open = false;
   cropState.action = null;
+  cropState.sourceRelativePath = null;
   setCropBusy(false);
 
   if (cropImg) {
+    cropImg.onerror = null;
+    delete cropImg.dataset.fallbackTried;
     cropImg.removeAttribute('src');
     cropImg.alt = '';
   }
@@ -721,7 +1545,7 @@ function clampResizeW(anchorX, anchorY, handle, desiredW) {
   maxH = Math.max(1, maxH);
 
   // Ограничение по высоте тоже переводим в ограничение по ширине
-  const maxWByH = maxH * CROP_ASPECT;
+  const maxWByH = maxH * getCropAspect();
   const hardMaxW = Math.max(1, Math.min(maxW, maxWByH));
 
   return Math.min(Math.max(desiredW, CROP_MIN_W), hardMaxW);
@@ -792,6 +1616,19 @@ async function applyCrop() {
 
 function wireCropUI() {
   if (!cropModal || !cropStage || !cropRectEl) return;
+
+  // Aspect buttons
+  if (cropAspectBtns && cropAspectBtns.length > 0) {
+    for (const b of cropAspectBtns) {
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const aw = Number(b.dataset.aw);
+        const ah = Number(b.dataset.ah);
+        setCropAspect(aw, ah);
+      });
+    }
+  }
 
   // Закрытие по кнопкам
   if (cropCancelBtn) cropCancelBtn.addEventListener('click', closeCropModal);
@@ -883,13 +1720,13 @@ function wireCropUI() {
     const dy = Math.abs(py - ay);
 
     const wFromX = dx;
-    const wFromY = dy * CROP_ASPECT;
+    const wFromY = dy * getCropAspect();
 
     let desiredW = Math.min(wFromX, wFromY);
     desiredW = clampResizeW(ax, ay, handle, desiredW);
 
     const newW = desiredW;
-    const newH = newW / CROP_ASPECT;
+    const newH = newW / getCropAspect();
 
     let x, y;
     if (handle === 'br') {
@@ -937,7 +1774,17 @@ if (preview) {
   });
 }
 
+// Tool buttons
+if (cropToolBtn) {
+  cropToolBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openCropModal();
+  });
+}
+
 wireCropUI();
+wireSplitUI();
 
 document.addEventListener('DOMContentLoaded', () => {
   loadHistory();
