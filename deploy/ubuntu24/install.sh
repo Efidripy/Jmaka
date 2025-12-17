@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# If started without sudo, re-run with sudo automatically.
+# We keep the original user HOME so the tarball can be stored in the user's directory.
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  echo "This installer needs sudo. Re-running with sudo..."
+  # Preserve the original user's HOME for defaults (~) and file access.
+  exec sudo -E JMAKA_ORIG_USER="${USER:-}" JMAKA_ORIG_HOME="${HOME:-}" bash "$0" "$@"
+fi
+
 # Jmaka Ubuntu 24 installer (wizard-friendly)
 # What it does:
 # - installs ASP.NET Core Runtime 10 into /opt/dotnet (if missing)
@@ -15,9 +23,20 @@ set -euo pipefail
 # - non-interactive:
 #     sudo bash deploy/ubuntu24/install.sh --name a --port 5010 --tar /var/www/jmaka/_bundles/jmaka.tar.gz --domain a.example.com --path-prefix /
 
+# Identify original (non-root) user/home (important when running via sudo)
+ORIG_USER="${JMAKA_ORIG_USER:-${SUDO_USER:-${USER:-}}}"
+ORIG_HOME="${JMAKA_ORIG_HOME:-""}"
+if [[ -z "$ORIG_HOME" && -n "$ORIG_USER" ]]; then
+  ORIG_HOME="$(getent passwd "$ORIG_USER" | cut -d: -f6 || true)"
+fi
+if [[ -z "$ORIG_HOME" ]]; then
+  ORIG_HOME="/root"
+fi
+
 NAME="jmaka"
 PORT="5010"
-APP_TAR="/tmp/jmaka.tar.gz"
+# Default tarball location: user's home, so it can be downloaded without root.
+APP_TAR="${ORIG_HOME}/jmaka.tar.gz"
 BASE_DIR=""
 
 # Optional interactive mode (for non-technical users)
@@ -52,6 +71,20 @@ require_root() {
     echo "ERROR: please run as root (use sudo)." >&2
     exit 1
   fi
+}
+
+expand_user_path() {
+  # Expands ~ and ~/... using the ORIGINAL user's home (not /root).
+  local p="$1"
+  if [[ "$p" == "~" ]]; then
+    echo "$ORIG_HOME"
+    return
+  fi
+  if [[ "$p" == "~/"* ]]; then
+    echo "$ORIG_HOME/${p:2}"
+    return
+  fi
+  echo "$p"
 }
 
 have_cmd() {
@@ -233,7 +266,8 @@ if [[ "$INTERACTIVE" -eq 1 ]]; then
     break
   done
 
-  prompt_default APP_TAR "Path to app bundle (.tar.gz)" "$APP_TAR"
+prompt_default APP_TAR "Path to app bundle (.tar.gz)" "$APP_TAR"
+  APP_TAR="$(expand_user_path "$APP_TAR")"
   prompt_default BASE_DIR "Base dir for this instance" "${BASE_DIR:-/var/www/jmaka/${NAME}}"
   prompt_default NGINX_DOMAIN "Domain/subdomain" "${NGINX_DOMAIN:-example.com}"
   prompt_default PATH_PREFIX "Path prefix (use / for root, or /jmaka/)" "${PATH_PREFIX}"
@@ -282,6 +316,7 @@ if [[ "$INTERACTIVE" -eq 1 ]]; then
 fi
 
 PATH_PREFIX="$(normalize_path_prefix "$PATH_PREFIX")"
+APP_TAR="$(expand_user_path "$APP_TAR")"
 
 if [[ -z "$NAME" ]]; then
   echo "ERROR: --name is required" >&2
@@ -310,7 +345,7 @@ fi
 
 if [[ ! -f "$APP_TAR" ]]; then
   echo "ERROR: app bundle not found at: $APP_TAR" >&2
-  echo "       upload it first, e.g. to /tmp/jmaka.tar.gz" >&2
+  echo "Download it first (recommended) to: ${ORIG_HOME}/jmaka.tar.gz" >&2
   exit 1
 fi
 
