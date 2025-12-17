@@ -24,6 +24,19 @@ let lastUpload = null; // { storedName, originalRelativePath, previewRelativePat
 // storedName -> { tr, cells: Map(width->td), created: Set(width) }
 const uploads = new Map();
 
+// After crop we overwrite files under the same URLs (preview/<storedName>, upload/<storedName>, resized/<w>/<storedName>).
+// Browsers/proxies may cache these aggressively, so we add a per-file cache-buster version.
+// storedName -> version (number)
+const cacheBust = new Map();
+
+function withCacheBust(relativeUrl, storedName) {
+  if (!relativeUrl || !storedName) return relativeUrl;
+  const v = cacheBust.get(storedName);
+  if (!v) return relativeUrl;
+  const sep = relativeUrl.includes('?') ? '&' : '?';
+  return `${relativeUrl}${sep}v=${v}`;
+}
+
 // crop state (coords are in cropStage coordinate space)
 const CROP_ASPECT = 16 / 9;
 const CROP_MIN_W = 60;
@@ -59,7 +72,7 @@ function setMainPreviewFromItem(item) {
   // Для превью используем миниатюру (preview/*), чтобы не грузить оригинал.
   // Важно: используем относительные пути, чтобы приложение могло жить под base-path (например /jmaka/).
   const src = item.previewRelativePath ? item.previewRelativePath : item.originalRelativePath;
-  preview.src = src;
+  preview.src = withCacheBust(src, item.storedName);
   preview.style.display = 'block';
   preview.alt = item.originalName || item.storedName || 'original';
 }
@@ -194,11 +207,11 @@ function ensureTableRowForUpload(data, opts) {
   // В таблице показываем миниатюру (preview/*), а ссылка ведёт на оригинал.
   // Если previewRelativePath нет (старые записи) — используем оригинал.
   if (data.imageWidth && data.imageHeight) {
-    const href = data.originalRelativePath;
-    const imgSrc = data.previewRelativePath ? data.previewRelativePath : href;
+    const href = withCacheBust(data.originalRelativePath, storedName);
+    const imgSrc = withCacheBust(data.previewRelativePath ? data.previewRelativePath : data.originalRelativePath, storedName);
     tdOrig.appendChild(makeImageLink(href, imgSrc, 'original'));
   } else {
-    tdOrig.appendChild(makeA(data.originalRelativePath, 'original'));
+    tdOrig.appendChild(makeA(withCacheBust(data.originalRelativePath, storedName), 'original'));
   }
 
   const cells = new Map();
@@ -281,7 +294,7 @@ async function loadHistory(preferStoredName) {
   if (!filesTbody) return [];
 
   try {
-    const res = await fetch('history');
+    const res = await fetch('history', { cache: 'no-store' });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch { data = []; }
@@ -335,7 +348,7 @@ function setCellLink(storedName, width, relativePath) {
   td.textContent = '';
 
   // В колонках размеров — только текстовая ссылка.
-  td.appendChild(makeA(relativePath, String(width)));
+  td.appendChild(makeA(withCacheBust(relativePath, storedName), String(width)));
 }
 
 function resetSizeButtons() {
@@ -742,6 +755,9 @@ async function applyCrop() {
     }
 
     showResult(data);
+
+    // Crop overwrites files under the same storedName, so bump cache-buster.
+    cacheBust.set(cropState.storedName, Date.now());
 
     // Обновляем таблицу/превью из истории. Плюс сохраняем выделение на этой же записи.
     await loadHistory(cropState.storedName);

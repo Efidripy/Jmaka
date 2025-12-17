@@ -93,20 +93,39 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 // Serve runtime files (resized/original uploads)
+// We overwrite these files in-place (crop, regenerate preview, recreate resized), so disable caching.
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(resizedDir),
-    RequestPath = "/resized"
+    RequestPath = "/resized",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
 });
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(uploadDir),
-    RequestPath = "/upload"
+    RequestPath = "/upload",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
 });
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(previewDir),
-    RequestPath = "/preview"
+    RequestPath = "/preview",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
 });
 
 app.UseAntiforgery();
