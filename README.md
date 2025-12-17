@@ -30,10 +30,9 @@
 ### Вариант A (рекомендуется) — скачать готовый архив из GitHub Releases
 Мы прикладываем готовые архивы к релизам и будем делать так всегда.
 
-Скачать архив 0.1.0b одной командой (на сервере):
+Скачать архив 0.1.0b одной командой (на сервере, в домашнюю папку пользователя):
 ```bash path=null start=null
-sudo mkdir -p /var/www/jmaka/_bundles
-sudo curl -L -o /var/www/jmaka/_bundles/jmaka-0.1.0b-linux-x64.tar.gz \
+curl -L -o ~/jmaka.tar.gz \
   https://github.com/Fastdust/Jmaka/releases/download/0.1.0b/jmaka-0.1.0b-linux-x64.tar.gz
 ```
 
@@ -45,7 +44,9 @@ sudo curl -L -o /var/www/jmaka/_bundles/jmaka-0.1.0b-linux-x64.tar.gz \
 
 ### Установка/обновление инстанса (мастер)
 На сервере (в папке репозитория):
-- `sudo bash deploy/ubuntu24/install.sh`
+- `bash deploy/ubuntu24/install.sh`
+
+Скрипт сам запросит sudo (если нужно) и по умолчанию возьмёт архив из `~/jmaka.tar.gz`.
 
 Скрипт задаст вопросы и:
 - разложит файлы в `/var/www/jmaka/<name>/app`
