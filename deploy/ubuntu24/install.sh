@@ -13,7 +13,7 @@ fi
 # What it does:
 # - installs ASP.NET Core Runtime 10 into /opt/dotnet (if missing)
 # - unpacks the app bundle to /var/www/jmaka/<name>/app
-# - stores data in /var/www/jmaka/<name>/storage (upload/upload-original/resized/preview/split/data)
+# - stores data in /var/www/jmaka/<name>/storage (upload/upload-original/resized/preview/split/split3/data)
 # - creates and starts a systemd service listening on 127.0.0.1:<port>
 # - can print OR write an nginx snippet/vhost file (optional)
 #
@@ -420,6 +420,7 @@ mkdir -p \
   "$DATA_DIR/upload-original" \
   "$DATA_DIR/preview" \
   "$DATA_DIR/split" \
+  "$DATA_DIR/split3" \
   "$DATA_DIR/resized" \
   "$DATA_DIR/data"
 

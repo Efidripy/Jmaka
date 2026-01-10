@@ -1,6 +1,9 @@
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Local dev storage
+.local-storage/
 *.swp
 *.swo
 .vscode/
@@ -45,12 +48,17 @@ src/Jmaka.Api/preview/*
 src/Jmaka.Api/split/*
 !src/Jmaka.Api/split/.gitkeep
 
+# Split3 outputs (runtime files)
+src/Jmaka.Api/split3/*
+!src/Jmaka.Api/split3/.gitkeep
+
 # Upload originals (runtime files)
 src/Jmaka.Api/upload-original/*
 !src/Jmaka.Api/upload-original/.gitkeep
 
 # History (runtime files)
 src/Jmaka.Api/data/history.json
+src/Jmaka.Api/data/composites.json
 !src/Jmaka.Api/data/.gitkeep
 
 # Build outputs

@@ -69,13 +69,16 @@ var uploadOriginalDir = Path.Combine(storageRoot, "upload-original");
 var resizedDir = Path.Combine(storageRoot, "resized");
 var previewDir = Path.Combine(storageRoot, "preview");
 var splitDir = Path.Combine(storageRoot, "split");
+var split3Dir = Path.Combine(storageRoot, "split3");
 var dataDir = Path.Combine(storageRoot, "data");
 var historyPath = Path.Combine(dataDir, "history.json");
+var compositesPath = Path.Combine(dataDir, "composites.json");
 Directory.CreateDirectory(uploadDir);
 Directory.CreateDirectory(uploadOriginalDir);
 Directory.CreateDirectory(resizedDir);
 Directory.CreateDirectory(previewDir);
 Directory.CreateDirectory(splitDir);
+Directory.CreateDirectory(split3Dir);
 Directory.CreateDirectory(dataDir);
 foreach (var w in resizeWidths)
 {
@@ -83,6 +86,7 @@ foreach (var w in resizeWidths)
 }
 
 var historyLock = new SemaphoreSlim(1, 1);
+var compositesLock = new SemaphoreSlim(1, 1);
 
 // Retention: delete entries/files older than N hours (default 48h)
 var retentionHours = 48;
@@ -102,6 +106,97 @@ string GetSplitFileName(string storedName)
     return $"{name}.jpg";
 }
 
+string GetSplit3FileName(string storedName)
+{
+    // One split3 result per source image (slot #1): split3/<storedName-noext>.jpg
+    var name = Path.GetFileNameWithoutExtension(storedName);
+    return $"{name}.jpg";
+}
+
+string MakeCompositeFileName()
+{
+    // e.g. 20260110-112233-123-<guid>.jpg
+    var ts = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss-fff");
+    return $"{ts}-{Guid.NewGuid():N}.jpg";
+}
+
+string? GetCompositeAbsolutePath(CompositeHistoryItem it)
+{
+    if (it is null || string.IsNullOrWhiteSpace(it.Kind) || string.IsNullOrWhiteSpace(it.RelativePath))
+    {
+        return null;
+    }
+
+    var fileName = Path.GetFileName(it.RelativePath);
+    if (string.IsNullOrWhiteSpace(fileName))
+    {
+        return null;
+    }
+
+    return string.Equals(it.Kind, "split3", StringComparison.OrdinalIgnoreCase)
+        ? Path.Combine(split3Dir, fileName)
+        : Path.Combine(splitDir, fileName);
+}
+
+void DeleteCompositesForStoredName(string storedName)
+{
+    // Remove composite outputs that were created from this storedName.
+    compositesLock.Wait();
+    try
+    {
+        if (!File.Exists(compositesPath))
+        {
+            return;
+        }
+
+        var json = File.ReadAllText(compositesPath);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return;
+        }
+
+        var items = JsonSerializer.Deserialize<List<CompositeHistoryItem>>(json) ?? new List<CompositeHistoryItem>();
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        var removed = items.Where(x => x.Sources != null && x.Sources.Any(s => string.Equals(s, storedName, StringComparison.Ordinal))).ToList();
+        if (removed.Count == 0)
+        {
+            return;
+        }
+
+        var kept = items.Where(x => !(x.Sources != null && x.Sources.Any(s => string.Equals(s, storedName, StringComparison.Ordinal)))).ToList();
+        var outJson = JsonSerializer.Serialize(kept, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(compositesPath, outJson);
+
+        foreach (var it in removed)
+        {
+            try
+            {
+                var abs = GetCompositeAbsolutePath(it);
+                if (!string.IsNullOrWhiteSpace(abs))
+                {
+                    TryDeleteFile(abs);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+    catch
+    {
+        // ignore
+    }
+    finally
+    {
+        compositesLock.Release();
+    }
+}
+
 void DeleteAllFilesForStoredName(string storedName)
 {
     // originals
@@ -111,8 +206,12 @@ void DeleteAllFilesForStoredName(string storedName)
     // preview
     TryDeleteFile(Path.Combine(previewDir, storedName));
 
-    // split
+    // legacy deterministic split outputs
     TryDeleteFile(Path.Combine(splitDir, GetSplitFileName(storedName)));
+    TryDeleteFile(Path.Combine(split3Dir, GetSplit3FileName(storedName)));
+
+    // composites created from this image
+    DeleteCompositesForStoredName(storedName);
 
     // resized
     foreach (var w in resizeWidths)
@@ -228,54 +327,83 @@ async Task PruneExpiredAsync(CancellationToken ct)
     await Migrate1260To1280Async(ct);
 
     var cutoff = DateTimeOffset.UtcNow - retention;
-    List<UploadHistoryItem> removed = new();
 
+    // 1) Prune upload history
+    List<UploadHistoryItem> removedUploads = new();
     await historyLock.WaitAsync(ct);
     try
     {
-        if (!File.Exists(historyPath))
+        if (File.Exists(historyPath))
         {
-            return;
-        }
+            var json = await File.ReadAllTextAsync(historyPath, ct);
+            if (!string.IsNullOrWhiteSpace(json))
+            {
+                var items = JsonSerializer.Deserialize<List<UploadHistoryItem>>(json) ?? new List<UploadHistoryItem>();
+                removedUploads = items.Where(x => x.CreatedAt < cutoff).ToList();
 
-        var json = await File.ReadAllTextAsync(historyPath, ct);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return;
+                if (removedUploads.Count > 0)
+                {
+                    var kept = items.Where(x => x.CreatedAt >= cutoff).ToList();
+                    var outJson = JsonSerializer.Serialize(kept, new JsonSerializerOptions { WriteIndented = true });
+                    await File.WriteAllTextAsync(historyPath, outJson, ct);
+                }
+            }
         }
-
-        var items = JsonSerializer.Deserialize<List<UploadHistoryItem>>(json) ?? new List<UploadHistoryItem>();
-        if (items.Count == 0)
-        {
-            return;
-        }
-
-        removed = items.Where(x => x.CreatedAt < cutoff).ToList();
-        if (removed.Count == 0)
-        {
-            return;
-        }
-
-        var kept = items.Where(x => x.CreatedAt >= cutoff).ToList();
-        var outJson = JsonSerializer.Serialize(kept, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(historyPath, outJson, ct);
     }
     catch
     {
         // ignore retention failures
-        return;
     }
     finally
     {
         historyLock.Release();
     }
 
-    // Delete files outside lock
-    foreach (var it in removed)
+    foreach (var it in removedUploads)
+    {
+        try { DeleteAllFilesForStoredName(it.StoredName); } catch { /* ignore */ }
+    }
+
+    // 2) Prune composites (Split/Split3 outputs)
+    List<CompositeHistoryItem> removedComposites = new();
+    await compositesLock.WaitAsync(ct);
+    try
+    {
+        if (File.Exists(compositesPath))
+        {
+            var json = await File.ReadAllTextAsync(compositesPath, ct);
+            if (!string.IsNullOrWhiteSpace(json))
+            {
+                var items = JsonSerializer.Deserialize<List<CompositeHistoryItem>>(json) ?? new List<CompositeHistoryItem>();
+                removedComposites = items.Where(x => x.CreatedAt < cutoff).ToList();
+
+                if (removedComposites.Count > 0)
+                {
+                    var kept = items.Where(x => x.CreatedAt >= cutoff).ToList();
+                    var outJson = JsonSerializer.Serialize(kept, new JsonSerializerOptions { WriteIndented = true });
+                    await File.WriteAllTextAsync(compositesPath, outJson, ct);
+                }
+            }
+        }
+    }
+    catch
+    {
+        // ignore
+    }
+    finally
+    {
+        compositesLock.Release();
+    }
+
+    foreach (var it in removedComposites)
     {
         try
         {
-            DeleteAllFilesForStoredName(it.StoredName);
+            var abs = GetCompositeAbsolutePath(it);
+            if (!string.IsNullOrWhiteSpace(abs))
+            {
+                TryDeleteFile(abs);
+            }
         }
         catch
         {
@@ -353,6 +481,17 @@ app.UseStaticFiles(new StaticFileOptions
         ctx.Context.Response.Headers["Expires"] = "0";
     }
 });
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(split3Dir),
+    RequestPath = "/split3",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
 
 app.UseAntiforgery();
 
@@ -360,6 +499,13 @@ app.MapGet("/history", async Task<IResult> (CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
     var items = await ReadHistoryAsync(historyPath, historyLock, ct);
+    return Results.Ok(items.OrderByDescending(x => x.CreatedAt).Take(200));
+});
+
+app.MapGet("/composites", async Task<IResult> (CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+    var items = await ReadCompositesAsync(compositesPath, compositesLock, ct);
     return Results.Ok(items.OrderByDescending(x => x.CreatedAt).Take(200));
 });
 
@@ -592,20 +738,20 @@ app.MapPost("/split", async Task<IResult> (SplitRequest req, CancellationToken c
         return Results.BadRequest(new { error = "invalid storedName" });
     }
 
-    // we build split from any of the supported resized widths (prefer client-selected width; fallback to 1280)
-    var widthA = req.SourceWidthA ?? 1280;
-    var widthB = req.SourceWidthB ?? 1280;
-
-    if (!resizeWidths.Contains(widthA) || !resizeWidths.Contains(widthB))
-    {
-        return Results.BadRequest(new { error = "unsupported source width" });
-    }
-
-    var srcA = Path.Combine(resizedDir, widthA.ToString(), storedNameA);
-    var srcB = Path.Combine(resizedDir, widthB.ToString(), storedNameB);
+    // split uses the current originals (upload/*). This avoids requiring pre-generated resized images.
+    // NOTE: this reflects the current state (after crop, upload/<storedName> is updated).
+    var srcA = Path.Combine(uploadDir, storedNameA);
+    var srcB = Path.Combine(uploadDir, storedNameB);
     if (!File.Exists(srcA) || !File.Exists(srcB))
     {
-        return Results.BadRequest(new { error = "both images must have the selected resized width generated" });
+        return Results.BadRequest(new { error = "original file not found" });
+    }
+
+    var infoA = await TryGetImageInfoAsync(srcA, ct);
+    var infoB = await TryGetImageInfoAsync(srcB, ct);
+    if (infoA.Width <= 0 || infoA.Height <= 0 || infoB.Width <= 0 || infoB.Height <= 0)
+    {
+        return Results.BadRequest(new { error = "file is not a supported image" });
     }
 
     const int outW = 1280;
@@ -614,7 +760,7 @@ app.MapPost("/split", async Task<IResult> (SplitRequest req, CancellationToken c
     var leftW = (outW - dividerW) / 2; // 636
     var rightW = outW - dividerW - leftW; // 637
 
-    var outFileName = GetSplitFileName(storedNameA);
+    var outFileName = MakeCompositeFileName();
     var outAbsolutePath = Path.Combine(splitDir, outFileName);
     var relPath = $"split/{outFileName}";
 
@@ -672,10 +818,14 @@ app.MapPost("/split", async Task<IResult> (SplitRequest req, CancellationToken c
 
         await SaveImageWithSafeTempAsync(output, outAbsolutePath, ct);
 
-        // Update history for image A
-        await UpsertSplitInHistoryAsync(historyPath, historyLock, storedNameA, relPath, ct);
+        var createdAt = DateTimeOffset.UtcNow;
+        await AppendCompositeAsync(
+            compositesPath,
+            compositesLock,
+            new CompositeHistoryItem("split", createdAt, relPath, new[] { storedNameA, storedNameB }),
+            ct);
 
-        return Results.Ok(new { ok = true, storedName = storedNameA, splitRelativePath = relPath });
+        return Results.Ok(new { ok = true, kind = "split", createdAt, relativePath = relPath });
     }
     catch (Exception ex)
     {
@@ -684,6 +834,139 @@ app.MapPost("/split", async Task<IResult> (SplitRequest req, CancellationToken c
 })
 .DisableAntiforgery()
 .Accepts<SplitRequest>("application/json")
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest);
+
+app.MapPost("/split3", async Task<IResult> (Split3Request req, CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+
+    if (string.IsNullOrWhiteSpace(req.StoredNameA)
+        || string.IsNullOrWhiteSpace(req.StoredNameB)
+        || string.IsNullOrWhiteSpace(req.StoredNameC))
+    {
+        return Results.BadRequest(new { error = "storedNameA, storedNameB and storedNameC are required" });
+    }
+
+    // sanitize
+    var storedNameA = Path.GetFileName(req.StoredNameA);
+    var storedNameB = Path.GetFileName(req.StoredNameB);
+    var storedNameC = Path.GetFileName(req.StoredNameC);
+    if (!string.Equals(storedNameA, req.StoredNameA, StringComparison.Ordinal)
+        || !string.Equals(storedNameB, req.StoredNameB, StringComparison.Ordinal)
+        || !string.Equals(storedNameC, req.StoredNameC, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "invalid storedName" });
+    }
+
+    // split3 uses the current originals (upload/*). This avoids requiring pre-generated resized images.
+    // NOTE: this reflects the current state (after crop, upload/<storedName> is updated).
+    var srcA = Path.Combine(uploadDir, storedNameA);
+    var srcB = Path.Combine(uploadDir, storedNameB);
+    var srcC = Path.Combine(uploadDir, storedNameC);
+    if (!File.Exists(srcA) || !File.Exists(srcB) || !File.Exists(srcC))
+    {
+        return Results.BadRequest(new { error = "original file not found" });
+    }
+
+    var infoA = await TryGetImageInfoAsync(srcA, ct);
+    var infoB = await TryGetImageInfoAsync(srcB, ct);
+    var infoC = await TryGetImageInfoAsync(srcC, ct);
+    if (infoA.Width <= 0 || infoA.Height <= 0
+        || infoB.Width <= 0 || infoB.Height <= 0
+        || infoC.Width <= 0 || infoC.Height <= 0)
+    {
+        return Results.BadRequest(new { error = "file is not a supported image" });
+    }
+
+    const int outW = 1280;
+    const int outH = 720;
+    const int dividerW = 7;
+    var panelW = (outW - (dividerW * 2)) / 3; // (1280 - 14) / 3 = 422
+
+    var outFileName = MakeCompositeFileName();
+    var outAbsolutePath = Path.Combine(split3Dir, outFileName);
+    var relPath = $"split3/{outFileName}";
+
+    try
+    {
+        using var p1 = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(panelW, outH, new SixLabors.ImageSharp.PixelFormats.Rgba32(0, 0, 0, 255));
+        using var p2 = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(panelW, outH, new SixLabors.ImageSharp.PixelFormats.Rgba32(0, 0, 0, 255));
+        using var p3 = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(panelW, outH, new SixLabors.ImageSharp.PixelFormats.Rgba32(0, 0, 0, 255));
+
+        static (int x, int y, int w, int h) MapRect(SplitViewRect r, int outPanelW, int outH)
+        {
+            var vw = r.ViewW <= 0 ? 1 : r.ViewW;
+            var vh = r.ViewH <= 0 ? 1 : r.ViewH;
+            var sx = outPanelW / vw;
+            var sy = outH / vh;
+
+            var x = (int)Math.Round(r.X * sx);
+            var y = (int)Math.Round(r.Y * sy);
+            var w = (int)Math.Round(r.W * sx);
+            var h = (int)Math.Round(r.H * sy);
+            return (x, y, Math.Max(1, w), Math.Max(1, h));
+        }
+
+        static async Task DrawAsync(Image<SixLabors.ImageSharp.PixelFormats.Rgba32> canvas, string srcPath, SplitViewRect r, int outPanelW, int outH, CancellationToken ct)
+        {
+            var (x, y, w, h) = MapRect(r, outPanelW, outH);
+            await using var input = File.OpenRead(srcPath);
+            using var img = await Image.LoadAsync<SixLabors.ImageSharp.PixelFormats.Rgba32>(input, ct);
+            img.Mutate(p => p.Resize(w, h));
+            canvas.Mutate(p => p.DrawImage(img, new Point(x, y), 1f));
+        }
+
+        await DrawAsync(p1, srcA, req.A, panelW, outH, ct);
+        await DrawAsync(p2, srcB, req.B, panelW, outH, ct);
+        await DrawAsync(p3, srcC, req.C, panelW, outH, ct);
+
+        using var output = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(outW, outH, new SixLabors.ImageSharp.PixelFormats.Rgba32(0, 0, 0, 255));
+        output.Mutate(p =>
+        {
+            p.DrawImage(p1, new Point(0, 0), 1f);
+            p.DrawImage(p2, new Point(panelW + dividerW, 0), 1f);
+            p.DrawImage(p3, new Point((panelW + dividerW) * 2, 0), 1f);
+        });
+
+        // White dividers (2 x 7px)
+        var white = new SixLabors.ImageSharp.PixelFormats.Rgba32(255, 255, 255, 255);
+        var x1 = panelW;
+        var x2 = panelW + dividerW + panelW;
+        output.ProcessPixelRows(accessor =>
+        {
+            for (var yy = 0; yy < outH; yy++)
+            {
+                var row = accessor.GetRowSpan(yy);
+                for (var xx = x1; xx < x1 + dividerW; xx++)
+                {
+                    row[xx] = white;
+                }
+                for (var xx = x2; xx < x2 + dividerW; xx++)
+                {
+                    row[xx] = white;
+                }
+            }
+        });
+
+        await SaveImageWithSafeTempAsync(output, outAbsolutePath, ct);
+
+        var createdAt = DateTimeOffset.UtcNow;
+        await AppendCompositeAsync(
+            compositesPath,
+            compositesLock,
+            new CompositeHistoryItem("split3", createdAt, relPath, new[] { storedNameA, storedNameB, storedNameC }),
+            ct);
+
+        return Results.Ok(new { ok = true, kind = "split3", createdAt, relativePath = relPath });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+})
+.DisableAntiforgery()
+.Accepts<Split3Request>("application/json")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
 
@@ -776,10 +1059,12 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
             TryDeleteFile(Path.Combine(resizedDir, rw.ToString(), storedName));
         }
 
-        // Удаляем split (если был) — он больше не соответствует текущему изображению
+        // Удаляем старые split/split3 + composites, созданные из этого изображения.
         TryDeleteFile(Path.Combine(splitDir, GetSplitFileName(storedName)));
+        TryDeleteFile(Path.Combine(split3Dir, GetSplit3FileName(storedName)));
+        DeleteCompositesForStoredName(storedName);
 
-        // Обновляем историю: размеры и сброс resized (+ сброс split)
+        // Обновляем историю: размеры и сброс resized
         await UpdateHistoryAfterCropAsync(historyPath, historyLock, storedName, w, h, ct);
 
         return Results.Ok(new
@@ -993,6 +1278,55 @@ static async Task AppendHistoryAsync(string historyPath, SemaphoreSlim historyLo
     await WriteHistoryAsync(historyPath, historyLock, items, ct);
 }
 
+static async Task<List<CompositeHistoryItem>> ReadCompositesAsync(string compositesPath, SemaphoreSlim compositesLock, CancellationToken ct)
+{
+    await compositesLock.WaitAsync(ct);
+    try
+    {
+        if (!File.Exists(compositesPath))
+        {
+            return new List<CompositeHistoryItem>();
+        }
+
+        var json = await File.ReadAllTextAsync(compositesPath, ct);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new List<CompositeHistoryItem>();
+        }
+
+        return JsonSerializer.Deserialize<List<CompositeHistoryItem>>(json) ?? new List<CompositeHistoryItem>();
+    }
+    catch
+    {
+        return new List<CompositeHistoryItem>();
+    }
+    finally
+    {
+        compositesLock.Release();
+    }
+}
+
+static async Task WriteCompositesAsync(string compositesPath, SemaphoreSlim compositesLock, List<CompositeHistoryItem> items, CancellationToken ct)
+{
+    await compositesLock.WaitAsync(ct);
+    try
+    {
+        var json = JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(compositesPath, json, ct);
+    }
+    finally
+    {
+        compositesLock.Release();
+    }
+}
+
+static async Task AppendCompositeAsync(string compositesPath, SemaphoreSlim compositesLock, CompositeHistoryItem entry, CancellationToken ct)
+{
+    var items = await ReadCompositesAsync(compositesPath, compositesLock, ct);
+    items.Add(entry);
+    await WriteCompositesAsync(compositesPath, compositesLock, items, ct);
+}
+
 static void TryDeleteFile(string path)
 {
     try
@@ -1051,27 +1385,6 @@ static async Task UpsertResizedInHistoryAsync(
     }
 }
 
-static async Task UpsertSplitInHistoryAsync(
-    string historyPath,
-    SemaphoreSlim historyLock,
-    string storedName,
-    string splitRelativePath,
-    CancellationToken ct)
-{
-    var items = await ReadHistoryAsync(historyPath, historyLock, ct);
-    for (var i = items.Count - 1; i >= 0; i--)
-    {
-        if (!string.Equals(items[i].StoredName, storedName, StringComparison.Ordinal))
-        {
-            continue;
-        }
-
-        items[i] = items[i] with { SplitRelativePath = splitRelativePath };
-        await WriteHistoryAsync(historyPath, historyLock, items, ct);
-        return;
-    }
-}
-
 static async Task UpdateHistoryAfterCropAsync(
     string historyPath,
     SemaphoreSlim historyLock,
@@ -1093,8 +1406,7 @@ static async Task UpdateHistoryAfterCropAsync(
             ImageWidth = newWidth,
             ImageHeight = newHeight,
             PreviewRelativePath = $"preview/{storedName}",
-            Resized = new Dictionary<int, string>(),
-            SplitRelativePath = null
+            Resized = new Dictionary<int, string>()
         };
         await WriteHistoryAsync(historyPath, historyLock, items, ct);
         return;
@@ -1110,9 +1422,21 @@ record SplitRequest(
     string StoredNameA,
     string StoredNameB,
     SplitViewRect A,
+    SplitViewRect B
+);
+record Split3Request(
+    string StoredNameA,
+    string StoredNameB,
+    string StoredNameC,
+    SplitViewRect A,
     SplitViewRect B,
-    int? SourceWidthA = null,
-    int? SourceWidthB = null
+    SplitViewRect C
+);
+record CompositeHistoryItem(
+    string Kind,
+    DateTimeOffset CreatedAt,
+    string RelativePath,
+    string[] Sources
 );
 record UploadHistoryItem(
     string StoredName,
@@ -1123,6 +1447,5 @@ record UploadHistoryItem(
     string? PreviewRelativePath,
     int? ImageWidth,
     int? ImageHeight,
-    Dictionary<int, string> Resized,
-    string? SplitRelativePath = null
+    Dictionary<int, string> Resized
 );

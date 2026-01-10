@@ -65,8 +65,7 @@ html, body {
 }
 
 .preview-wrap {
-  /* 64 (кнопки) + 12 (gap) + 200 (превью) + 12*2 (padding) = 300px минимум */
-  width: 320px;
+  width: min(560px, calc(100vw - 24px));
   border: 1px solid var(--border);
   background: rgba(17, 24, 39, 0.55);
   border-radius: 14px;
@@ -80,26 +79,22 @@ html, body {
   margin-bottom: 8px;
 }
 
-.preview-body {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.preview-controls {
+.main-controls {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
+/* Row 1: tools */
 .tool-buttons {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .tool-btn {
-  width: 64px;
+  width: 72px;
   padding: 6px 8px;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -114,19 +109,12 @@ html, body {
   border-color: rgba(96, 165, 250, 0.6);
 }
 
-.preview {
-  width: 200px;
-  height: auto;
-  display: none;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: rgba(0,0,0,0.25);
-}
-
+/* Row 2: sizes */
 .size-buttons {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .size-btn {
@@ -161,14 +149,39 @@ html, body {
   display: none;
 }
 
-.links-wrap {
+.tables-wrap {
   margin-top: 18px;
   width: 100%;
-  max-width: 760px;
+  max-width: 1180px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+@media (max-width: 980px) {
+  .tables-wrap {
+    flex-direction: column;
+    max-width: 760px;
+  }
+}
+
+.links-wrap {
+  width: 100%;
   border: 1px solid var(--border);
   background: rgba(17, 24, 39, 0.55);
   border-radius: 14px;
   padding: 12px;
+}
+
+.composites-wrap {
+  max-width: 360px;
+}
+
+@media (max-width: 980px) {
+  .composites-wrap {
+    max-width: 760px;
+  }
 }
 
 .links-title {
@@ -215,8 +228,12 @@ html, body {
   text-align: left;
 }
 
-.col-split {
-  width: 74px;
+.col-kind {
+  width: 70px;
+}
+
+.col-comp {
+  width: 92px;
 }
 
 .col-del {
@@ -503,8 +520,18 @@ html, body {
   flex-direction: column;
 }
 
+/* Avoid nested scrolling; instead, shrink content via responsive sizes */
 .split-card .modal-body {
-  overflow: auto;
+  overflow: hidden;
+}
+
+@media (max-height: 760px) {
+  .modal-card.split-card {
+    margin: 2vh auto;
+  }
+  .split-target-img {
+    height: 58px;
+  }
 }
 
 .split-controls {
@@ -571,7 +598,8 @@ html, body {
   border-radius: 14px;
   border: 1px solid var(--border);
   background: rgba(0,0,0,0.15);
-  max-height: 180px;
+  /* shrink on small screens to avoid scrolling inside the modal */
+  max-height: clamp(90px, 18vh, 180px);
   overflow: auto;
 }
 
@@ -602,7 +630,8 @@ html, body {
 .split-stage {
   position: relative;
   /* Keep stage inside viewport: limit height, keep 16:9 */
-  width: min(100%, calc(min(60vh, 520px) * 16 / 9));
+  height: clamp(220px, 44vh, 520px);
+  width: min(100%, calc(clamp(220px, 44vh, 520px) * 16 / 9));
   margin: 0 auto;
   aspect-ratio: 16 / 9;
   background: rgba(0,0,0,0.25);
@@ -631,7 +660,7 @@ html, body {
   width: calc(50% - 3.5px);
 }
 
-/* center divider */
+/* center divider (Split 2) */
 .split-stage::before {
   content: "";
   position: absolute;
@@ -643,6 +672,60 @@ html, body {
   background: rgba(255,255,255,0.95);
   z-index: 3;
   pointer-events: none;
+}
+
+/* Split3: two dividers + three equal panels */
+.split3-stage {
+  --split3-divider: 7px;
+  --split3-gaps: calc(var(--split3-divider) * 2);
+  --split3-third: calc((100% - var(--split3-gaps)) / 3);
+}
+
+/* Override Split's single divider */
+.split3-stage::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--split3-third);
+  width: var(--split3-divider);
+  background: rgba(255,255,255,0.95);
+  z-index: 3;
+  pointer-events: none;
+  transform: none;
+}
+
+.split3-stage::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--split3-third) + var(--split3-divider) + var(--split3-third));
+  width: var(--split3-divider);
+  background: rgba(255,255,255,0.95);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.split3-third {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  z-index: 1;
+  width: var(--split3-third);
+}
+
+.split3-third.one {
+  left: 0;
+}
+
+.split3-third.two {
+  left: calc(var(--split3-third) + var(--split3-divider));
+}
+
+.split3-third.three {
+  left: calc(var(--split3-third) + var(--split3-divider) + var(--split3-third) + var(--split3-divider));
 }
 
 .split-item {
