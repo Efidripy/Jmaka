@@ -3,7 +3,29 @@ const saveBtn = document.getElementById('saveBtn');
 const preview = document.getElementById('preview');
 const result = document.getElementById('result');
 const hint = document.getElementById('hint');
+
+// Debug output is hidden for regular users.
+// Enable it locally with: ?debug=1 (persists in localStorage), or by setting localStorage jmaka_debug=1.
+const DEBUG_KEY = 'jmaka_debug';
+const DEBUG_ENABLED = (() => {
+  try {
+    const qs = new URLSearchParams(window.location.search);
+    const q = qs.get('debug');
+    if (q === '1' || q === 'true') {
+      localStorage.setItem(DEBUG_KEY, '1');
+      return true;
+    }
+    if (q === '0' || q === 'false') {
+      localStorage.removeItem(DEBUG_KEY);
+      return false;
+    }
+    return localStorage.getItem(DEBUG_KEY) === '1';
+  } catch {
+    return false;
+  }
+})();
 const filesTbody = document.getElementById('filesTbody');
+const compositesTbody = document.getElementById('compositesTbody');
 const sizeButtons = document.getElementById('sizeButtons');
 const sizeBtns = sizeButtons ? Array.from(sizeButtons.querySelectorAll('button.size-btn')) : [];
 
@@ -194,6 +216,28 @@ const splitItemA = document.getElementById('splitItemA');
 const splitItemB = document.getElementById('splitItemB');
 const splitHint = document.getElementById('splitHint');
 
+// split3 modal elements
+const split3ToolBtn = document.getElementById('split3ToolBtn');
+const split3Modal = document.getElementById('split3Modal');
+const split3CloseBtn = document.getElementById('split3Close');
+const split3CancelBtn = document.getElementById('split3Cancel');
+const split3ApplyBtn = document.getElementById('split3Apply');
+const split3PickTargetA = document.getElementById('split3PickTargetA');
+const split3PickTargetB = document.getElementById('split3PickTargetB');
+const split3PickTargetC = document.getElementById('split3PickTargetC');
+const split3TargetImgA = document.getElementById('split3TargetImgA');
+const split3TargetImgB = document.getElementById('split3TargetImgB');
+const split3TargetImgC = document.getElementById('split3TargetImgC');
+const split3Gallery = document.getElementById('split3Gallery');
+const split3Stage = document.getElementById('split3Stage');
+const split3ThirdA = document.getElementById('split3ThirdA');
+const split3ThirdB = document.getElementById('split3ThirdB');
+const split3ThirdC = document.getElementById('split3ThirdC');
+const split3ItemA = document.getElementById('split3ItemA');
+const split3ItemB = document.getElementById('split3ItemB');
+const split3ItemC = document.getElementById('split3ItemC');
+const split3Hint = document.getElementById('split3Hint');
+
 function syncCropAspectButtons() {
   if (!cropAspectBtns || cropAspectBtns.length === 0) return;
   for (const b of cropAspectBtns) {
@@ -237,6 +281,43 @@ function withCacheBust(relativeUrl, storedName) {
   return `${relativeUrl}${sep}v=${v}`;
 }
 
+function detectEdgeHandle(localX, localY, w, h, edgePx) {
+  const edge = edgePx || 12;
+  if (!w || !h) return { handle: null, cursor: 'move' };
+
+  const nearLeft = localX >= 0 && localX <= edge;
+  const nearRight = localX >= (w - edge) && localX <= w;
+  const nearTop = localY >= 0 && localY <= edge;
+  const nearBottom = localY >= (h - edge) && localY <= h;
+
+  let handle = null;
+  if (nearLeft && nearTop) handle = 'tl';
+  else if (nearRight && nearTop) handle = 'tr';
+  else if (nearLeft && nearBottom) handle = 'bl';
+  else if (nearRight && nearBottom) handle = 'br';
+  else if (nearTop) handle = 't';
+  else if (nearBottom) handle = 'b';
+  else if (nearLeft) handle = 'l';
+  else if (nearRight) handle = 'r';
+
+  let cursor = 'move';
+  if (handle === 'tl' || handle === 'br') cursor = 'nwse-resize';
+  else if (handle === 'tr' || handle === 'bl') cursor = 'nesw-resize';
+  else if (handle === 'l' || handle === 'r') cursor = 'ew-resize';
+  else if (handle === 't' || handle === 'b') cursor = 'ns-resize';
+
+  return { handle, cursor };
+}
+
+function cursorForHandle(handle) {
+  const h = String(handle || '');
+  if (h === 'tl' || h === 'br') return 'nwse-resize';
+  if (h === 'tr' || h === 'bl') return 'nesw-resize';
+  if (h === 'l' || h === 'r') return 'ew-resize';
+  if (h === 't' || h === 'b') return 'ns-resize';
+  return 'move';
+}
+
 // -------- Split tool --------
 
 function getSplitHalfRect(which) {
@@ -272,8 +353,8 @@ const splitState = {
   open: false,
   history: [],
   action: null,
-  a: { storedName: null, sourceWidth: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 },
-  b: { storedName: null, sourceWidth: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 }
+  a: { storedName: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 },
+  b: { storedName: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 }
 };
 
 function splitShowItem(which) {
@@ -394,24 +475,9 @@ function splitSyncGallerySelection() {
   }
 }
 
-function splitGetBestResizedWidth(item) {
-  if (!item || !item.resized) return null;
-
-  // Prefer the biggest available for quality.
-  for (let i = TARGET_WIDTHS.length - 1; i >= 0; i--) {
-    const w = TARGET_WIDTHS[i];
-    const rel = item.resized[String(w)] || item.resized[w];
-    if (rel) return w;
-  }
-
-  return null;
-}
-
-function splitGetResizedUrl(item, width) {
-  if (!item || !item.resized || !width) return null;
-  const rel = item.resized[String(width)] || item.resized[width];
-  if (!rel) return null;
-  return withCacheBust(String(rel), item.storedName);
+function splitGetOriginalUrl(item) {
+  if (!item || !item.originalRelativePath) return null;
+  return withCacheBust(String(item.originalRelativePath), item.storedName);
 }
 
 function splitSetItemFromStoredName(which, storedName) {
@@ -427,16 +493,14 @@ function splitSetItemFromStoredName(which, storedName) {
     return;
   }
 
-  const bestW = splitGetBestResizedWidth(item);
-  const url = bestW ? splitGetResizedUrl(item, bestW) : null;
-  if (!url || !bestW) {
+  const url = splitGetOriginalUrl(item);
+  if (!url) {
     el.hidden = true;
     return;
   }
 
   const st = which === 'a' ? splitState.a : splitState.b;
   st.storedName = item.storedName;
-  st.sourceWidth = bestW;
   st.url = url;
 
   el.hidden = false;
@@ -472,7 +536,8 @@ async function openSplitModal() {
   }
 
   splitState.history = await fetchHistoryRaw();
-  const candidates = splitState.history.filter(it => !!splitGetBestResizedWidth(it));
+  // allow any uploaded image (no need to pre-generate resized)
+  const candidates = splitState.history.filter(it => !!(it && it.originalRelativePath && it.imageWidth && it.imageHeight));
 
   // build gallery
   if (splitGallery) {
@@ -504,7 +569,7 @@ async function openSplitModal() {
     }
   }
 
-  // default picks: prefer current active image for slot #1 (if it has 1280)
+  // default picks: prefer current active image for slot #1
   const preferredA = (lastUpload && lastUpload.storedName && candidates.some(x => x && x.storedName === lastUpload.storedName))
     ? lastUpload.storedName
     : (candidates[0] && candidates[0].storedName);
@@ -529,7 +594,7 @@ async function openSplitModal() {
   if (splitHint) {
     splitHint.textContent = candidates.length > 0
       ? 'Выберите слот (#1/#2), затем кликните по превью. Дальше перетаскивайте/масштабируйте.'
-      : 'Нет картинок с готовым размером 1280. Сначала сделайте resize 1280.';
+      : 'Нет загруженных изображений.';
   }
 
   if (splitApplyBtn) {
@@ -575,11 +640,6 @@ async function applySplit() {
     return;
   }
 
-  if (!a.sourceWidth || !b.sourceWidth) {
-    if (splitHint) splitHint.textContent = 'Для выбранных картинок нет готовых размеров (720/1080/1280/1920/2440).';
-    return;
-  }
-
   const halfA = splitGetHalfSize('a');
   const halfB = splitGetHalfSize('b');
 
@@ -591,8 +651,6 @@ async function applySplit() {
   const req = {
     storedNameA: a.storedName,
     storedNameB: b.storedName,
-    sourceWidthA: a.sourceWidth,
-    sourceWidthB: b.sourceWidth,
     a: { x: a.x, y: a.y, w: a.w, h: a.h, viewW: halfA.w, viewH: halfA.h },
     b: { x: b.x, y: b.y, w: b.w, h: b.h, viewW: halfB.w, viewH: halfB.h }
   };
@@ -620,10 +678,11 @@ async function applySplit() {
 
     showResult(data);
 
-    // split output is associated with storedNameA (slot #1)
+    // Split output is independent, but sources may change; still bump cache for involved sources.
     cacheBust.set(a.storedName, Date.now());
+    cacheBust.set(b.storedName, Date.now());
 
-    await loadHistory(a.storedName);
+    await loadComposites();
 
     hint.textContent = 'Split создан.';
     closeSplitModal();
@@ -698,7 +757,7 @@ function wireSplitUI() {
       if (!splitState.open) return;
 
       const t = e.target;
-      const handle = t && t.dataset ? t.dataset.h : null;
+      let handle = t && t.dataset ? t.dataset.h : null;
       const p = splitGetPointerPosInHalf(which, e);
 
       const st = which === 'a' ? splitState.a : splitState.b;
@@ -710,6 +769,13 @@ function wireSplitUI() {
       splitState.pickTarget = which;
       if (splitPickTargetA) splitPickTargetA.classList.toggle('is-active', which === 'a');
       if (splitPickTargetB) splitPickTargetB.classList.toggle('is-active', which === 'b');
+
+      // If not on a handle element - allow resize by grabbing ANY point near the edges.
+      if (!handle) {
+        const localX = p.x - st.x;
+        const localY = p.y - st.y;
+        handle = detectEdgeHandle(localX, localY, st.w, st.h, 12).handle;
+      }
 
       if (handle) {
         splitState.action = {
@@ -734,16 +800,31 @@ function wireSplitUI() {
     });
 
     el.addEventListener('pointermove', (e) => {
-      if (!splitState.open || !splitState.action) return;
-      if (splitState.action.which !== which) return;
-
-      const { w: halfW, h: halfH } = splitGetHalfSize(which);
-      if (!halfW || !halfH) return;
+      if (!splitState.open) return;
 
       const st = which === 'a' ? splitState.a : splitState.b;
       if (!st || !st.url) return;
 
       const p = splitGetPointerPosInHalf(which, e);
+
+      // Idle: update cursor so user can grab edges anywhere.
+      if (!splitState.action) {
+        const t = e.target;
+        const hFromEl = t && t.dataset ? t.dataset.h : null;
+        if (hFromEl) {
+          el.style.cursor = cursorForHandle(hFromEl);
+        } else {
+          const localX = p.x - st.x;
+          const localY = p.y - st.y;
+          el.style.cursor = detectEdgeHandle(localX, localY, st.w, st.h, 12).cursor;
+        }
+        return;
+      }
+
+      if (splitState.action.which !== which) return;
+
+      const { w: halfW, h: halfH } = splitGetHalfSize(which);
+      if (!halfW || !halfH) return;
 
       if (splitState.action.type === 'move') {
         st.x = p.x - splitState.action.offsetX;
@@ -827,6 +908,541 @@ function wireSplitUI() {
   });
 }
 
+// -------- Split3 tool (3 panels) --------
+
+function getSplit3PanelRect(which) {
+  const el = which === 'a' ? split3ThirdA : (which === 'b' ? split3ThirdB : split3ThirdC);
+  if (!el) return null;
+  return el.getBoundingClientRect();
+}
+
+function split3GetPointerPosInPanel(which, e) {
+  const r = getSplit3PanelRect(which);
+  if (!r) return { x: 0, y: 0 };
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function split3BringToFront(which) {
+  if (!split3ItemA || !split3ItemB || !split3ItemC) return;
+  const z = { a: 1, b: 1, c: 1 };
+  z[which] = 3;
+  // keep deterministic stacking for others
+  if (which === 'a') { z.b = 2; z.c = 1; }
+  if (which === 'b') { z.a = 1; z.c = 2; }
+  if (which === 'c') { z.a = 2; z.b = 1; }
+  split3ItemA.style.zIndex = String(z.a);
+  split3ItemB.style.zIndex = String(z.b);
+  split3ItemC.style.zIndex = String(z.c);
+}
+
+function split3GetPanelSize(which) {
+  const r = getSplit3PanelRect(which);
+  if (!r) return { w: 0, h: 0 };
+  return { w: r.width, h: r.height };
+}
+
+const split3State = {
+  open: false,
+  history: [],
+  action: null,
+  pickTarget: 'a',
+  a: { storedName: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 },
+  b: { storedName: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 },
+  c: { storedName: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 }
+};
+
+function split3ShowItem(which) {
+  const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
+  const el = which === 'a' ? split3ItemA : (which === 'b' ? split3ItemB : split3ItemC);
+  if (!el) return;
+  el.style.left = `${st.x}px`;
+  el.style.top = `${st.y}px`;
+  el.style.width = `${st.w}px`;
+  el.style.height = `${st.h}px`;
+}
+
+function split3ClampMove(which, st, w, h) {
+  const minVisible = 24;
+  const minX = -st.w + minVisible;
+  const maxX = w - minVisible;
+  const minY = -st.h + minVisible;
+  const maxY = h - minVisible;
+  st.x = Math.min(Math.max(st.x, minX), maxX);
+  st.y = Math.min(Math.max(st.y, minY), maxY);
+}
+
+function split3LayoutDefaults() {
+  for (const which of ['a', 'b', 'c']) {
+    const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
+    if (!st.url || !st.natW || !st.natH) continue;
+
+    const { w: panelW, h: panelH } = split3GetPanelSize(which);
+    if (!panelW || !panelH) continue;
+
+    const aspect = st.natW / st.natH;
+    const targetW = panelW * 1.15;
+    st.w = targetW;
+    st.h = st.w / aspect;
+
+    if (st.h > panelH * 0.9) {
+      st.h = panelH * 0.9;
+      st.w = st.h * aspect;
+    }
+
+    st.x = (panelW - st.w) / 2;
+    st.y = (panelH - st.h) / 2;
+
+    split3ClampMove(which, st, panelW, panelH);
+    split3ShowItem(which);
+  }
+}
+
+function split3UpdateTargetThumb(which) {
+  const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
+  const img = which === 'a' ? split3TargetImgA : (which === 'b' ? split3TargetImgB : split3TargetImgC);
+  if (!img) return;
+
+  if (!st || !st.storedName) {
+    img.removeAttribute('src');
+    img.alt = '';
+    return;
+  }
+
+  const item = split3State.history.find(x => x && x.storedName === st.storedName);
+  const src = item ? splitGetPreviewUrl(item) : null;
+  if (!src) {
+    img.removeAttribute('src');
+    img.alt = '';
+    return;
+  }
+
+  img.src = src;
+  img.alt = item.originalName || item.storedName || '';
+}
+
+function split3SyncGallerySelection() {
+  if (!split3Gallery) return;
+  const a = split3State.a && split3State.a.storedName;
+  const b = split3State.b && split3State.b.storedName;
+  const c = split3State.c && split3State.c.storedName;
+
+  for (const btn of Array.from(split3Gallery.querySelectorAll('button.split-thumb'))) {
+    const sn = btn.dataset && btn.dataset.sn ? btn.dataset.sn : '';
+    btn.classList.toggle('is-selected', sn && (sn === a || sn === b || sn === c));
+  }
+}
+
+function split3SetItemFromStoredName(which, storedName) {
+  const el = which === 'a' ? split3ItemA : (which === 'b' ? split3ItemB : split3ItemC);
+  if (!el) return;
+
+  const img = el.querySelector('img.split-img');
+  if (!img) return;
+
+  const item = split3State.history.find(x => x && x.storedName === storedName);
+  if (!item) {
+    el.hidden = true;
+    return;
+  }
+
+  const url = splitGetOriginalUrl(item);
+  if (!url) {
+    el.hidden = true;
+    return;
+  }
+
+  const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
+  st.storedName = item.storedName;
+  st.url = url;
+
+  el.hidden = false;
+  split3BringToFront(which);
+
+  img.onload = () => {
+    st.natW = img.naturalWidth || 0;
+    st.natH = img.naturalHeight || 0;
+    split3LayoutDefaults();
+  };
+
+  img.onerror = () => {
+    if (split3Hint) split3Hint.textContent = 'Не удалось загрузить картинку для Split3.';
+  };
+
+  img.src = url;
+  img.alt = item.originalName || item.storedName || '';
+}
+
+async function openSplit3Modal() {
+  if (!split3Modal) return;
+
+  split3Modal.hidden = false;
+  split3State.open = true;
+  split3State.pickTarget = 'a';
+
+  if (split3PickTargetA) split3PickTargetA.classList.add('is-active');
+  if (split3PickTargetB) split3PickTargetB.classList.remove('is-active');
+  if (split3PickTargetC) split3PickTargetC.classList.remove('is-active');
+
+  if (split3Hint) split3Hint.textContent = 'Загружаю список...';
+
+  split3State.history = await fetchHistoryRaw();
+  const candidates = split3State.history.filter(it => !!(it && it.originalRelativePath && it.imageWidth && it.imageHeight));
+
+  if (split3Gallery) {
+    split3Gallery.textContent = '';
+
+    for (const it of candidates) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'split-thumb';
+      btn.dataset.sn = it.storedName;
+      btn.title = it.originalName || it.storedName || '';
+
+      const img = document.createElement('img');
+      img.alt = it.originalName || it.storedName || '';
+      img.loading = 'lazy';
+      img.src = splitGetPreviewUrl(it) || '';
+
+      btn.appendChild(img);
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const which = split3State.pickTarget || 'a';
+        split3SetItemFromStoredName(which, it.storedName);
+        split3UpdateTargetThumb(which);
+        split3SyncGallerySelection();
+      });
+
+      split3Gallery.appendChild(btn);
+    }
+  }
+
+  const preferredA = (lastUpload && lastUpload.storedName && candidates.some(x => x && x.storedName === lastUpload.storedName))
+    ? lastUpload.storedName
+    : (candidates[0] && candidates[0].storedName);
+
+  const first = preferredA;
+  const second = candidates.find(x => x && x.storedName !== first) && candidates.find(x => x && x.storedName !== first).storedName;
+  const third = candidates.find(x => x && x.storedName !== first && x.storedName !== second)
+    && candidates.find(x => x && x.storedName !== first && x.storedName !== second).storedName;
+
+  if (split3ItemA) split3ItemA.hidden = true;
+  if (split3ItemB) split3ItemB.hidden = true;
+  if (split3ItemC) split3ItemC.hidden = true;
+
+  if (first) {
+    split3SetItemFromStoredName('a', first);
+    split3UpdateTargetThumb('a');
+  }
+  if (second || first) {
+    split3SetItemFromStoredName('b', second || first);
+    split3UpdateTargetThumb('b');
+  }
+  if (third || second || first) {
+    split3SetItemFromStoredName('c', third || second || first);
+    split3UpdateTargetThumb('c');
+  }
+
+  split3SyncGallerySelection();
+
+  if (split3Hint) {
+    split3Hint.textContent = candidates.length > 0
+      ? 'Выберите слот (#1/#2/#3), затем кликните по превью. Дальше перетаскивайте/масштабируйте.'
+      : 'Нет загруженных изображений.';
+  }
+
+  if (split3ApplyBtn) {
+    split3ApplyBtn.disabled = candidates.length === 0;
+  }
+}
+
+function closeSplit3Modal() {
+  if (!split3Modal) return;
+  split3Modal.hidden = true;
+  split3State.open = false;
+  split3State.action = null;
+
+  if (split3ItemA) split3ItemA.hidden = true;
+  if (split3ItemB) split3ItemB.hidden = true;
+  if (split3ItemC) split3ItemC.hidden = true;
+
+  if (split3Gallery) split3Gallery.textContent = '';
+
+  if (split3TargetImgA) split3TargetImgA.removeAttribute('src');
+  if (split3TargetImgB) split3TargetImgB.removeAttribute('src');
+  if (split3TargetImgC) split3TargetImgC.removeAttribute('src');
+
+  // stop image loading
+  for (const el of [split3ItemA, split3ItemB, split3ItemC]) {
+    if (!el) continue;
+    const img = el.querySelector('img.split-img');
+    if (img) img.removeAttribute('src');
+  }
+}
+
+async function applySplit3() {
+  if (!split3State.open) return;
+
+  const a = split3State.a;
+  const b = split3State.b;
+  const c = split3State.c;
+
+  if (!a || !a.storedName || !b || !b.storedName || !c || !c.storedName) {
+    if (split3Hint) split3Hint.textContent = 'Выберите три картинки.';
+    return;
+  }
+
+  const panelA = split3GetPanelSize('a');
+  const panelB = split3GetPanelSize('b');
+  const panelC = split3GetPanelSize('c');
+
+  if (!panelA.w || !panelA.h || !panelB.w || !panelB.h || !panelC.w || !panelC.h) {
+    if (split3Hint) split3Hint.textContent = 'Не удалось определить размер поля.';
+    return;
+  }
+
+  const req = {
+    storedNameA: a.storedName,
+    storedNameB: b.storedName,
+    storedNameC: c.storedName,
+    a: { x: a.x, y: a.y, w: a.w, h: a.h, viewW: panelA.w, viewH: panelA.h },
+    b: { x: b.x, y: b.y, w: b.w, h: b.h, viewW: panelB.w, viewH: panelB.h },
+    c: { x: c.x, y: c.y, w: c.w, h: c.h, viewW: panelC.w, viewH: panelC.h }
+  };
+
+  try {
+    if (split3ApplyBtn) split3ApplyBtn.disabled = true;
+    setBusy(true);
+    if (split3Hint) split3Hint.textContent = 'Склеиваю...';
+
+    const res = await fetch('split3', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req)
+    });
+
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = text; }
+
+    if (!res.ok) {
+      if (split3Hint) split3Hint.textContent = 'Ошибка split3.';
+      showResult(data);
+      return;
+    }
+
+    showResult(data);
+
+    // Split3 output is independent, but sources may change; still bump cache for involved sources.
+    cacheBust.set(a.storedName, Date.now());
+    cacheBust.set(b.storedName, Date.now());
+    cacheBust.set(c.storedName, Date.now());
+    await loadComposites();
+
+    hint.textContent = 'Split3 создан.';
+    closeSplit3Modal();
+  } catch (e) {
+    if (split3Hint) split3Hint.textContent = 'Ошибка split3.';
+    showResult(String(e));
+  } finally {
+    setBusy(false);
+    if (split3ApplyBtn) split3ApplyBtn.disabled = false;
+  }
+}
+
+function wireSplit3UI() {
+  if (!split3Modal || !split3Stage || !split3ThirdA || !split3ThirdB || !split3ThirdC) return;
+
+  if (split3ToolBtn) {
+    split3ToolBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openSplit3Modal();
+    });
+  }
+
+  const close = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    closeSplit3Modal();
+  };
+
+  if (split3CloseBtn) split3CloseBtn.addEventListener('click', close);
+  if (split3CancelBtn) split3CancelBtn.addEventListener('click', close);
+
+  split3Modal.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.close) {
+      closeSplit3Modal();
+    }
+  });
+
+  const setPickTarget = (which) => {
+    split3State.pickTarget = which;
+    if (split3PickTargetA) split3PickTargetA.classList.toggle('is-active', which === 'a');
+    if (split3PickTargetB) split3PickTargetB.classList.toggle('is-active', which === 'b');
+    if (split3PickTargetC) split3PickTargetC.classList.toggle('is-active', which === 'c');
+  };
+
+  if (split3PickTargetA) split3PickTargetA.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); setPickTarget('a'); });
+  if (split3PickTargetB) split3PickTargetB.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); setPickTarget('b'); });
+  if (split3PickTargetC) split3PickTargetC.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); setPickTarget('c'); });
+
+  const wireItem = (which, el) => {
+    if (!el) return;
+
+    el.addEventListener('pointerdown', (e) => {
+      if (!split3State.open) return;
+
+      const t = e.target;
+      let handle = t && t.dataset ? t.dataset.h : null;
+      const p = split3GetPointerPosInPanel(which, e);
+
+      const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
+      if (!st || !st.url) return;
+
+      split3BringToFront(which);
+      split3State.pickTarget = which;
+      if (split3PickTargetA) split3PickTargetA.classList.toggle('is-active', which === 'a');
+      if (split3PickTargetB) split3PickTargetB.classList.toggle('is-active', which === 'b');
+      if (split3PickTargetC) split3PickTargetC.classList.toggle('is-active', which === 'c');
+
+      // If not on a handle element - allow resize by grabbing ANY point near the edges.
+      if (!handle) {
+        const localX = p.x - st.x;
+        const localY = p.y - st.y;
+        handle = detectEdgeHandle(localX, localY, st.w, st.h, 12).handle;
+      }
+
+      if (handle) {
+        split3State.action = {
+          type: 'resize',
+          which,
+          handle,
+          startX: p.x,
+          startY: p.y,
+          startRect: { x: st.x, y: st.y, w: st.w, h: st.h }
+        };
+      } else {
+        split3State.action = {
+          type: 'move',
+          which,
+          offsetX: p.x - st.x,
+          offsetY: p.y - st.y
+        };
+      }
+
+      try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      e.preventDefault();
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      if (!split3State.open) return;
+
+      const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
+      if (!st || !st.url) return;
+
+      const p = split3GetPointerPosInPanel(which, e);
+
+      // Idle: update cursor so user can grab edges anywhere.
+      if (!split3State.action) {
+        const t = e.target;
+        const hFromEl = t && t.dataset ? t.dataset.h : null;
+        if (hFromEl) {
+          el.style.cursor = cursorForHandle(hFromEl);
+        } else {
+          const localX = p.x - st.x;
+          const localY = p.y - st.y;
+          el.style.cursor = detectEdgeHandle(localX, localY, st.w, st.h, 12).cursor;
+        }
+        return;
+      }
+
+      if (split3State.action.which !== which) return;
+
+      const { w: panelW, h: panelH } = split3GetPanelSize(which);
+      if (!panelW || !panelH) return;
+
+      if (split3State.action.type === 'move') {
+        st.x = p.x - split3State.action.offsetX;
+        st.y = p.y - split3State.action.offsetY;
+        split3ClampMove(which, st, panelW, panelH);
+        split3ShowItem(which);
+        return;
+      }
+
+      const dx = p.x - split3State.action.startX;
+      const dy = p.y - split3State.action.startY;
+
+      const aspect = st.natW && st.natH ? (st.natW / st.natH) : 1;
+      const sr = split3State.action.startRect;
+      const h = String(split3State.action.handle || 'br');
+
+      const dwX = (h.includes('l') ? -dx : dx);
+      const dwY = (h.includes('t') ? -dy : dy) * aspect;
+
+      let dw;
+      if (h === 'l' || h === 'r') {
+        dw = dwX;
+      } else if (h === 't' || h === 'b') {
+        dw = dwY;
+      } else {
+        dw = Math.abs(dwX) >= Math.abs(dwY) ? dwX : dwY;
+      }
+
+      const minW = 60;
+      const maxWHard = 20000;
+      const newW = Math.max(minW, Math.min(sr.w + dw, maxWHard));
+      const newH = newW / aspect;
+
+      let newX = sr.x;
+      let newY = sr.y;
+      if (h.includes('l')) {
+        newX = sr.x + (sr.w - newW);
+      }
+      if (h.includes('t')) {
+        newY = sr.y + (sr.h - newH);
+      }
+
+      st.x = newX;
+      st.y = newY;
+      st.w = newW;
+      st.h = newH;
+
+      split3ClampMove(which, st, panelW, panelH);
+      split3ShowItem(which);
+    });
+
+    const end = (e) => {
+      if (!split3State.action || split3State.action.which !== which) return;
+      split3State.action = null;
+      try { el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    };
+
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+  };
+
+  wireItem('a', split3ItemA);
+  wireItem('b', split3ItemB);
+  wireItem('c', split3ItemC);
+
+  if (split3ApplyBtn) {
+    split3ApplyBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applySplit3();
+    });
+  }
+
+  window.addEventListener('resize', () => {
+    if (!split3State.open) return;
+    split3LayoutDefaults();
+  });
+}
+
 // crop state (coords are in cropStage coordinate space)
 const CROP_MIN_W = 60;
 
@@ -855,21 +1471,32 @@ function setBusy(busy) {
 }
 
 function showResult(obj) {
+  if (!DEBUG_ENABLED || !result) {
+    // Do not show technical output to regular users.
+    return;
+  }
+
+  try { result.hidden = false; } catch { /* ignore */ }
   result.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
 }
 
 function setMainPreviewFromItem(item) {
-  if (!preview) return;
+  const hasItem = !!(item && item.originalRelativePath);
 
-  if (!item || !item.originalRelativePath) {
+  // Tools availability should not depend on the preview element.
+  if (toolButtons) {
+    toolButtons.hidden = !hasItem;
+  }
+
+  // Preview is optional (we may remove it from UI).
+  if (!preview) {
+    return;
+  }
+
+  if (!hasItem) {
     preview.style.display = 'none';
     preview.removeAttribute('src');
     preview.alt = '';
-
-    if (toolButtons) {
-      toolButtons.hidden = true;
-    }
-
     return;
   }
 
@@ -879,10 +1506,6 @@ function setMainPreviewFromItem(item) {
   preview.src = withCacheBust(src, item.storedName);
   preview.style.display = 'block';
   preview.alt = item.originalName || item.storedName || 'original';
-
-  if (toolButtons) {
-    toolButtons.hidden = false;
-  }
 }
 
 function pad2(n) {
@@ -1032,12 +1655,6 @@ function ensureTableRowForUpload(data, opts) {
     cells.set(w, td);
   }
 
-  // Split result cell
-  const tdSplit = document.createElement('td');
-  tdSplit.className = 'split-cell empty col-split';
-  tdSplit.textContent = '—';
-  tr.appendChild(tdSplit);
-
   // Кнопка удаления (крестик)
   const tdDel = document.createElement('td');
   tdDel.className = 'col-del';
@@ -1060,7 +1677,7 @@ function ensureTableRowForUpload(data, opts) {
   // новая запись сверху
   filesTbody.insertBefore(tr, filesTbody.firstChild);
 
-  uploads.set(storedName, { tr, cells, splitTd: tdSplit, created: new Set() });
+  uploads.set(storedName, { tr, cells, created: new Set() });
   if (makeActive) {
     setActiveRow(storedName);
   }
@@ -1107,9 +1724,6 @@ function hydrateRowFromHistory(item) {
     }
   }
 
-  if (item.splitRelativePath) {
-    setSplitCellLink(item.storedName, item.splitRelativePath);
-  }
 }
 
 async function loadHistory(preferStoredName) {
@@ -1173,17 +1787,6 @@ function setCellLink(storedName, width, relativePath) {
   td.appendChild(makeA(withCacheBust(relativePath, storedName), String(width)));
 }
 
-function setSplitCellLink(storedName, relativePath) {
-  const u = uploads.get(storedName);
-  if (!u || !u.splitTd) return;
-
-  const td = u.splitTd;
-  td.classList.remove('empty');
-  td.textContent = '';
-
-  const href = withCacheBust(relativePath, storedName);
-  td.appendChild(makeImageLink(href, href, 'split'));
-}
 
 function resetSizeButtons() {
   if (!sizeButtons) return;
@@ -1358,6 +1961,10 @@ async function upload(files) {
 
     updateSizeButtonsForCurrent();
 
+    // Ensure tools row becomes visible for the active item (even if we don't show the main preview).
+    const activeItem = items.length > 0 ? items[items.length - 1] : null;
+    setMainPreviewFromItem(activeItem);
+
     hint.textContent = items.length === 1
       ? 'Файл загружен.'
       : `Загружено файлов: ${items.length}.`; 
@@ -1380,8 +1987,10 @@ fileInput.addEventListener('change', () => {
   selectedFile = files[0] || null;
 
   if (!selectedFile) {
-    preview.style.display = 'none';
-    preview.removeAttribute('src');
+    if (preview) {
+      preview.style.display = 'none';
+      preview.removeAttribute('src');
+    }
     resetSizeButtons();
     hint.textContent = 'Нажмите на дискету, выберите изображения — и они загрузятся.';
     showResult('');
@@ -1389,22 +1998,26 @@ fileInput.addEventListener('change', () => {
   }
 
   if (files.length > 15) {
-    preview.style.display = 'none';
-    preview.removeAttribute('src');
+    if (preview) {
+      preview.style.display = 'none';
+      preview.removeAttribute('src');
+    }
     resetSizeButtons();
     hint.textContent = 'Можно выбрать максимум 15 файлов за раз.';
     showResult({ error: 'too_many_files', max: 15, selected: files.length });
     return;
   }
 
-  // Пока файлы не загружены — сбрасываем lastUpload, чтобы клик по превью не пытался кадрировать старую запись
+  // Пока файлы не загружены — сбрасываем lastUpload
   lastUpload = null;
   resetSizeButtons();
+  setMainPreviewFromItem(null);
 
-  // Превью первого локального файла
-  preview.src = URL.createObjectURL(selectedFile);
-  preview.style.display = 'block';
-  preview.alt = selectedFile.name;
+  // Превью локального файла больше не показываем (UI без превью).
+  if (preview) {
+    try { preview.removeAttribute('src'); } catch { /* ignore */ }
+    preview.style.display = 'none';
+  }
 
   hint.textContent = files.length === 1 ? 'Загружаю файл...' : `Загружаю файлов: ${files.length}...`;
   showResult({
@@ -1843,7 +2456,59 @@ if (cropToolBtn) {
 
 wireCropUI();
 wireSplitUI();
+wireSplit3UI();
+
+async function loadComposites() {
+  if (!compositesTbody) return [];
+
+  try {
+    const res = await fetch('composites', { cache: 'no-store' });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = []; }
+
+    if (!res.ok || !Array.isArray(data)) {
+      return [];
+    }
+
+    compositesTbody.textContent = '';
+
+    for (const it of data) {
+      const tr = document.createElement('tr');
+
+      const tdDt = document.createElement('td');
+      tdDt.className = 'col-dt';
+      tdDt.textContent = it && it.createdAt ? formatDateTime(new Date(it.createdAt)) : formatDateTime(new Date());
+
+      const tdKind = document.createElement('td');
+      tdKind.className = 'col-kind';
+      const kind = (it && it.kind) ? String(it.kind) : '';
+      tdKind.textContent = kind === 'split3' ? 'Split3' : 'Split';
+
+      const tdImg = document.createElement('td');
+      tdImg.className = 'col-comp';
+      const rel = it && it.relativePath ? String(it.relativePath) : '';
+      if (rel) {
+        tdImg.appendChild(makeImageLink(rel, rel, kind || 'split'));
+      } else {
+        tdImg.textContent = '—';
+        tdImg.classList.add('empty');
+      }
+
+      tr.appendChild(tdDt);
+      tr.appendChild(tdKind);
+      tr.appendChild(tdImg);
+
+      compositesTbody.appendChild(tr);
+    }
+
+    return data;
+  } catch {
+    return [];
+  }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   loadHistory();
+  loadComposites();
 });

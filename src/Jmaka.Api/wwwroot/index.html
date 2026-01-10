@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jmaka 0.1.0i</title>
-  <link rel="stylesheet" href="app.css?v=0.1.0i" />
+  <title>Jmaka 0.1.0j</title>
+  <link rel="stylesheet" href="app.css?v=0.1.0j" />
 </head>
 <body>
   <main class="page">
@@ -17,25 +17,22 @@
       </button>
 
       <div class="preview-wrap">
-        <div class="preview-title">Jmaka 0.1.0i</div>
+        <div class="preview-title">Jmaka 0.1.0j</div>
 
-        <div class="preview-body">
-          <div class="preview-controls" aria-label="Панель управления">
-            <div id="sizeButtons" class="size-buttons" aria-label="Размеры" hidden>
-              <button class="size-btn" type="button" data-w="2440" disabled>2440</button>
-              <button class="size-btn" type="button" data-w="1920" disabled>1920</button>
-              <button class="size-btn" type="button" data-w="1280" disabled>1280</button>
-              <button class="size-btn" type="button" data-w="1080" disabled>1080</button>
-              <button class="size-btn" type="button" data-w="720" disabled>720</button>
-            </div>
-
-            <div class="tool-buttons" aria-label="Инструменты" hidden>
-              <button id="cropToolBtn" class="btn tool-btn" type="button">Crop</button>
-              <button id="splitToolBtn" class="btn tool-btn" type="button">Split</button>
-            </div>
+        <div class="main-controls" aria-label="Панель управления">
+          <div class="tool-buttons" aria-label="Инструменты" hidden>
+            <button id="splitToolBtn" class="btn tool-btn" type="button">Split</button>
+            <button id="split3ToolBtn" class="btn tool-btn" type="button">Split3</button>
+            <button id="cropToolBtn" class="btn tool-btn" type="button">Crop</button>
           </div>
 
-          <img id="preview" class="preview" alt="" />
+          <div id="sizeButtons" class="size-buttons" aria-label="Размеры" hidden>
+            <button class="size-btn" type="button" data-w="2440" disabled>2440</button>
+            <button class="size-btn" type="button" data-w="1920" disabled>1920</button>
+            <button class="size-btn" type="button" data-w="1280" disabled>1280</button>
+            <button class="size-btn" type="button" data-w="1080" disabled>1080</button>
+            <button class="size-btn" type="button" data-w="720" disabled>720</button>
+          </div>
         </div>
 
         <div id="hint" class="hint">Нажмите на дискету, выберите изображение — и оно загрузится.</div>
@@ -44,29 +41,46 @@
       <input id="fileInput" class="file-input" type="file" accept="image/*" multiple />
     </section>
 
-    <div class="links-wrap" aria-label="Таблица файлов">
-      <div class="links-title">Готовые файлы</div>
-      <div class="table-wrap">
-        <table class="files-table" aria-label="Готовые файлы">
-          <thead>
-            <tr>
-              <th class="col-dt">Дата - время</th>
-              <th class="col-orig">Оригинал</th>
-              <th class="col-size">720</th>
-              <th class="col-size">1080</th>
-              <th class="col-size">1280</th>
-              <th class="col-size">1920</th>
-              <th class="col-size">2440</th>
-              <th class="col-split">Split</th>
-              <th class="col-del"></th>
-            </tr>
-          </thead>
-          <tbody id="filesTbody"></tbody>
-        </table>
+    <div class="tables-wrap" aria-label="Таблицы файлов">
+      <div class="links-wrap" aria-label="Таблица файлов">
+        <div class="links-title">Готовые файлы</div>
+        <div class="table-wrap">
+          <table class="files-table" aria-label="Готовые файлы">
+            <thead>
+              <tr>
+                <th class="col-dt">Дата - время</th>
+                <th class="col-orig">Оригинал</th>
+                <th class="col-size">720</th>
+                <th class="col-size">1080</th>
+                <th class="col-size">1280</th>
+                <th class="col-size">1920</th>
+                <th class="col-size">2440</th>
+                <th class="col-del"></th>
+              </tr>
+            </thead>
+            <tbody id="filesTbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="links-wrap composites-wrap" aria-label="Таблица Split">
+        <div class="links-title">Split / Split3</div>
+        <div class="table-wrap">
+          <table class="files-table" aria-label="Split / Split3">
+            <thead>
+              <tr>
+                <th class="col-dt">Дата - время</th>
+                <th class="col-kind">Тип</th>
+                <th class="col-comp">Результат</th>
+              </tr>
+            </thead>
+            <tbody id="compositesTbody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
-    <pre id="result" class="result" aria-label="Результат"></pre>
+    <pre id="result" class="result" aria-label="Результат" hidden></pre>
   </main>
 
   <!-- Модалка подтверждения удаления -->
@@ -133,7 +147,7 @@
       </div>
       <div class="modal-body">
         <div class="split-controls" aria-label="Выбор изображений">
-          <div class="split-label">Выберите слот, затем кликните по превью (любой готовый размер 720/1080/1280/1920/2440):</div>
+          <div class="split-label">Выберите слот, затем кликните по превью из списка загруженных изображений:</div>
           <div class="split-targets">
             <button id="splitPickTargetA" class="split-target is-active" type="button" aria-label="Выбор для картинки 1">
               <div class="split-target-title">#1</div>
@@ -185,6 +199,90 @@
     </div>
   </div>
 
+  <!-- Split3 -->
+  <div id="split3Modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card split-card split3-card" role="dialog" aria-modal="true" aria-label="Split3">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-title">Split3 (3 изображения → 16:9)</div>
+          <div class="modal-sub">
+            <span class="modal-subtext">Поле 1280×720. Перетаскивайте и масштабируйте изображения, пропорции сохраняются.</span>
+          </div>
+        </div>
+        <button id="split3Close" class="modal-x" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="split-controls" aria-label="Выбор изображений">
+          <div class="split-label">Выберите слот, затем кликните по превью из списка загруженных изображений:</div>
+          <div class="split-targets">
+            <button id="split3PickTargetA" class="split-target is-active" type="button" aria-label="Выбор для картинки 1">
+              <div class="split-target-title">#1</div>
+              <img id="split3TargetImgA" class="split-target-img" alt="" />
+            </button>
+            <button id="split3PickTargetB" class="split-target" type="button" aria-label="Выбор для картинки 2">
+              <div class="split-target-title">#2</div>
+              <img id="split3TargetImgB" class="split-target-img" alt="" />
+            </button>
+            <button id="split3PickTargetC" class="split-target" type="button" aria-label="Выбор для картинки 3">
+              <div class="split-target-title">#3</div>
+              <img id="split3TargetImgC" class="split-target-img" alt="" />
+            </button>
+          </div>
+          <div id="split3Gallery" class="split-gallery" aria-label="Превью"></div>
+        </div>
+        <div id="split3Stage" class="split-stage split3-stage" aria-label="Поле 16:9">
+          <div id="split3ThirdA" class="split-half split3-third one" aria-label="Треть 1">
+            <div id="split3ItemA" class="split-item" data-i="a" hidden>
+              <img class="split-img" alt="" />
+              <div class="split-handle tl" data-h="tl"></div>
+              <div class="split-handle t" data-h="t"></div>
+              <div class="split-handle tr" data-h="tr"></div>
+              <div class="split-handle r" data-h="r"></div>
+              <div class="split-handle br" data-h="br"></div>
+              <div class="split-handle b" data-h="b"></div>
+              <div class="split-handle bl" data-h="bl"></div>
+              <div class="split-handle l" data-h="l"></div>
+            </div>
+          </div>
+          <div id="split3ThirdB" class="split-half split3-third two" aria-label="Треть 2">
+            <div id="split3ItemB" class="split-item" data-i="b" hidden>
+              <img class="split-img" alt="" />
+              <div class="split-handle tl" data-h="tl"></div>
+              <div class="split-handle t" data-h="t"></div>
+              <div class="split-handle tr" data-h="tr"></div>
+              <div class="split-handle r" data-h="r"></div>
+              <div class="split-handle br" data-h="br"></div>
+              <div class="split-handle b" data-h="b"></div>
+              <div class="split-handle bl" data-h="bl"></div>
+              <div class="split-handle l" data-h="l"></div>
+            </div>
+          </div>
+          <div id="split3ThirdC" class="split-half split3-third three" aria-label="Треть 3">
+            <div id="split3ItemC" class="split-item" data-i="c" hidden>
+              <img class="split-img" alt="" />
+              <div class="split-handle tl" data-h="tl"></div>
+              <div class="split-handle t" data-h="t"></div>
+              <div class="split-handle tr" data-h="tr"></div>
+              <div class="split-handle r" data-h="r"></div>
+              <div class="split-handle br" data-h="br"></div>
+              <div class="split-handle b" data-h="b"></div>
+              <div class="split-handle bl" data-h="bl"></div>
+              <div class="split-handle l" data-h="l"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div id="split3Hint" class="modal-hint">Выберите три картинки.</div>
+        <div class="modal-actions">
+          <button id="split3Cancel" class="btn" type="button">Отмена</button>
+          <button id="split3Apply" class="btn primary" type="button">Склеить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Модалка кадрирования -->
   <div id="cropModal" class="modal" hidden>
     <div class="modal-backdrop" data-close="1"></div>
@@ -227,6 +325,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=0.1.0i"></script>
+  <script src="app.js?v=0.1.0j"></script>
 </body>
 </html>
