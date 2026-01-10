@@ -36,11 +36,11 @@
 #### Одна команда: скачать архив + (опционально) распаковать в домашнюю папку + запустить установщик
 ```bash path=null start=null
 curl -L -o ~/jmaka.tar.gz \
-  https://github.com/Fastdust/Jmaka-Releases/releases/latest/download/jmaka-linux-x64.tar.gz \
+  https://github.com/Fastdust/Jmaka/releases/latest/download/jmaka-linux-x64.tar.gz \
 && mkdir -p ~/jmaka_bundle \
 && tar -xzf ~/jmaka.tar.gz -C ~/jmaka_bundle \
 && curl -L -o ~/jmaka-install.sh \
-  https://raw.githubusercontent.com/Fastdust/Jmaka-Releases/main/install.sh \
+  https://raw.githubusercontent.com/Fastdust/Jmaka/main/deploy/ubuntu24/install.sh \
 && bash ~/jmaka-install.sh --interactive
 ```
 
