@@ -13,7 +13,7 @@ fi
 # What it does:
 # - installs ASP.NET Core Runtime 10 into /opt/dotnet (if missing)
 # - unpacks the app bundle to /var/www/jmaka/<name>/app
-# - stores data in /var/www/jmaka/<name>/storage (upload/resized/preview/data)
+# - stores data in /var/www/jmaka/<name>/storage (upload/upload-original/resized/preview/split/data)
 # - creates and starts a systemd service listening on 127.0.0.1:<port>
 # - can print OR write an nginx snippet/vhost file (optional)
 #
@@ -413,6 +413,15 @@ APP_DIR="${BASE_DIR}/app"
 DATA_DIR="${BASE_DIR}/storage"
 
 mkdir -p "$APP_DIR" "$DATA_DIR"
+
+# Pre-create storage subfolders (helps when migrating existing installs and avoids permissions surprises)
+mkdir -p \
+  "$DATA_DIR/upload" \
+  "$DATA_DIR/upload-original" \
+  "$DATA_DIR/preview" \
+  "$DATA_DIR/split" \
+  "$DATA_DIR/resized" \
+  "$DATA_DIR/data"
 
 # App files are read-only and owned by root.
 chown -R root:root "$BASE_DIR"
