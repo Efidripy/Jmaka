@@ -437,7 +437,18 @@ tar -xzf "$APP_TAR" -C "$APP_DIR"
 chown -R root:root "$APP_DIR"
 chmod -R a=rX "$APP_DIR"
 
-SERVICE_NAME="jmaka-${NAME}"
+escape_systemd_unit_name() {
+  local raw="$1"
+  if have_cmd systemd-escape; then
+    systemd-escape "$raw"
+  else
+    echo "$raw"
+  fi
+}
+
+SERVICE_NAME_RAW="jmaka-${NAME}"
+SERVICE_NAME="$(escape_systemd_unit_name "$SERVICE_NAME_RAW")"
+SERVICE_UNIT="${SERVICE_NAME}.service"
 
 # Base path for app: "/" or "/jmaka" (without trailing slash)
 BASE_PATH_ENV="/"
@@ -445,7 +456,7 @@ if [[ "$PATH_PREFIX" != "/" ]]; then
   BASE_PATH_ENV="${PATH_PREFIX%/}"
 fi
 
-cat >/etc/systemd/system/${SERVICE_NAME}.service <<EOF
+cat >/etc/systemd/system/${SERVICE_UNIT} <<EOF
 [Unit]
 Description=Jmaka API (${NAME})
 After=network.target
@@ -470,15 +481,15 @@ EOF
 
 require_cmd systemctl
 systemctl daemon-reload
-systemctl enable --now "${SERVICE_NAME}"
+systemctl enable --now "${SERVICE_UNIT}"
 
 echo ""
-echo "OK. Service started: ${SERVICE_NAME} (listening on 127.0.0.1:${PORT})"
+echo "OK. Service started: ${SERVICE_UNIT} (listening on 127.0.0.1:${PORT})"
 echo "Installed to: ${BASE_DIR}"
 echo "  app:     ${APP_DIR}"
 echo "  storage: ${DATA_DIR}"
-echo "Status: systemctl status ${SERVICE_NAME} --no-pager"
-echo "Logs:   journalctl -u ${SERVICE_NAME} -n 200 --no-pager"
+echo "Status: systemctl status ${SERVICE_UNIT} --no-pager"
+echo "Logs:   journalctl -u ${SERVICE_UNIT} -n 200 --no-pager"
 nginx_snippet() {
   if [[ "$PATH_PREFIX" == "/" ]]; then
     cat <<NGINX
