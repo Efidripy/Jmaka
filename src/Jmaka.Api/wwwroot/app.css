@@ -15,13 +15,20 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  overflow-y: auto;
 }
 
 .page {
-  height: 100%;
-  display: grid;
-  place-items: center;
-  padding: 24px;
+  /* Avoid vertical centering: on 1080p (and smaller) content can be taller than viewport,
+     and centering makes the page feel "cut off" and awkward to scroll. */
+  min-height: 100%;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 18px;
+  padding: 24px 24px 40px;
 }
 
 .uploader {
@@ -29,19 +36,58 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 24px;
+  flex-wrap: wrap;
 }
 
 .save-btn {
-  width: 96px;
-  height: 96px;
+  width: 132px;
+  min-height: 104px;
+  padding: 10px 12px;
   border-radius: 18px;
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   transition: transform 120ms ease, border-color 120ms ease;
+}
+
+.save-icon {
+  position: relative;
+  width: 64px;
+  height: 64px;
+}
+
+.save-disk {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 56px;
+  height: 56px;
+  fill: var(--accent);
+}
+
+.save-arrow {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  transform: translateX(-50%);
+  width: 42px;
+  height: 42px;
+  color: var(--accent);
+}
+
+.save-label {
+  font-size: 12px;
+  color: var(--text);
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  font-weight: 600;
 }
 
 .save-btn:hover {
@@ -58,11 +104,6 @@ html, body {
   cursor: not-allowed;
 }
 
-.save-btn svg {
-  width: 56px;
-  height: 56px;
-  fill: var(--accent);
-}
 
 .preview-wrap {
   width: min(560px, calc(100vw - 24px));
@@ -147,6 +188,119 @@ html, body {
 
 .file-input {
   display: none;
+}
+
+/* Drag & drop highlight */
+.page.is-dragover .preview-wrap {
+  border-color: rgba(96, 165, 250, 0.9);
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.7);
+}
+
+/* Per-cell download button (disk icon next to link) */
+.cell-with-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.download-btn {
+  border: 1px solid var(--border);
+  padding: 0;
+  margin: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.85);
+  color: var(--accent);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.download-btn:hover {
+  border-color: rgba(96, 165, 250, 0.9);
+  background: rgba(37, 99, 235, 0.25);
+  color: var(--accent);
+}
+
+.download-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.download-btn svg path {
+  fill: currentColor;
+}
+
+/* TrashImg template */
+.trash-modal-card {
+  max-width: 720px;
+}
+
+.trash-stage-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+
+.trash-stage {
+  position: relative;
+  width: min(640px, 100%);
+  aspect-ratio: 16 / 9; /* исходный шаблон 1920x1080 */
+  background: #f3f4f6;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trash-card {
+  position: absolute;
+  border-radius: 20px;
+  background: #000;
+  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.45);
+  overflow: hidden;
+}
+
+.trash-img-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.trash-img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* размеры задаём через JS, чтобы контролировать zoom */
+}
+
+.trash-handle {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 64px;
+  margin-top: -32px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.95);
+  cursor: ew-resize;
+  opacity: 0.9;
+}
+
+.trash-handle.left {
+  left: -5px;
+}
+
+.trash-handle.right {
+  right: -5px;
+}
+
+.trash-stage:hover .trash-handle {
+  opacity: 1;
 }
 
 .tables-wrap {
@@ -514,10 +668,27 @@ html, body {
 
 /* Split modal */
 .split-card {
-  width: min(1180px, calc(100% - 24px));
+  width: min(1120px, calc(100% - 24px));
   max-height: 92vh;
   display: flex;
   flex-direction: column;
+}
+
+/* Make Split/Split3 UI a bit more compact (helps 1920x1080 and smaller heights) */
+.split-card .modal-header {
+  padding: 10px 12px;
+}
+
+.split-card .modal-footer {
+  padding: 10px 12px;
+}
+
+.split-card .modal-title {
+  font-size: 12px;
+}
+
+.split-card .modal-subtext {
+  font-size: 11px;
 }
 
 /* Avoid nested scrolling; instead, shrink content via responsive sizes */
@@ -525,20 +696,31 @@ html, body {
   overflow: hidden;
 }
 
-@media (max-height: 760px) {
+@media (max-height: 900px) {
   .modal-card.split-card {
     margin: 2vh auto;
   }
+  .split-target {
+    width: 104px;
+    padding: 7px;
+  }
   .split-target-img {
-    height: 58px;
+    height: 56px;
+  }
+  .split-gallery {
+    max-height: clamp(64px, 12vh, 130px);
+  }
+  .split-stage {
+    height: clamp(180px, 34vh, 420px);
+    width: min(100%, calc(clamp(180px, 34vh, 420px) * 16 / 9));
   }
 }
 
 .split-controls {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .split-label {
@@ -555,9 +737,9 @@ html, body {
 
 .split-target {
   flex: 0 0 auto;
-  width: 120px;
-  padding: 10px;
-  border-radius: 14px;
+  width: 110px;
+  padding: 8px;
+  border-radius: 12px;
   border: 1px solid var(--border);
   background: rgba(17, 24, 39, 0.65);
   color: var(--text);
@@ -575,15 +757,15 @@ html, body {
 }
 
 .split-target-title {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .split-target-img {
   width: 100%;
-  height: 74px;
+  height: 62px;
   object-fit: cover;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -592,14 +774,14 @@ html, body {
 
 .split-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
-  gap: 8px;
-  padding: 10px;
-  border-radius: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+  gap: 7px;
+  padding: 8px;
+  border-radius: 12px;
   border: 1px solid var(--border);
   background: rgba(0,0,0,0.15);
-  /* shrink on small screens to avoid scrolling inside the modal */
-  max-height: clamp(90px, 18vh, 180px);
+  /* keep gallery compact to avoid nested scroll on 1080p */
+  max-height: clamp(72px, 14vh, 150px);
   overflow: auto;
 }
 
@@ -630,13 +812,13 @@ html, body {
 .split-stage {
   position: relative;
   /* Keep stage inside viewport: limit height, keep 16:9 */
-  height: clamp(220px, 44vh, 520px);
-  width: min(100%, calc(clamp(220px, 44vh, 520px) * 16 / 9));
+  height: clamp(200px, 38vh, 460px);
+  width: min(100%, calc(clamp(200px, 38vh, 460px) * 16 / 9));
   margin: 0 auto;
   aspect-ratio: 16 / 9;
   background: rgba(0,0,0,0.25);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   display: block;
 }
@@ -748,22 +930,22 @@ html, body {
 
 .split-handle {
   position: absolute;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   background: rgba(96, 165, 250, 1);
   border-radius: 999px;
   border: 2px solid rgba(17, 24, 39, 0.95);
 }
 
-.split-handle.tl { left: -7px; top: -7px; cursor: nwse-resize; }
-.split-handle.tr { right: -7px; top: -7px; cursor: nesw-resize; }
-.split-handle.bl { left: -7px; bottom: -7px; cursor: nesw-resize; }
-.split-handle.br { right: -7px; bottom: -7px; cursor: nwse-resize; }
+.split-handle.tl { left: -6px; top: -6px; cursor: nwse-resize; }
+.split-handle.tr { right: -6px; top: -6px; cursor: nesw-resize; }
+.split-handle.bl { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.split-handle.br { right: -6px; bottom: -6px; cursor: nwse-resize; }
 
-.split-handle.t { left: 50%; top: -7px; transform: translateX(-50%); cursor: ns-resize; }
-.split-handle.b { left: 50%; bottom: -7px; transform: translateX(-50%); cursor: ns-resize; }
-.split-handle.l { left: -7px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
-.split-handle.r { right: -7px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.split-handle.t { left: 50%; top: -6px; transform: translateX(-50%); cursor: ns-resize; }
+.split-handle.b { left: 50%; bottom: -6px; transform: translateX(-50%); cursor: ns-resize; }
+.split-handle.l { left: -6px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.split-handle.r { right: -6px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
 
 .viewer-body {
   padding: 12px;

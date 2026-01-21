@@ -9,11 +9,20 @@
 <body>
   <main class="page">
     <section class="uploader" aria-label="Загрузка файла">
-      <button class="save-btn" id="saveBtn" type="button" aria-label="Загрузить файл">
-        <!-- Иконка дискеты (SVG) -->
-        <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <path d="M10 8h34l10 10v38H10V8zm6 6v12h26V14H16zm0 20v16h32V34H16zm6-16h12v6H22v-6z" />
-        </svg>
+      <button class="save-btn" id="saveBtn" type="button" aria-label="Upload image">
+        <div class="save-icon" aria-hidden="true">
+          <!-- Arrow pointing to the disk -->
+          <svg class="save-arrow" viewBox="0 0 64 64" focusable="false">
+            <path d="M32 8v22" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
+            <path d="M20 24l12 12 12-12" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+
+          <!-- Disk icon -->
+          <svg class="save-disk" viewBox="0 0 64 64" focusable="false">
+            <path d="M10 8h34l10 10v38H10V8zm6 6v12h26V14H16zm0 20v16h32V34H16zm6-16h12v6H22v-6z" />
+          </svg>
+        </div>
+        <div class="save-label">Upload image</div>
       </button>
 
       <div class="preview-wrap">
@@ -23,6 +32,7 @@
           <div class="tool-buttons" aria-label="Инструменты" hidden>
             <button id="splitToolBtn" class="btn tool-btn" type="button">Split</button>
             <button id="split3ToolBtn" class="btn tool-btn" type="button">Split3</button>
+            <button id="trashToolBtn" class="btn tool-btn" type="button">Trash</button>
             <button id="cropToolBtn" class="btn tool-btn" type="button">Crop</button>
           </div>
 
@@ -30,12 +40,10 @@
             <button class="size-btn" type="button" data-w="2440" disabled>2440</button>
             <button class="size-btn" type="button" data-w="1920" disabled>1920</button>
             <button class="size-btn" type="button" data-w="1280" disabled>1280</button>
-            <button class="size-btn" type="button" data-w="1080" disabled>1080</button>
-            <button class="size-btn" type="button" data-w="720" disabled>720</button>
           </div>
         </div>
 
-        <div id="hint" class="hint">Нажмите на дискету, выберите изображение — и оно загрузится.</div>
+        <div id="hint" class="hint">Нажмите на дискету, перетащите файлы или вставьте из буфера обмена — и они загрузятся.</div>
       </div>
 
       <input id="fileInput" class="file-input" type="file" accept="image/*" multiple />
@@ -50,8 +58,6 @@
               <tr>
                 <th class="col-dt">Дата - время</th>
                 <th class="col-orig">Оригинал</th>
-                <th class="col-size">720</th>
-                <th class="col-size">1080</th>
                 <th class="col-size">1280</th>
                 <th class="col-size">1920</th>
                 <th class="col-size">2440</th>
@@ -194,6 +200,42 @@
         <div class="modal-actions">
           <button id="splitCancel" class="btn" type="button">Отмена</button>
           <button id="splitApply" class="btn primary" type="button">Склеить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TrashImg -->
+  <div id="trashModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card trash-modal-card" role="dialog" aria-modal="true" aria-label="TrashImg">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-title">TrashImg (1 изображение → вертикальная карточка)</div>
+          <div class="modal-sub">
+            <span class="modal-subtext">Окно фиксированной высоты. Ширину можно менять симметрично от центра, изображение под окном.</span>
+          </div>
+        </div>
+        <button id="trashClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="trash-stage-wrap">
+          <div id="trashStage" class="trash-stage" aria-label="TrashImg шаблон">
+            <div id="trashCard" class="trash-card">
+              <div id="trashImgViewport" class="trash-img-viewport">
+                <img id="trashImg" class="trash-img" alt="" />
+              </div>
+              <div id="trashHandleLeft" class="trash-handle left" data-side="left"></div>
+              <div id="trashHandleRight" class="trash-handle right" data-side="right"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div id="trashHint" class="modal-hint">Выберите строку в таблице файлов, затем откройте Trash.</div>
+        <div class="modal-actions">
+          <button id="trashCancel" class="btn" type="button">Закрыть</button>
+          <button id="trashApply" class="btn primary" type="button" disabled>Сделать (позже)</button>
         </div>
       </div>
     </div>
