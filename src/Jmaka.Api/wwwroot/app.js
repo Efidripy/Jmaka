@@ -238,6 +238,20 @@ const split3ItemB = document.getElementById('split3ItemB');
 const split3ItemC = document.getElementById('split3ItemC');
 const split3Hint = document.getElementById('split3Hint');
 
+// TrashImg elements
+const trashToolBtn = document.getElementById('trashToolBtn');
+const trashModal = document.getElementById('trashModal');
+const trashCloseBtn = document.getElementById('trashClose');
+const trashCancelBtn = document.getElementById('trashCancel');
+const trashApplyBtn = document.getElementById('trashApply');
+const trashStage = document.getElementById('trashStage');
+const trashCard = document.getElementById('trashCard');
+const trashImgViewport = document.getElementById('trashImgViewport');
+const trashImg = document.getElementById('trashImg');
+const trashHandleLeft = document.getElementById('trashHandleLeft');
+const trashHandleRight = document.getElementById('trashHandleRight');
+const trashHint = document.getElementById('trashHint');
+
 function syncCropAspectButtons() {
   if (!cropAspectBtns || cropAspectBtns.length === 0) return;
   for (const b of cropAspectBtns) {
@@ -260,7 +274,7 @@ function setCropAspect(aw, ah) {
   }
 }
 
-const TARGET_WIDTHS = [720, 1080, 1280, 1920, 2440];
+const TARGET_WIDTHS = [1280, 1920, 2440];
 
 let selectedFile = null;
 let lastUpload = null; // { storedName, originalRelativePath, previewRelativePath, imageWidth, imageHeight }
@@ -951,6 +965,18 @@ const split3State = {
   c: { storedName: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 }
 };
 
+// TrashImg state: one image under a fixed-height window with resizable width (from center)
+const trashState = {
+  open: false,
+  storedName: null,
+  url: null,
+  natW: 0,
+  natH: 0,
+  window: { y: 0, w: 0, h: 0 },
+  img: { x: 0, y: 0, w: 0, h: 0 },
+  action: null // { type: 'window-resize' | 'img-move' | 'img-scale', ... }
+};
+
 function split3ShowItem(which) {
   const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
   const el = which === 'a' ? split3ItemA : (which === 'b' ? split3ItemB : split3ItemC);
@@ -1544,6 +1570,57 @@ function makeImageLink(href, imgSrc, alt) {
   return a;
 }
 
+function triggerDownload(href, suggestedName) {
+  if (!href) return;
+  const a = document.createElement('a');
+  a.href = href;
+  if (suggestedName) {
+    a.download = suggestedName;
+  } else {
+    // Fallback: derive from URL path.
+    try {
+      const clean = href.split('?')[0].split('#')[0];
+      const parts = clean.split('/');
+      const last = parts[parts.length - 1];
+      if (last) a.download = last;
+    } catch {
+      // ignore
+    }
+  }
+  a.target = '_blank';
+  a.rel = 'noreferrer';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function appendLinkWithDownload(td, linkEl, href, suggestedName) {
+  if (!td || !linkEl || !href) {
+    if (td && linkEl) td.appendChild(linkEl);
+    return;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'cell-with-download';
+
+  const dlBtn = document.createElement('button');
+  dlBtn.type = 'button';
+  dlBtn.className = 'download-btn';
+  dlBtn.title = 'Скачать';
+  // Жирная иконка дискеты
+  dlBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2v4h9V5H6zm2 2h5V7H8v0zm-2 6v7h11v-7H6z"/></svg>';
+  dlBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    triggerDownload(href, suggestedName);
+  });
+
+  wrap.appendChild(linkEl);
+  wrap.appendChild(dlBtn);
+  td.appendChild(wrap);
+}
+
 function setActiveRow(storedName) {
   for (const v of uploads.values()) {
     v.tr.classList.remove('is-active');
@@ -1640,9 +1717,12 @@ function ensureTableRowForUpload(data, opts) {
   if (data.imageWidth && data.imageHeight) {
     const href = withCacheBust(data.originalRelativePath, storedName);
     const imgSrc = withCacheBust(data.previewRelativePath ? data.previewRelativePath : data.originalRelativePath, storedName);
-    tdOrig.appendChild(makeImageLink(href, imgSrc, 'original'));
+    const link = makeImageLink(href, imgSrc, 'original');
+    appendLinkWithDownload(tdOrig, link, href, data.originalName || storedName);
   } else {
-    tdOrig.appendChild(makeA(withCacheBust(data.originalRelativePath, storedName), 'original'));
+    const href = withCacheBust(data.originalRelativePath, storedName);
+    const link = makeA(href, 'original');
+    appendLinkWithDownload(tdOrig, link, href, data.originalName || storedName);
   }
 
   const cells = new Map();
@@ -1743,7 +1823,11 @@ async function loadHistory(preferStoredName) {
     filesTbody.textContent = '';
     uploads.clear();
 
-    for (const item of data) {
+    // Сервер уже отдаёт историю в порядке CreatedAt DESC (новые → старые).
+    // ensureTableRowForUpload вставляет новые строки через insertBefore(firstChild),
+    // поэтому для сохранения порядка "новые сверху" нам нужно обходить массив с конца.
+    for (let i = data.length - 1; i >= 0; i--) {
+      const item = data[i];
       hydrateRowFromHistory(item);
     }
 
@@ -1783,8 +1867,9 @@ function setCellLink(storedName, width, relativePath) {
   td.classList.remove('empty');
   td.textContent = '';
 
-  // В колонках размеров — только текстовая ссылка.
-  td.appendChild(makeA(withCacheBust(relativePath, storedName), String(width)));
+  const href = withCacheBust(relativePath, storedName);
+  const link = makeA(href, String(width));
+  appendLinkWithDownload(td, link, href);
 }
 
 
@@ -1981,6 +2066,92 @@ saveBtn.addEventListener('click', () => {
   fileInput.click();
 });
 
+// Drag & drop upload
+(function setupDragAndDrop() {
+  const page = document.querySelector('.page');
+  if (!page) return;
+
+  let dragCounter = 0;
+
+  const setDragState = (on) => {
+    if (!page) return;
+    page.classList.toggle('is-dragover', !!on);
+  };
+
+  page.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragCounter++;
+    setDragState(true);
+  });
+
+  page.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+
+  page.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dragCounter = Math.max(0, dragCounter - 1);
+    if (dragCounter === 0) setDragState(false);
+  });
+
+  page.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    setDragState(false);
+
+    const dt = e.dataTransfer;
+    if (!dt) return;
+
+    const files = dt.files && dt.files.length ? Array.from(dt.files) : [];
+    if (files.length === 0 && dt.items && dt.items.length) {
+      for (const item of dt.items) {
+        if (item.kind === 'file') {
+          const f = item.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+    }
+
+    if (files.length > 0) {
+      hint.textContent = files.length === 1
+        ? 'Загружаю файл из перетаскивания...'
+        : `Загружаю файлов из перетаскивания: ${files.length}...`;
+      upload(files);
+    }
+  });
+})();
+
+// Paste from clipboard (images)
+document.addEventListener('paste', (e) => {
+  const cd = e.clipboardData;
+  if (!cd) return;
+
+  const files = [];
+  if (cd.files && cd.files.length) {
+    for (const f of Array.from(cd.files)) {
+      files.push(f);
+    }
+  } else if (cd.items && cd.items.length) {
+    for (const item of cd.items) {
+      if (item.kind === 'file') {
+        const f = item.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+  }
+
+  if (files.length === 0) return;
+
+  e.preventDefault();
+  hint.textContent = files.length === 1
+    ? 'Загружаю файл из буфера обмена...'
+    : `Загружаю файлов из буфера обмена: ${files.length}...`;
+  upload(files);
+});
+
 fileInput.addEventListener('change', () => {
   const files = fileInput.files ? Array.from(fileInput.files) : [];
 
@@ -1992,7 +2163,7 @@ fileInput.addEventListener('change', () => {
       preview.removeAttribute('src');
     }
     resetSizeButtons();
-    hint.textContent = 'Нажмите на дискету, выберите изображения — и они загрузятся.';
+    hint.textContent = 'Нажмите на дискету, перетащите файлы или вставьте из буфера обмена — и они загрузятся.';
     showResult('');
     return;
   }
@@ -2457,6 +2628,7 @@ if (cropToolBtn) {
 wireCropUI();
 wireSplitUI();
 wireSplit3UI();
+wireTrashUI();
 
 async function loadComposites() {
   if (!compositesTbody) return [];
@@ -2483,13 +2655,15 @@ async function loadComposites() {
       const tdKind = document.createElement('td');
       tdKind.className = 'col-kind';
       const kind = (it && it.kind) ? String(it.kind) : '';
-      tdKind.textContent = kind === 'split3' ? 'Split3' : 'Split';
+      tdKind.textContent = kind === 'split3' ? 'Split3' : (kind === 'trashimg' ? 'Trash' : 'Split');
 
       const tdImg = document.createElement('td');
       tdImg.className = 'col-comp';
       const rel = it && it.relativePath ? String(it.relativePath) : '';
       if (rel) {
-        tdImg.appendChild(makeImageLink(rel, rel, kind || 'split'));
+        const href = rel;
+        const link = makeImageLink(href, rel, kind || 'split');
+        appendLinkWithDownload(tdImg, link, href);
       } else {
         tdImg.textContent = '—';
         tdImg.classList.add('empty');
@@ -2512,3 +2686,397 @@ document.addEventListener('DOMContentLoaded', () => {
   loadHistory();
   loadComposites();
 });
+
+function getPointerPosInTrashStage(e) {
+  if (!trashStage) return { x: 0, y: 0 };
+  const r = trashStage.getBoundingClientRect();
+  return {
+    x: e.clientX - r.left,
+    y: e.clientY - r.top
+  };
+}
+
+const TRASH_ASPECT = 16 / 9; // окно 1920x1080
+
+function layoutTrashWindowInitial() {
+  if (!trashStage || !trashCard) return;
+  const stageRect = trashStage.getBoundingClientRect();
+  if (!stageRect.width || !stageRect.height) return;
+
+  const maxW = stageRect.width * 0.8;
+  const maxH = stageRect.height * 0.8;
+  // вписываем окно 16:9 в центр с небольшими отступами
+  let w = maxW;
+  let h = w / TRASH_ASPECT;
+  if (h > maxH) {
+    h = maxH;
+    w = h * TRASH_ASPECT;
+  }
+
+  const y = (stageRect.height - h) / 2;
+
+  trashState.window.y = y;
+  trashState.window.h = h;
+  trashState.window.w = w;
+
+  updateTrashWindowLayout();
+}
+
+function updateTrashWindowLayout() {
+  if (!trashStage || !trashCard) return;
+  const stageRect = trashStage.getBoundingClientRect();
+  if (!stageRect.width) return;
+  const h = trashState.window.h;
+  const w = trashState.window.w;
+  const left = (stageRect.width - w) / 2;
+  const top = trashState.window.y;
+
+  trashCard.style.width = `${w}px`;
+  trashCard.style.height = `${h}px`;
+  trashCard.style.left = `${left}px`;
+  trashCard.style.top = `${top}px`;
+}
+
+function openTrashModal() {
+  if (!trashModal || !trashStage || !trashCard || !trashImgViewport || !trashImg) return;
+
+  if (!lastUpload || !lastUpload.storedName || !lastUpload.originalRelativePath) {
+    if (trashHint) {
+      trashHint.textContent = 'Сначала выберите строку в таблице файлов.';
+    }
+    return;
+  }
+
+  trashState.open = true;
+  trashState.storedName = lastUpload.storedName;
+  const rel = lastUpload.previewRelativePath || lastUpload.originalRelativePath;
+  trashState.url = withCacheBust(rel, lastUpload.storedName);
+
+  trashModal.hidden = false;
+  if (trashApplyBtn) trashApplyBtn.disabled = true;
+
+  if (trashHint) {
+    trashHint.textContent = 'Потяните за края окна, чтобы изменить ширину.';
+  }
+
+  layoutTrashWindowInitial();
+
+  trashImg.onload = () => {
+    trashState.natW = trashImg.naturalWidth || 0;
+    trashState.natH = trashImg.naturalHeight || 0;
+    layoutTrashImageCover();
+    if (trashApplyBtn) trashApplyBtn.disabled = false;
+  };
+
+  trashImg.src = trashState.url;
+  trashImg.alt = lastUpload.originalName || lastUpload.storedName || '';
+}
+
+function layoutTrashImageCover() {
+  if (!trashCard || !trashImg || !trashState.natW || !trashState.natH) return;
+  const rect = trashCard.getBoundingClientRect();
+  const winW = rect.width;
+  const winH = rect.height;
+  if (!winW || !winH) return;
+
+  // Вставляем пропорционально по высоте: высота окна = высота картинки.
+  const scale = winH / trashState.natH;
+  const w = trashState.natW * scale;
+  const h = winH; // === trashState.natH * scale
+  const x = (winW - w) / 2;
+  const y = (winH - h) / 2;
+
+  trashState.img = { x, y, w, h };
+
+  trashImg.style.width = `${w}px`;
+  trashImg.style.height = `${h}px`;
+  trashImg.style.left = `${x}px`;
+  trashImg.style.top = `${y}px`;
+}
+
+function closeTrashModal() {
+  if (!trashModal) return;
+  trashModal.hidden = true;
+  trashState.open = false;
+  trashState.action = null;
+  if (trashImg) {
+    trashImg.removeAttribute('src');
+    trashImg.alt = '';
+  }
+}
+
+function wireTrashUI() {
+  if (!trashModal || !trashStage || !trashCard) return;
+
+  if (trashToolBtn) {
+    trashToolBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openTrashModal();
+    });
+  }
+
+  // Ctrl+0 — сброс масштаба фона до "по высоте окна"
+  document.addEventListener('keydown', (e) => {
+    if (!trashState.open) return;
+    if ((e.key === '0' || e.code === 'Digit0') && e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      layoutTrashImageCover();
+    }
+  });
+
+  const close = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    closeTrashModal();
+  };
+
+  if (trashCloseBtn) trashCloseBtn.addEventListener('click', close);
+  if (trashCancelBtn) trashCancelBtn.addEventListener('click', close);
+
+  trashModal.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.close) {
+      closeTrashModal();
+    }
+  });
+
+  const onHandleDown = (side, e) => {
+    if (!trashState.open) return;
+    const p = getPointerPosInTrashStage(e);
+    trashState.action = {
+      type: 'window-resize',
+      side,
+      startX: p.x,
+      startW: trashState.window.w
+    };
+    try { e.target.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    e.preventDefault();
+  };
+
+  if (trashHandleLeft) {
+    trashHandleLeft.addEventListener('pointerdown', (e) => onHandleDown('left', e));
+  }
+  if (trashHandleRight) {
+    trashHandleRight.addEventListener('pointerdown', (e) => onHandleDown('right', e));
+  }
+
+  // изменение только ширины окна, высота фиксированная
+  trashStage.addEventListener('pointermove', (e) => {
+    if (!trashState.open || !trashState.action || trashState.action.type !== 'window-resize') return;
+    const p = getPointerPosInTrashStage(e);
+    const { side, startX, startW } = trashState.action;
+    let half = startW / 2;
+    const dx = p.x - startX;
+    if (side === 'left') {
+      half -= dx; // тянем влево/вправо, ширина меняется симметрично
+    } else {
+      half += dx;
+    }
+
+    const stageRect = trashStage.getBoundingClientRect();
+    const minHalf = 40;
+    const maxHalf = Math.max(minHalf, stageRect.width * 0.48);
+    half = Math.max(minHalf, Math.min(maxHalf, half));
+
+    trashState.window.w = half * 2;
+    // ВЫСОТА НЕ МЕНЯЕТСЯ, остаётся той же, что и была при инициализации
+
+    updateTrashWindowLayout();
+  });
+
+  const endResize = (e) => {
+    if (!trashState.action || trashState.action.type !== 'window-resize') return;
+    trashState.action = null;
+    try { e.target.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+  };
+
+  trashStage.addEventListener('pointerup', endResize);
+  trashStage.addEventListener('pointercancel', endResize);
+
+  // Перемещение/масштабирование изображения под окном (панорамирование + zoom)
+  if (trashImgViewport) {
+    trashImgViewport.addEventListener('pointerdown', (e) => {
+      if (!trashState.open) return;
+      // не перехватываем, если клик по ручке окна
+      if (e.target === trashHandleLeft || e.target === trashHandleRight) return;
+      if (!trashCard) return;
+
+      const rect = trashCard.getBoundingClientRect();
+      const winW = rect.width;
+      const winH = rect.height;
+      const cx = rect.left + winW / 2;
+      const cy = rect.top + winH / 2;
+
+      // проверяем, попали ли в край картинки (для зума)
+      const img = trashState.img;
+      const localX = e.clientX - (rect.left + img.x);
+      const localY = e.clientY - (rect.top + img.y);
+      const edgeInfo = detectEdgeHandle(localX, localY, img.w, img.h, 12);
+
+      if (edgeInfo.handle) {
+        trashState.action = {
+          type: 'img-scale',
+          handle: edgeInfo.handle,
+          startPointerX: e.clientX,
+          startPointerY: e.clientY,
+          startImg: { ...img },
+          centerX: cx,
+          centerY: cy
+        };
+      } else {
+        trashState.action = {
+          type: 'img-move',
+          startPointerX: e.clientX,
+          startPointerY: e.clientY,
+          startX: img.x,
+          startY: img.y
+        };
+      }
+
+      try { trashImgViewport.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      e.preventDefault();
+    });
+
+    trashImgViewport.addEventListener('pointermove', (e) => {
+      if (!trashState.open || !trashState.action) return;
+
+      const action = trashState.action;
+
+      if (action.type === 'img-move') {
+        const dx = e.clientX - action.startPointerX;
+        const dy = e.clientY - action.startPointerY;
+
+        const rect = trashCard.getBoundingClientRect();
+        const winW = rect.width;
+        const winH = rect.height;
+
+        const img = trashState.img;
+        let x = action.startX + dx;
+        let y = action.startY + dy;
+        const w = img.w;
+        const h = img.h;
+
+        // не даём картинке "оторваться" от окна: всегда заполняет окно целиком
+        const minX = winW - w;
+        const maxX = 0;
+        const minY = winH - h;
+        const maxY = 0;
+        x = Math.min(maxX, Math.max(minX, x));
+        y = Math.min(maxY, Math.max(minY, y));
+
+        trashState.img.x = x;
+        trashState.img.y = y;
+        trashImg.style.left = `${x}px`;
+        trashImg.style.top = `${y}px`;
+        return;
+      }
+
+      if (action.type === 'img-scale') {
+        if (!trashCard) return;
+        const rect = trashCard.getBoundingClientRect();
+        const winW = rect.width;
+        const winH = rect.height;
+        const img0 = action.startImg;
+
+        const dx = e.clientX - action.startPointerX;
+        const dy = e.clientY - action.startPointerY;
+
+        // масштаб относительно центра окна; вертикальное движение даёт более "контролируемый" zoom
+        let factor = 1 + (dy * -0.003); // вверх = увеличить, вниз = уменьшить
+        factor = Math.max(0.2, Math.min(5, factor));
+
+        let w = img0.w * factor;
+        let h = img0.h * factor;
+
+        // минимальный масштаб: высота картинки не меньше высоты окна
+        const minScale = winH / img0.h;
+        if (factor < minScale) {
+          w = img0.w * minScale;
+          h = img0.h * minScale;
+        }
+
+        const cx = action.centerX - rect.left;
+        const cy = action.centerY - rect.top;
+
+        const x = cx - (w / img0.w) * (action.centerX - (rect.left + img0.x));
+        const y = cy - (h / img0.h) * (action.centerY - (rect.top + img0.y));
+
+        trashState.img = { x, y, w, h };
+        trashImg.style.width = `${w}px`;
+        trashImg.style.height = `${h}px`;
+        trashImg.style.left = `${x}px`;
+        trashImg.style.top = `${y}px`;
+        return;
+      }
+    });
+
+    const endImgMove = (e) => {
+      if (!trashState.action || (trashState.action.type !== 'img-move' && trashState.action.type !== 'img-scale')) return;
+      trashState.action = null;
+      try { trashImgViewport.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    };
+
+    trashImgViewport.addEventListener('pointerup', endImgMove);
+    trashImgViewport.addEventListener('pointercancel', endImgMove);
+  }
+
+  if (trashApplyBtn) {
+    trashApplyBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!trashState.open || !trashState.storedName) return;
+      if (!trashCard) return;
+
+      const rect = trashCard.getBoundingClientRect();
+      const req = {
+        storedName: trashState.storedName,
+        imgX: trashState.img.x,
+        imgY: trashState.img.y,
+        imgW: trashState.img.w,
+        imgH: trashState.img.h,
+        viewW: rect.width,
+        viewH: rect.height
+      };
+
+      try {
+        setBusy(true);
+        if (trashHint) trashHint.textContent = 'Генерирую TrashImg...';
+
+        const res = await fetch('trashimg', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req)
+        });
+
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = text; }
+
+        if (!res.ok) {
+          if (trashHint) trashHint.textContent = 'Ошибка TrashImg.';
+          showResult(data);
+          return;
+        }
+
+        showResult(data);
+        await loadComposites();
+        if (trashHint) trashHint.textContent = 'TrashImg создан.';
+        closeTrashModal();
+      } catch (err) {
+        if (trashHint) trashHint.textContent = 'Ошибка TrashImg.';
+        showResult(String(err));
+      } finally {
+        setBusy(false);
+      }
+    });
+  }
+
+  window.addEventListener('resize', () => {
+    if (!trashState.open) return;
+    layoutTrashWindowInitial();
+    layoutTrashImageCover();
+  });
+}

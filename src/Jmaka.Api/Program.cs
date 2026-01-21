@@ -13,7 +13,7 @@ const long MaxUploadBytes = 75L * 1024 * 1024; // 75 MB
 const int PreviewWidthPx = 320;
 
 // Целевые ширины для ресайза изображений
-var resizeWidths = new[] { 720, 1080, 1280, 1920, 2440 };
+var resizeWidths = new[] { 1280, 1920, 2440 };
 
 // Лимиты на multipart/form-data
 builder.Services.Configure<FormOptions>(options =>
@@ -70,6 +70,7 @@ var resizedDir = Path.Combine(storageRoot, "resized");
 var previewDir = Path.Combine(storageRoot, "preview");
 var splitDir = Path.Combine(storageRoot, "split");
 var split3Dir = Path.Combine(storageRoot, "split3");
+var trashDir = Path.Combine(storageRoot, "trashimg");
 var dataDir = Path.Combine(storageRoot, "data");
 var historyPath = Path.Combine(dataDir, "history.json");
 var compositesPath = Path.Combine(dataDir, "composites.json");
@@ -79,6 +80,7 @@ Directory.CreateDirectory(resizedDir);
 Directory.CreateDirectory(previewDir);
 Directory.CreateDirectory(splitDir);
 Directory.CreateDirectory(split3Dir);
+Directory.CreateDirectory(trashDir);
 Directory.CreateDirectory(dataDir);
 foreach (var w in resizeWidths)
 {
@@ -133,9 +135,17 @@ string? GetCompositeAbsolutePath(CompositeHistoryItem it)
         return null;
     }
 
-    return string.Equals(it.Kind, "split3", StringComparison.OrdinalIgnoreCase)
-        ? Path.Combine(split3Dir, fileName)
-        : Path.Combine(splitDir, fileName);
+    if (string.Equals(it.Kind, "split3", StringComparison.OrdinalIgnoreCase))
+    {
+        return Path.Combine(split3Dir, fileName);
+    }
+
+    if (string.Equals(it.Kind, "trashimg", StringComparison.OrdinalIgnoreCase))
+    {
+        return Path.Combine(trashDir, fileName);
+    }
+
+    return Path.Combine(splitDir, fileName);
 }
 
 void DeleteCompositesForStoredName(string storedName)
@@ -492,8 +502,22 @@ app.UseStaticFiles(new StaticFileOptions
         ctx.Context.Response.Headers["Expires"] = "0";
     }
 });
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(trashDir),
+    RequestPath = "/trashimg",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
 
 app.UseAntiforgery();
+
+// PNG-оверлей для TrashImg (например, 1920x1080 шаблон окна)
+var trashOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "trashimg-overlay.png");
 
 app.MapGet("/history", async Task<IResult> (CancellationToken ct) =>
 {
@@ -1014,7 +1038,7 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
 
     if (!File.Exists(sourceAbsolutePath))
     {
-        // Fallback (if copy failed or storage is read-only)
+        // Fallback (если копию не удалось создать или storage read-only)
         sourceAbsolutePath = outAbsolutePath;
     }
 
@@ -1081,6 +1105,86 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
 })
 .DisableAntiforgery()
 .Accepts<CropRequest>("application/json")
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
+
+app.MapPost("/trashimg", async Task<IResult> (TrashRequest req, CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+
+    if (string.IsNullOrWhiteSpace(req.StoredName))
+    {
+        return Results.BadRequest(new { error = "storedName is required" });
+    }
+
+    var storedName = Path.GetFileName(req.StoredName);
+    if (!string.Equals(storedName, req.StoredName, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "invalid storedName" });
+    }
+
+    var originalPath = Path.Combine(uploadDir, storedName);
+    if (!File.Exists(originalPath))
+    {
+        return Results.NotFound(new { error = "original file not found" });
+    }
+
+    const int outW = 1920;
+    const int outH = 1080;
+
+    try
+    {
+        using var output = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(
+            outW, outH, new SixLabors.ImageSharp.PixelFormats.Rgba32(0, 0, 0, 255));
+
+        // Рисуем фон-картинку по параметрам из UI
+        using (var src = await Image.LoadAsync<SixLabors.ImageSharp.PixelFormats.Rgba32>(originalPath, ct))
+        {
+            var scaleUiToOut = outW / req.ViewW;
+            var drawW = (int)Math.Round(req.ImgW * scaleUiToOut);
+            var drawH = (int)Math.Round(req.ImgH * scaleUiToOut);
+            var destX = (int)Math.Round(req.ImgX * scaleUiToOut);
+            var destY = (int)Math.Round(req.ImgY * scaleUiToOut);
+
+            src.Mutate(p => p.Resize(drawW, drawH));
+            output.Mutate(p => p.DrawImage(src, new Point(destX, destY), 1f));
+        }
+
+        // Накладываем оверлей, если PNG шаблон доступен
+        if (File.Exists(trashOverlayPath))
+        {
+            using var overlay = await Image.LoadAsync<SixLabors.ImageSharp.PixelFormats.Rgba32>(trashOverlayPath, ct);
+            if (overlay.Width != outW || overlay.Height != outH)
+            {
+                overlay.Mutate(p => p.Resize(outW, outH));
+            }
+
+            output.Mutate(p => p.DrawImage(overlay, new Point(0, 0), 1f));
+        }
+
+        var fileName = MakeCompositeFileName();
+        var outAbsolutePath = Path.Combine(trashDir, fileName);
+        var relPath = $"trashimg/{fileName}";
+
+        await SaveImageWithSafeTempAsync(output, outAbsolutePath, ct);
+
+        var createdAt = DateTimeOffset.UtcNow;
+        await AppendCompositeAsync(
+            compositesPath,
+            compositesLock,
+            new CompositeHistoryItem("trashimg", createdAt, relPath, new[] { storedName }),
+            ct);
+
+        return Results.Ok(new { ok = true, kind = "trashimg", createdAt, relativePath = relPath });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+})
+.DisableAntiforgery()
+.Accepts<TrashRequest>("application/json")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
@@ -1431,6 +1535,15 @@ record Split3Request(
     SplitViewRect A,
     SplitViewRect B,
     SplitViewRect C
+);
+record TrashRequest(
+    string StoredName,
+    double ImgX,
+    double ImgY,
+    double ImgW,
+    double ImgH,
+    double ViewW,
+    double ViewH
 );
 record CompositeHistoryItem(
     string Kind,
