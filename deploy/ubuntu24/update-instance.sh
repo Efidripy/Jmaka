@@ -20,11 +20,11 @@ fi
 
 echo "=== Jmaka updater (instances via systemd jmaka-*.service) ==="
 
-# Find all jmaka-*.service units (unit files on disk)
-mapfile -t UNIT_FILES < <(ls /etc/systemd/system/jmaka-*.service 2>/dev/null || true)
+# Find all jmaka-*.service units via systemd (handles escaped names like jmaka\x2djmaka)
+mapfile -t UNIT_NAMES < <(systemctl list-unit-files 'jmaka-*' --no-legend 2>/dev/null | awk '{print $1}' | grep '\.service$' || true)
 
-if [[ ${#UNIT_FILES[@]} -eq 0 ]]; then
-  echo "No Jmaka instances found (jmaka-*.service)." >&2
+if [[ ${#UNIT_NAMES[@]} -eq 0 ]]; then
+  echo "No Jmaka instances found (jmaka-*.service in systemd)." >&2
   exit 1
 fi
 
@@ -34,9 +34,12 @@ INSTANCE_PORTS=()
 INSTANCE_BASEPATHS=()
 INSTANCE_VERSIONS=()
 
-for uf in "${UNIT_FILES[@]}"; do
-  svc_file="$(basename "$uf")"          # e.g. jmaka\x2djmaka.service
-  svc_name="${svc_file%.service}"
+for svc_name in "${UNIT_NAMES[@]}"; do
+  # Resolve actual unit file path on disk (FragmentPath)
+  uf="$(systemctl show -p FragmentPath --value "$svc_name" 2>/dev/null || true)"
+  if [[ -z "$uf" || ! -f "$uf" ]]; then
+    continue
+  fi
 
   # Read Environment= lines from the unit file
   env_lines="$(grep -E '^Environment=' "$uf" || true)"
