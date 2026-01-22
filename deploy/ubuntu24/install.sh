@@ -438,6 +438,8 @@ chown -R root:root "$APP_DIR"
 chmod -R a=rX "$APP_DIR"
 
 escape_systemd_unit_name() {
+  # Legacy helper (no longer used): we now keep unit names human-readable,
+  # e.g. jmaka-myinstance.service instead of jmaka\x2dmyinstance.service.
   local raw="$1"
   if have_cmd systemd-escape; then
     systemd-escape "$raw"
@@ -446,8 +448,8 @@ escape_systemd_unit_name() {
   fi
 }
 
-SERVICE_NAME_RAW="jmaka-${NAME}"
-SERVICE_NAME="$(escape_systemd_unit_name "$SERVICE_NAME_RAW")"
+# Human-readable service name: jmaka-<name>.service (без systemd-escape)
+SERVICE_NAME="jmaka-${NAME}"
 SERVICE_UNIT="${SERVICE_NAME}.service"
 
 # Base path for app: "/" or "/jmaka" (without trailing slash)
