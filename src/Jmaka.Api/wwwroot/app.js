@@ -30,6 +30,8 @@ const sizeButtons = document.getElementById('sizeButtons');
 const sizeBtns = sizeButtons ? Array.from(sizeButtons.querySelectorAll('button.size-btn')) : [];
 
 // viewer modal elements
+// RU: Элементы модального окна просмотра полноразмерной картинки.
+// EN: DOM elements for the image viewer modal used when clicking previews.
 const viewerModal = document.getElementById('viewerModal');
 const viewerCloseBtn = document.getElementById('viewerClose');
 const viewerImg = document.getElementById('viewerImg');
@@ -94,6 +96,8 @@ if (viewerModal) {
 if (viewerCloseBtn) viewerCloseBtn.addEventListener('click', closeViewer);
 
 // Intercept clicks on preview/size links in the table and show in-app viewer
+// RU: Перехватываем клики по превью/ссылкам размеров в левой таблице и открываем встроенный просмотрщик.
+// EN: Intercept clicks on preview/size links in the left table and open the built‑in viewer instead of new tabs.
 if (filesTbody) {
   filesTbody.addEventListener('click', (e) => {
     const a = e.target && e.target.closest ? e.target.closest('a') : null;
@@ -117,6 +121,8 @@ if (filesTbody) {
 }
 
 // Intercept clicks in composites table (right column) and open in viewer as well
+// RU: То же самое для правой таблицы (Split / Split3 / OknoFix / OknoScale).
+// EN: Do the same for the right table with Split/Split3/OknoFix/OknoScale results.
 if (compositesTbody) {
   compositesTbody.addEventListener('click', (e) => {
     const a = e.target && e.target.closest ? e.target.closest('a') : null;
@@ -138,6 +144,8 @@ if (compositesTbody) {
 }
 
 // delete modal elements
+// RU: Модальное окно подтверждения удаления строки истории.
+// EN: Confirmation modal shown before deleting a history row and all related files.
 const deleteModal = document.getElementById('deleteModal');
 const deleteCloseBtn = document.getElementById('deleteClose');
 const deleteCancelBtn = document.getElementById('deleteCancel');
@@ -145,6 +153,8 @@ const deleteConfirmBtn = document.getElementById('deleteConfirm');
 const deleteSkipConfirmEl = document.getElementById('deleteSkipConfirm');
 
 // help modal
+// RU: Модальное окно со справкой по возможностям приложения и горячим действиям.
+// EN: Help modal that briefly describes features and hot actions.
 const helpBtn = document.getElementById('helpBtn');
 const helpModal = document.getElementById('helpModal');
 const helpCloseBtn = document.getElementById('helpClose');
@@ -240,6 +250,8 @@ if (helpBtn && helpModal) {
 }
 
 // crop modal elements
+// RU: Элементы окна кадрирования (Crop) и кнопки выбора соотношения сторон.
+// EN: Elements of the Crop dialog and aspect‑ratio buttons.
 const cropModal = document.getElementById('cropModal');
 const cropStage = document.getElementById('cropStage');
 const cropImg = document.getElementById('cropImg');
@@ -252,11 +264,15 @@ const cropOpenOriginal = document.getElementById('cropOpenOriginal');
 const cropAspectBtns = cropModal ? Array.from(cropModal.querySelectorAll('button.aspect-btn')) : [];
 
 // tool buttons (Crop/Split)
+// RU: Панель инструментов для активной строки (Split, Split3, OknoFix, OknoScale, Crop).
+// EN: Tool buttons row bound to the currently selected upload (Split, Split3, OknoFix, OknoScale, Crop).
 const toolButtons = document.querySelector('.tool-buttons');
 const cropToolBtn = document.getElementById('cropToolBtn');
 const splitToolBtn = document.getElementById('splitToolBtn');
 
 // split modal elements
+// RU: Окно Split: две половины 16:9, галерея миниатюр 1280 и элементы управления.
+// EN: Split modal: two 16:9 halves, 1280‑width thumbnail gallery and controls.
 const splitModal = document.getElementById('splitModal');
 const splitCloseBtn = document.getElementById('splitClose');
 const splitCancelBtn = document.getElementById('splitCancel');
@@ -274,6 +290,8 @@ const splitItemB = document.getElementById('splitItemB');
 const splitHint = document.getElementById('splitHint');
 
 // split3 modal elements
+// RU: Окно Split3: три колонки 16:9 и соответствующие галереи/слоты.
+// EN: Split3 modal: three 16:9 columns with their own slots and gallery.
 const split3ToolBtn = document.getElementById('split3ToolBtn');
 const split3Modal = document.getElementById('split3Modal');
 const split3CloseBtn = document.getElementById('split3Close');
@@ -296,6 +314,8 @@ const split3ItemC = document.getElementById('split3ItemC');
 const split3Hint = document.getElementById('split3Hint');
 
 // TrashImg / OknoFix elements
+// RU: Элементы модалки OknoFix (жёсткий PNG‑шаблон вертикальной карточки).
+// EN: Elements of the OknoFix modal that uses a fixed PNG card template.
 const trashToolBtn = document.getElementById('trashToolBtn');
 const trashFixToolBtn = document.getElementById('trashFixToolBtn');
 const trashModal = document.getElementById('trashModal');
@@ -314,6 +334,8 @@ const trashZoomInBtn = document.getElementById('trashZoomIn');
 const trashZoomOutBtn = document.getElementById('trashZoomOut');
 
 // OknoScale elements (отдельная модалка)
+// RU: Элементы модалки OknoScale с изменяемой шириной окна.
+// EN: Elements of the OknoScale modal with adjustable window width.
 const oknoScaleModal = document.getElementById('oknoScaleModal');
 const oknoScaleCloseBtn = document.getElementById('oknoScaleClose');
 const oknoScaleCancelBtn = document.getElementById('oknoScaleCancel');
@@ -363,6 +385,8 @@ const uploads = new Map();
 // storedName -> version (number)
 const cacheBust = new Map();
 
+// RU: Добавляет к URL кеш‑бастер ?v=..., чтобы браузер не показывал старую версию файла после crop/resize.
+// EN: Appends a ?v=... cache‑buster so the browser does not serve stale images after crop/resize.
 function withCacheBust(relativeUrl, storedName) {
   if (!relativeUrl || !storedName) return relativeUrl;
   const v = cacheBust.get(storedName);
