@@ -5,6 +5,9 @@ using Microsoft.Extensions.FileProviders;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
 
+// Jmaka Minimal API entry point.
+// RU: Этот файл настраивает веб-приложение и описывает все HTTP‑эндпоинты и работу с файловым хранилищем.
+// EN: This file configures the web app and declares all HTTP endpoints and how runtime storage is organized.
 var builder = WebApplication.CreateBuilder(args);
 
 const long MaxUploadBytes = 75L * 1024 * 1024; // 75 MB
@@ -520,6 +523,9 @@ app.UseAntiforgery();
 // PNG-шаблон для TrashImg (готовая карточка с рамкой/тенью)
 var trashOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "jmaka-template-trash-001.png");
 
+// --- History & composites endpoints ---
+// RU: Эти эндпоинты отдают историю загрузок и историю составных изображений.
+// EN: These endpoints return upload history and composite (Split/Split3/Okno*) history.
 app.MapGet("/history", async Task<IResult> (CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
@@ -626,6 +632,9 @@ app.MapPost("/delete", async Task<IResult> (DeleteRequest req, CancellationToken
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
 
+// --- Upload endpoint ---
+// RU: Принимает multipart/form-data, сохраняет оригиналы и миниатюры, пишет запись в history.json.
+// EN: Accepts multipart/form-data, stores originals/thumbnails and appends to history.json.
 app.MapPost("/upload", async Task<IResult> (HttpRequest request, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
@@ -741,6 +750,9 @@ app.MapPost("/upload", async Task<IResult> (HttpRequest request, CancellationTok
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
 
+// --- Resize endpoint ---
+// RU: Строит или возвращает кешированный ресайз по фиксированной ширине (1280/1920/2440).
+// EN: Builds or returns a cached resized copy for fixed widths (1280/1920/2440).
 app.MapPost("/resize", async Task<IResult> (ResizeRequest req, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
@@ -806,6 +818,9 @@ app.MapPost("/resize", async Task<IResult> (ResizeRequest req, CancellationToken
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
 
+// --- Split endpoint ---
+// RU: Склеивает две картинки в один кадр 1280x720 с белой полосой по центру от исходников upload-original/*.
+// EN: Composes two images into a 1280x720 frame with a white divider, always from upload-original/*.
 app.MapPost("/split", async Task<IResult> (SplitRequest req, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
@@ -932,6 +947,9 @@ app.MapPost("/split", async Task<IResult> (SplitRequest req, CancellationToken c
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
 
+// --- Split3 endpoint ---
+// RU: Склеивает три картинки в один кадр 1280x720 с двумя белыми полосами.
+// EN: Composes three images into a 1280x720 frame with two white dividers.
 app.MapPost("/split3", async Task<IResult> (Split3Request req, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
@@ -1075,6 +1093,9 @@ app.MapPost("/split3", async Task<IResult> (Split3Request req, CancellationToken
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
 
+// --- Crop endpoint ---
+// RU: Кадрирует изображение по координатам из UI, пересоздаёт preview и сбрасывает все ресайзы/сплиты.
+// EN: Crops an image using UI coordinates, regenerates preview and invalidates resized/split outputs.
 app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
@@ -1190,6 +1211,9 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
 
+// --- OknoFix (/trashimg) endpoint ---
+// RU: Вырезает окно из исходника и помещает под PNG-шаблон вертикальной карточки.
+// EN: Crops a window from the original image and places it under the fixed PNG card template.
 app.MapPost("/trashimg", async Task<IResult> (WindowCropRequest req, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
@@ -1352,6 +1376,9 @@ app.MapPost("/trashimg", async Task<IResult> (WindowCropRequest req, Cancellatio
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
 
+// --- OknoScale endpoint ---
+// RU: Делает вариативную вертикальную карточку с изменяемой шириной окна и скруглёнными углами.
+// EN: Builds an experimental vertical card with adjustable window width and rounded corners.
 app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
