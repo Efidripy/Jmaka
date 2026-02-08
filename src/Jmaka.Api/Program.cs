@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.FileProviders;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.ColorProfiles;
 using Jmaka.Api.Services;
 
 // Jmaka Minimal API entry point.
@@ -13,6 +12,7 @@ using Jmaka.Api.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 const long MaxUploadBytes = 75L * 1024 * 1024; // 75 MB
+const long MaxVideoUploadBytes = MaxUploadBytes * 4; // 300 MB
 
 // Ширина миниатюры для превью (используется в UI, чтобы не грузить оригиналы)
 const int PreviewWidthPx = 320;
@@ -23,17 +23,17 @@ var resizeWidths = new[] { 1280, 1920, 2440 };
 // Лимиты на multipart/form-data
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = MaxUploadBytes;
+    options.MultipartBodyLengthLimit = MaxVideoUploadBytes;
 });
 
 // Лимиты на размер тела запроса (Kestrel/IIS)
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = MaxUploadBytes;
+    options.Limits.MaxRequestBodySize = MaxVideoUploadBytes;
 });
 builder.Services.Configure<IISServerOptions>(options =>
 {
-    options.MaxRequestBodySize = MaxUploadBytes;
+    options.MaxRequestBodySize = MaxVideoUploadBytes;
 });
 
 // Add services to the container.
@@ -85,6 +85,7 @@ var videoOutDir = Path.Combine(storageRoot, "video-out");
 var dataDir = Path.Combine(storageRoot, "data");
 var historyPath = Path.Combine(dataDir, "history.json");
 var compositesPath = Path.Combine(dataDir, "composites.json");
+var videoHistoryPath = Path.Combine(dataDir, "video-history.json");
 Directory.CreateDirectory(uploadDir);
 Directory.CreateDirectory(uploadOriginalDir);
 Directory.CreateDirectory(resizedDir);
@@ -105,6 +106,7 @@ foreach (var w in resizeWidths)
 
 var historyLock = new SemaphoreSlim(1, 1);
 var compositesLock = new SemaphoreSlim(1, 1);
+var videoHistoryLock = new SemaphoreSlim(1, 1);
 
 // Retention: delete entries/files older than N hours (default 48h)
 var retentionHours = 48;
@@ -751,7 +753,12 @@ app.MapPost("/upload", async Task<IResult> (HttpRequest request, ImagePipelineSe
 
         var storedName = $"{Guid.NewGuid():N}.jpg";
         var originalAbsolutePath = Path.Combine(uploadDir, storedName);
-        var tempPath = Path.Combine(uploadDir, $"{Guid.NewGuid():N}.upload");
+        var uploadExt = SanitizeExtension(Path.GetExtension(file.FileName));
+        if (string.IsNullOrWhiteSpace(uploadExt))
+        {
+            uploadExt = ".upload";
+        }
+        var tempPath = Path.Combine(uploadDir, $"{Guid.NewGuid():N}{uploadExt}");
 
         await using (var stream = File.Create(tempPath))
         {
@@ -849,7 +856,7 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, Cancellat
         return Results.BadRequest(new { error = "file is required" });
     }
 
-    if (file.Length > MaxUploadBytes * 4)
+    if (file.Length > MaxVideoUploadBytes)
     {
         return Results.BadRequest(new { error = "file is too large" });
     }
@@ -869,11 +876,25 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, Cancellat
 
     var duration = await TryGetVideoDurationSecondsAsync(absolutePath, ct);
 
+    var createdAt = DateTimeOffset.UtcNow;
+    var relativePath = $"video/{storedName}";
+    var entry = new VideoHistoryItem(
+        Kind: "upload",
+        StoredName: storedName,
+        OriginalName: file.FileName,
+        CreatedAt: createdAt,
+        Size: file.Length,
+        RelativePath: relativePath,
+        DurationSeconds: duration
+    );
+    await AppendVideoHistoryAsync(videoHistoryPath, videoHistoryLock, entry, ct);
+
     return Results.Ok(new
     {
         storedName,
         originalName = file.FileName,
-        relativePath = $"video/{storedName}",
+        createdAt,
+        relativePath,
         size = file.Length,
         durationSeconds = duration
     });
@@ -1832,7 +1853,7 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         return Results.BadRequest(new { error = "resulting duration too short" });
     }
 
-    var targetSizeMb = Math.Clamp(req.TargetSizeMb, 2, 2048);
+    var targetSizeMb = Math.Clamp(req.TargetSizeMb, 0.5, 2048);
     var targetBits = targetSizeMb * 1024L * 1024L * 8L;
     var bitrate = (long)Math.Max(250_000, targetBits / outputDuration);
 
@@ -1885,6 +1906,17 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         return Results.BadRequest(new { error = "ffmpeg pass 2 failed", details = pass2.Error });
     }
 
+    var entry = new VideoHistoryItem(
+        Kind: "processed",
+        StoredName: outName,
+        OriginalName: storedName,
+        CreatedAt: createdAt,
+        Size: new FileInfo(outPath).Length,
+        RelativePath: relPath,
+        DurationSeconds: outputDuration
+    );
+    await AppendVideoHistoryAsync(videoHistoryPath, videoHistoryLock, entry, ct);
+
     return Results.Ok(new
     {
         ok = true,
@@ -1896,6 +1928,44 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
 })
 .DisableAntiforgery()
 .Accepts<VideoProcessRequest>("application/json")
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
+
+// --- Video history endpoints ---
+app.MapGet("/video-history", async Task<IResult> (CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+    var items = await ReadVideoHistoryAsync(videoHistoryPath, videoHistoryLock, ct);
+    return Results.Ok(items.OrderByDescending(x => x.CreatedAt));
+})
+.Produces(StatusCodes.Status200OK);
+
+app.MapPost("/delete-video", async Task<IResult> (VideoDeleteRequest req, CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+    if (string.IsNullOrWhiteSpace(req.StoredName))
+    {
+        return Results.BadRequest(new { error = "storedName is required" });
+    }
+
+    var storedName = Path.GetFileName(req.StoredName);
+    if (!string.Equals(storedName, req.StoredName, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "invalid storedName" });
+    }
+
+    var removed = await RemoveVideoHistoryEntryAsync(videoHistoryPath, videoHistoryLock, storedName, ct);
+    if (removed is null)
+    {
+        return Results.NotFound(new { error = "not found" });
+    }
+
+    DeleteVideoFilesForEntry(removed);
+    return Results.Ok(new { ok = true, storedName });
+})
+.DisableAntiforgery()
+.Accepts<VideoDeleteRequest>("application/json")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
@@ -1992,12 +2062,6 @@ static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> a
 
 static async Task<ImageInfo> TryGetImageInfoAsync(string absolutePath, CancellationToken ct)
 {
-    var ext = Path.GetExtension(absolutePath);
-    if (!IsLikelyImageExtension(ext))
-    {
-        return new ImageInfo(0, 0);
-    }
-
     try
     {
         await using var input = File.OpenRead(absolutePath);
@@ -2027,8 +2091,6 @@ static async Task CreateResizedImageAsync(
         throw new InvalidOperationException("Invalid image");
     }
 
-    image.Metadata.IccProfile = IccProfile.Srgb;
-
     var newHeight = (int)Math.Round(imageHeight * (targetWidthPx / (double)imageWidth));
     newHeight = Math.Max(1, newHeight);
 
@@ -2050,8 +2112,6 @@ static async Task CreatePreviewImageAsync(
     {
         return;
     }
-
-    image.Metadata.IccProfile = IccProfile.Srgb;
 
     // Не апскейлим: если картинка уже меньше — просто копируем.
     if (targetWidthPx <= 0 || image.Width <= targetWidthPx)
@@ -2233,6 +2293,93 @@ static async Task AppendCompositeAsync(string compositesPath, SemaphoreSlim comp
     await WriteCompositesAsync(compositesPath, compositesLock, items, ct);
 }
 
+static async Task<List<VideoHistoryItem>> ReadVideoHistoryAsync(string historyPath, SemaphoreSlim historyLock, CancellationToken ct)
+{
+    await historyLock.WaitAsync(ct);
+    try
+    {
+        if (!File.Exists(historyPath))
+        {
+            return new List<VideoHistoryItem>();
+        }
+
+        var json = await File.ReadAllTextAsync(historyPath, ct);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new List<VideoHistoryItem>();
+        }
+
+        return JsonSerializer.Deserialize<List<VideoHistoryItem>>(json) ?? new List<VideoHistoryItem>();
+    }
+    catch
+    {
+        return new List<VideoHistoryItem>();
+    }
+    finally
+    {
+        historyLock.Release();
+    }
+}
+
+static async Task WriteVideoHistoryAsync(string historyPath, SemaphoreSlim historyLock, List<VideoHistoryItem> items, CancellationToken ct)
+{
+    await historyLock.WaitAsync(ct);
+    try
+    {
+        var json = JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(historyPath, json, ct);
+    }
+    finally
+    {
+        historyLock.Release();
+    }
+}
+
+static async Task AppendVideoHistoryAsync(string historyPath, SemaphoreSlim historyLock, VideoHistoryItem entry, CancellationToken ct)
+{
+    var items = await ReadVideoHistoryAsync(historyPath, historyLock, ct);
+    items.Add(entry);
+    await WriteVideoHistoryAsync(historyPath, historyLock, items, ct);
+}
+
+static async Task<VideoHistoryItem?> RemoveVideoHistoryEntryAsync(string historyPath, SemaphoreSlim historyLock, string storedName, CancellationToken ct)
+{
+    var items = await ReadVideoHistoryAsync(historyPath, historyLock, ct);
+    var idx = items.FindIndex(x => string.Equals(x.StoredName, storedName, StringComparison.OrdinalIgnoreCase));
+    if (idx < 0)
+    {
+        return null;
+    }
+
+    var removed = items[idx];
+    items.RemoveAt(idx);
+    await WriteVideoHistoryAsync(historyPath, historyLock, items, ct);
+    return removed;
+}
+
+static void DeleteVideoFilesForEntry(VideoHistoryItem entry)
+{
+    if (string.IsNullOrWhiteSpace(entry.RelativePath))
+    {
+        return;
+    }
+
+    var rel = entry.RelativePath.Replace('\\', '/').TrimStart('/');
+    if (rel.Contains("..", StringComparison.Ordinal))
+    {
+        return;
+    }
+
+    var storageRoot = Environment.GetEnvironmentVariable("JMAKA_STORAGE_ROOT");
+    if (string.IsNullOrWhiteSpace(storageRoot))
+    {
+        storageRoot = AppContext.BaseDirectory;
+    }
+
+    var absolute = Path.Combine(storageRoot, rel);
+    TryDeleteFile(absolute);
+}
+
 static void TryDeleteFile(string path)
 {
     try
@@ -2352,6 +2499,15 @@ record CompositeHistoryItem(
     string RelativePath,
     string[] Sources
 );
+record VideoHistoryItem(
+    string Kind,
+    string StoredName,
+    string OriginalName,
+    DateTimeOffset CreatedAt,
+    long Size,
+    string RelativePath,
+    double DurationSeconds
+);
 record UploadHistoryItem(
     string StoredName,
     string OriginalName,
@@ -2366,6 +2522,7 @@ record UploadHistoryItem(
 );
 
 record CompositeDeleteRequest(string RelativePath);
+record VideoDeleteRequest(string StoredName);
 
 record VideoProcessRequest(
     string StoredName,
@@ -2374,7 +2531,7 @@ record VideoProcessRequest(
     double? CutStartSec,
     double? CutEndSec,
     int OutputWidth,
-    int TargetSizeMb,
+    double TargetSizeMb,
     double VerticalOffsetPx
 );
 

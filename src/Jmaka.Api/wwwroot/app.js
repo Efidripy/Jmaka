@@ -1,3 +1,6 @@
+// Jmaka frontend version: 0.2.0-rc7
+const APP_VERSION = '0.2.0-rc7';
+
 const fileInput = document.getElementById('fileInput');
 const saveBtn = document.getElementById('saveBtn');
 const preview = document.getElementById('preview');
@@ -37,6 +40,61 @@ const viewerCloseBtn = document.getElementById('viewerClose');
 const viewerImg = document.getElementById('viewerImg');
 const viewerLabel = document.getElementById('viewerLabel');
 const viewerOpen = document.getElementById('viewerOpen');
+
+function getBasePath() {
+  const path = window.location.pathname || '/';
+  if (path.endsWith('/')) return path;
+
+  const lastSegment = path.split('/').pop();
+  if (lastSegment && !lastSegment.includes('.')) {
+    return `${path}/`;
+  }
+
+  const lastSlash = path.lastIndexOf('/');
+  if (lastSlash >= 0) return path.slice(0, lastSlash + 1) || '/';
+  return '/';
+}
+
+function toAbsoluteUrl(url) {
+  if (!url) return url;
+  const raw = String(url);
+  if (/^[a-z]+:\/\//i.test(raw) || raw.startsWith('data:') || raw.startsWith('blob:')) {
+    return raw;
+  }
+  if (raw.startsWith('/')) return raw;
+  return `${getBasePath()}${raw}`;
+}
+
+function buildApiUrlCandidates(relativePath) {
+  const clean = String(relativePath || '').replace(/^\/+/, '');
+  if (!clean) return [];
+  const candidates = [];
+  const primary = toAbsoluteUrl(clean);
+  if (primary) candidates.push(primary);
+
+  const root = `/${clean}`;
+  if (!candidates.includes(root)) candidates.push(root);
+
+  const base = getBasePath();
+  if (base && base !== '/') {
+    const baseClean = base.endsWith('/') ? base : `${base}/`;
+    const baseUrl = `${baseClean}${clean}`;
+    if (!candidates.includes(baseUrl)) candidates.push(baseUrl);
+  }
+
+  return candidates;
+}
+
+async function fetchWithFallback(relativePath, options) {
+  const candidates = buildApiUrlCandidates(relativePath);
+  let lastRes = null;
+  for (const url of candidates) {
+    const res = await fetch(url, options);
+    if (res.status !== 404) return res;
+    lastRes = res;
+  }
+  return lastRes || fetch(toAbsoluteUrl(relativePath), options);
+}
 
 function isLikelyImageUrl(url) {
   if (!url) return false;
@@ -374,6 +432,8 @@ const videoEditApplyBtn = document.getElementById('videoEditApply');
 const videoEditHint = document.getElementById('videoEditHint');
 const videoEditPreview = document.getElementById('videoEditPreview');
 const videoUploadInput = document.getElementById('videoUploadInput');
+const videoHistoryList = document.getElementById('videoHistoryList');
+const videoHistoryRefresh = document.getElementById('videoHistoryRefresh');
 const videoTrimStart = document.getElementById('videoTrimStart');
 const videoTrimEnd = document.getElementById('videoTrimEnd');
 const videoCutStart = document.getElementById('videoCutStart');
@@ -420,11 +480,13 @@ const cacheBust = new Map();
 // RU: Добавляет к URL кеш‑бастер ?v=..., чтобы браузер не показывал старую версию файла после crop/resize.
 // EN: Appends a ?v=... cache‑buster so the browser does not serve stale images after crop/resize.
 function withCacheBust(relativeUrl, storedName) {
-  if (!relativeUrl || !storedName) return relativeUrl;
+  if (!relativeUrl) return relativeUrl;
+  const resolved = toAbsoluteUrl(relativeUrl);
+  if (!storedName) return resolved;
   const v = cacheBust.get(storedName);
-  if (!v) return relativeUrl;
-  const sep = relativeUrl.includes('?') ? '&' : '?';
-  return `${relativeUrl}${sep}v=${v}`;
+  if (!v) return resolved;
+  const sep = resolved.includes('?') ? '&' : '?';
+  return `${resolved}${sep}v=${v}`;
 }
 
 function detectEdgeHandle(localX, localY, w, h, edgePx) {
@@ -569,7 +631,7 @@ function splitLayoutDefaults() {
 
 async function fetchHistoryRaw() {
   try {
-    const res = await fetch('history', { cache: 'no-store' });
+    const res = await fetch(toAbsoluteUrl('history'), { cache: 'no-store' });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch { data = []; }
@@ -808,7 +870,7 @@ async function applySplit() {
     setBusy(true);
     if (splitHint) splitHint.textContent = 'Склеиваю...';
 
-    const res = await fetch('split', {
+    const res = await fetch(toAbsoluteUrl('split'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req)
@@ -1450,7 +1512,7 @@ async function applySplit3() {
     setBusy(true);
     if (split3Hint) split3Hint.textContent = 'Склеиваю...';
 
-    const res = await fetch('split3', {
+    const res = await fetch(toAbsoluteUrl('split3'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req)
@@ -1779,10 +1841,7 @@ function showResult(obj) {
 function setMainPreviewFromItem(item) {
   const hasItem = !!(item && item.originalRelativePath);
 
-  // Tools availability should not depend on the preview element.
-  if (toolButtons) {
-    toolButtons.hidden = !hasItem;
-  }
+  setToolButtonsEnabled(hasItem);
 
   // Preview is optional (we may remove it from UI).
   if (!preview) {
@@ -1952,7 +2011,7 @@ async function deleteRow(storedName) {
     setBusy(true);
     hint.textContent = 'Удаляю...';
 
-    const res = await fetch('delete', {
+    const res = await fetch(toAbsoluteUrl('delete'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ storedName })
@@ -2152,7 +2211,7 @@ async function loadHistory(preferStoredName) {
   if (!filesTbody) return [];
 
   try {
-    const res = await fetch('history', { cache: 'no-store' });
+    const res = await fetch(toAbsoluteUrl('history'), { cache: 'no-store' });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch { data = []; }
@@ -2218,10 +2277,23 @@ function setCellLink(storedName, width, relativePath) {
 
 function resetSizeButtons() {
   if (!sizeButtons) return;
-  sizeButtons.hidden = true;
   for (const btn of sizeBtns) {
     btn.disabled = true;
     delete btn.dataset.href;
+  }
+}
+
+function setToolButtonsEnabled(hasItem) {
+  if (!toolButtons) return;
+  const imageToolBtns = [cropToolBtn, splitToolBtn, split3ToolBtn, trashFixToolBtn, trashToolBtn, imageEditToolBtn]
+    .filter(Boolean);
+
+  for (const btn of imageToolBtns) {
+    btn.disabled = !hasItem;
+  }
+
+  if (videoEditToolBtn) {
+    videoEditToolBtn.disabled = false;
   }
 }
 
@@ -2235,8 +2307,6 @@ function updateSizeButtonsForCurrent() {
     resetSizeButtons();
     return;
   }
-
-  sizeButtons.hidden = false;
 
   const u = uploads.get(storedName);
 
@@ -2258,7 +2328,7 @@ async function generateResize(width) {
     return null;
   }
 
-  const res = await fetch('resize', {
+  const res = await fetch(toAbsoluteUrl('resize'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ storedName: lastUpload.storedName, width })
@@ -2351,7 +2421,7 @@ async function upload(files) {
       fd.append('files', f);
     }
 
-    const res = await fetch('upload', {
+    const res = await fetchWithFallback('upload', {
       method: 'POST',
       body: fd
     });
@@ -2875,7 +2945,7 @@ async function applyCrop() {
     setCropBusy(true);
     hint.textContent = 'Обрезаю...';
 
-    const res = await fetch('crop', {
+    const res = await fetch(toAbsoluteUrl('crop'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req)
@@ -3186,7 +3256,7 @@ async function deleteComposite(relativePath, tr) {
 
   try {
     setBusy(true);
-    const res = await fetch('delete-composite', {
+    const res = await fetch(toAbsoluteUrl('delete-composite'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ relativePath })
@@ -3213,7 +3283,7 @@ async function loadComposites() {
   if (!compositesTbody) return [];
 
   try {
-    const res = await fetch('composites', { cache: 'no-store' });
+    const res = await fetch(toAbsoluteUrl('composites'), { cache: 'no-store' });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch { data = []; }
@@ -3291,6 +3361,8 @@ async function loadComposites() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  setToolButtonsEnabled(false);
+  resetSizeButtons();
   loadHistory();
   loadComposites();
 });
@@ -3717,7 +3789,7 @@ function wireOknoScaleUI() {
         setBusy(true);
         if (oknoScaleHint) oknoScaleHint.textContent = 'Генерирую OknoScale...';
 
-        const res = await fetch('oknoscale', {
+        const res = await fetch(toAbsoluteUrl('oknoscale'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(req)
@@ -4182,7 +4254,7 @@ function wireTrashUI() {
         setBusy(true);
         if (trashHint) trashHint.textContent = 'Генерирую OknoFix...';
 
-        const res = await fetch('oknofix', {
+        const res = await fetch(toAbsoluteUrl('oknofix'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(req)
@@ -4257,7 +4329,7 @@ async function updateImageEditPreview() {
   const payload = getImageEditPayload();
   if (imageEditHint) imageEditHint.textContent = 'Применяю правки...';
   try {
-    const res = await fetch('image-edit-preview', {
+    const res = await fetch(toAbsoluteUrl('image-edit-preview'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -4333,7 +4405,7 @@ if (imageEditApplyBtn) {
     const payload = getImageEditPayload();
     if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
     try {
-      const res = await fetch('image-edit-apply', {
+      const res = await fetch(toAbsoluteUrl('image-edit-apply'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -4367,6 +4439,7 @@ function openVideoEdit() {
   videoEditState.open = true;
   if (videoEditHint) videoEditHint.textContent = 'Загрузите видео, затем настройте параметры.';
   if (videoEditApplyBtn) videoEditApplyBtn.disabled = true;
+  loadVideoHistory();
 }
 
 if (videoEditToolBtn) {
@@ -4384,6 +4457,100 @@ if (videoEditModal) {
   });
 }
 
+if (videoHistoryRefresh) {
+  videoHistoryRefresh.addEventListener('click', (e) => {
+    e.preventDefault();
+    loadVideoHistory();
+  });
+}
+
+function formatBytes(v) {
+  if (!Number.isFinite(v)) return '';
+  if (v < 1024) return `${v} B`;
+  const kb = v / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(2)} MB`;
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
+}
+
+async function loadVideoHistory() {
+  if (!videoHistoryList) return;
+  videoHistoryList.innerHTML = 'Загрузка...';
+  try {
+    const res = await fetch(toAbsoluteUrl('video-history'), { cache: 'no-store' });
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data)) {
+      videoHistoryList.innerHTML = 'Ошибка загрузки истории.';
+      return;
+    }
+    if (data.length === 0) {
+      videoHistoryList.innerHTML = 'История пуста.';
+      return;
+    }
+
+    const items = data.map((item) => {
+      const div = document.createElement('div');
+      div.className = 'video-history-item';
+      const meta = document.createElement('div');
+      meta.className = 'video-history-meta';
+      const name = item.originalName || item.storedName || 'video';
+      meta.innerHTML = `
+        <div><strong>${name}</strong> <span>${item.kind || ''}</span></div>
+        <div>${formatDate(item.createdAt)} · ${formatBytes(item.size || 0)}</div>
+        <div>${item.relativePath || ''}</div>
+      `;
+      const actions = document.createElement('div');
+      actions.className = 'video-history-actions';
+      if (item.relativePath) {
+        const link = document.createElement('a');
+        link.href = toAbsoluteUrl(item.relativePath);
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        link.className = 'btn small';
+        link.textContent = 'Открыть';
+        actions.appendChild(link);
+      }
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn small';
+      del.textContent = 'Удалить';
+      del.addEventListener('click', async () => {
+        del.disabled = true;
+        try {
+          const resDel = await fetch(toAbsoluteUrl('delete-video'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ storedName: item.storedName })
+          });
+          if (!resDel.ok) throw new Error('delete failed');
+        } catch {
+          del.disabled = false;
+          return;
+        }
+        loadVideoHistory();
+      });
+      actions.appendChild(del);
+      div.appendChild(meta);
+      div.appendChild(actions);
+      return div;
+    });
+
+    videoHistoryList.innerHTML = '';
+    for (const node of items) {
+      videoHistoryList.appendChild(node);
+    }
+  } catch {
+    videoHistoryList.innerHTML = 'Ошибка загрузки истории.';
+  }
+}
+
 if (videoUploadInput) {
   videoUploadInput.addEventListener('change', async (e) => {
     const file = videoUploadInput.files && videoUploadInput.files[0];
@@ -4392,8 +4559,9 @@ if (videoUploadInput) {
     form.append('file', file);
     if (videoEditHint) videoEditHint.textContent = 'Загружаю видео...';
     try {
-      const res = await fetch('upload-video', { method: 'POST', body: form });
-      const data = await res.json();
+      const res = await fetchWithFallback('upload-video', { method: 'POST', body: form });
+      let data;
+      try { data = await res.json(); } catch { data = null; }
       if (!res.ok) throw new Error(data && data.error ? data.error : 'upload failed');
       videoEditState.storedName = data.storedName;
       videoEditState.durationSeconds = data.durationSeconds || 0;
@@ -4405,8 +4573,9 @@ if (videoUploadInput) {
       }
       if (videoEditHint) videoEditHint.textContent = 'Настройте параметры и нажмите "Сделать".';
       if (videoEditApplyBtn) videoEditApplyBtn.disabled = false;
+      loadVideoHistory();
     } catch (err) {
-      if (videoEditHint) videoEditHint.textContent = 'Ошибка загрузки видео.';
+      if (videoEditHint) videoEditHint.textContent = `Ошибка загрузки видео. ${String(err || '').trim()}`.trim();
     }
   });
 }
@@ -4427,12 +4596,13 @@ if (videoEditApplyBtn) {
     };
     if (videoEditHint) videoEditHint.textContent = 'Обрабатываю видео...';
     try {
-      const res = await fetch('video-process', {
+      const res = await fetch(toAbsoluteUrl('video-process'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+      let data;
+      try { data = await res.json(); } catch { data = null; }
       if (!res.ok) throw new Error(data && data.error ? data.error : 'process failed');
       if (videoEditPreview && data.relativePath) {
         videoEditPreview.src = withCacheBust(data.relativePath, videoEditState.storedName);
@@ -4443,8 +4613,9 @@ if (videoEditApplyBtn) {
           ? `Готово: <a href="${link}" target="_blank" rel="noreferrer">скачать</a>`
           : 'Готово.';
       }
+      loadVideoHistory();
     } catch (err) {
-      if (videoEditHint) videoEditHint.textContent = 'Ошибка обработки видео.';
+      if (videoEditHint) videoEditHint.textContent = `Ошибка обработки видео. ${String(err || '').trim()}`.trim();
     }
   });
 }
