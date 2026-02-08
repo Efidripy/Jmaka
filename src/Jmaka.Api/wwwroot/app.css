@@ -1,3 +1,4 @@
+/* Jmaka frontend version: 0.2.0-rc5 */
 :root {
   --bg: #0b0f17;
   --panel: #111827;
@@ -153,6 +154,11 @@ html, body {
 
 .tool-btn:hover {
   border-color: rgba(96, 165, 250, 0.6);
+}
+
+.tool-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Row 2: sizes */
