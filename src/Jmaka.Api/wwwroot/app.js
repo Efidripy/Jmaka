@@ -1,3 +1,6 @@
+// Jmaka frontend version: 0.2.0-rc4
+const APP_VERSION = '0.2.0-rc4';
+
 const fileInput = document.getElementById('fileInput');
 const saveBtn = document.getElementById('saveBtn');
 const preview = document.getElementById('preview');
