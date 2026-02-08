@@ -38,6 +38,30 @@ const viewerImg = document.getElementById('viewerImg');
 const viewerLabel = document.getElementById('viewerLabel');
 const viewerOpen = document.getElementById('viewerOpen');
 
+function getBasePath() {
+  const path = window.location.pathname || '/';
+  if (path.endsWith('/')) return path;
+
+  const lastSegment = path.split('/').pop();
+  if (lastSegment && !lastSegment.includes('.')) {
+    return `${path}/`;
+  }
+
+  const lastSlash = path.lastIndexOf('/');
+  if (lastSlash >= 0) return path.slice(0, lastSlash + 1) || '/';
+  return '/';
+}
+
+function toAbsoluteUrl(url) {
+  if (!url) return url;
+  const raw = String(url);
+  if (/^[a-z]+:\/\//i.test(raw) || raw.startsWith('data:') || raw.startsWith('blob:')) {
+    return raw;
+  }
+  if (raw.startsWith('/')) return raw;
+  return `${getBasePath()}${raw}`;
+}
+
 function isLikelyImageUrl(url) {
   if (!url) return false;
   // Strip query/hash (we often add ?v=... for cache-busting)
@@ -420,11 +444,13 @@ const cacheBust = new Map();
 // RU: Добавляет к URL кеш‑бастер ?v=..., чтобы браузер не показывал старую версию файла после crop/resize.
 // EN: Appends a ?v=... cache‑buster so the browser does not serve stale images after crop/resize.
 function withCacheBust(relativeUrl, storedName) {
-  if (!relativeUrl || !storedName) return relativeUrl;
+  if (!relativeUrl) return relativeUrl;
+  const resolved = toAbsoluteUrl(relativeUrl);
+  if (!storedName) return resolved;
   const v = cacheBust.get(storedName);
-  if (!v) return relativeUrl;
-  const sep = relativeUrl.includes('?') ? '&' : '?';
-  return `${relativeUrl}${sep}v=${v}`;
+  if (!v) return resolved;
+  const sep = resolved.includes('?') ? '&' : '?';
+  return `${resolved}${sep}v=${v}`;
 }
 
 function detectEdgeHandle(localX, localY, w, h, edgePx) {
@@ -569,7 +595,7 @@ function splitLayoutDefaults() {
 
 async function fetchHistoryRaw() {
   try {
-    const res = await fetch('history', { cache: 'no-store' });
+    const res = await fetch(toAbsoluteUrl('history'), { cache: 'no-store' });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch { data = []; }
@@ -808,7 +834,7 @@ async function applySplit() {
     setBusy(true);
     if (splitHint) splitHint.textContent = 'Склеиваю...';
 
-    const res = await fetch('split', {
+    const res = await fetch(toAbsoluteUrl('split'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req)
@@ -1450,7 +1476,7 @@ async function applySplit3() {
     setBusy(true);
     if (split3Hint) split3Hint.textContent = 'Склеиваю...';
 
-    const res = await fetch('split3', {
+    const res = await fetch(toAbsoluteUrl('split3'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req)
@@ -1949,7 +1975,7 @@ async function deleteRow(storedName) {
     setBusy(true);
     hint.textContent = 'Удаляю...';
 
-    const res = await fetch('delete', {
+    const res = await fetch(toAbsoluteUrl('delete'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ storedName })
@@ -2149,7 +2175,7 @@ async function loadHistory(preferStoredName) {
   if (!filesTbody) return [];
 
   try {
-    const res = await fetch('history', { cache: 'no-store' });
+    const res = await fetch(toAbsoluteUrl('history'), { cache: 'no-store' });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch { data = []; }
@@ -2266,7 +2292,7 @@ async function generateResize(width) {
     return null;
   }
 
-  const res = await fetch('resize', {
+  const res = await fetch(toAbsoluteUrl('resize'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ storedName: lastUpload.storedName, width })
@@ -2359,7 +2385,7 @@ async function upload(files) {
       fd.append('files', f);
     }
 
-    const res = await fetch('upload', {
+    const res = await fetch(toAbsoluteUrl('upload'), {
       method: 'POST',
       body: fd
     });
@@ -2883,7 +2909,7 @@ async function applyCrop() {
     setCropBusy(true);
     hint.textContent = 'Обрезаю...';
 
-    const res = await fetch('crop', {
+    const res = await fetch(toAbsoluteUrl('crop'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req)
@@ -3194,7 +3220,7 @@ async function deleteComposite(relativePath, tr) {
 
   try {
     setBusy(true);
-    const res = await fetch('delete-composite', {
+    const res = await fetch(toAbsoluteUrl('delete-composite'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ relativePath })
@@ -3221,7 +3247,7 @@ async function loadComposites() {
   if (!compositesTbody) return [];
 
   try {
-    const res = await fetch('composites', { cache: 'no-store' });
+    const res = await fetch(toAbsoluteUrl('composites'), { cache: 'no-store' });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch { data = []; }
@@ -3727,7 +3753,7 @@ function wireOknoScaleUI() {
         setBusy(true);
         if (oknoScaleHint) oknoScaleHint.textContent = 'Генерирую OknoScale...';
 
-        const res = await fetch('oknoscale', {
+        const res = await fetch(toAbsoluteUrl('oknoscale'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(req)
@@ -4192,7 +4218,7 @@ function wireTrashUI() {
         setBusy(true);
         if (trashHint) trashHint.textContent = 'Генерирую OknoFix...';
 
-        const res = await fetch('oknofix', {
+        const res = await fetch(toAbsoluteUrl('oknofix'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(req)
@@ -4267,7 +4293,7 @@ async function updateImageEditPreview() {
   const payload = getImageEditPayload();
   if (imageEditHint) imageEditHint.textContent = 'Применяю правки...';
   try {
-    const res = await fetch('image-edit-preview', {
+    const res = await fetch(toAbsoluteUrl('image-edit-preview'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -4343,7 +4369,7 @@ if (imageEditApplyBtn) {
     const payload = getImageEditPayload();
     if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
     try {
-      const res = await fetch('image-edit-apply', {
+      const res = await fetch(toAbsoluteUrl('image-edit-apply'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -4402,7 +4428,7 @@ if (videoUploadInput) {
     form.append('file', file);
     if (videoEditHint) videoEditHint.textContent = 'Загружаю видео...';
     try {
-      const res = await fetch('upload-video', { method: 'POST', body: form });
+      const res = await fetch(toAbsoluteUrl('upload-video'), { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data && data.error ? data.error : 'upload failed');
       videoEditState.storedName = data.storedName;
@@ -4437,7 +4463,7 @@ if (videoEditApplyBtn) {
     };
     if (videoEditHint) videoEditHint.textContent = 'Обрабатываю видео...';
     try {
-      const res = await fetch('video-process', {
+      const res = await fetch(toAbsoluteUrl('video-process'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
