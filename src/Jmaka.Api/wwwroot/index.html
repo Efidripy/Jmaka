@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jmaka 0.2.0-rc6</title>
-  <link rel="stylesheet" href="app.css?v=0.2.0-rc6" />
+  <title>Jmaka 0.2.0-rc7</title>
+  <link rel="stylesheet" href="app.css?v=0.2.0-rc7" />
 </head>
 <body>
   <main class="page">
@@ -26,7 +26,7 @@
       </button>
 
       <div class="preview-wrap">
-        <div class="preview-title">Jmaka 0.2.0-rc6</div>
+        <div class="preview-title">Jmaka 0.2.0-rc7</div>
 
         <div class="main-controls" aria-label="Панель управления">
           <div class="tool-buttons" aria-label="Инструменты">
@@ -358,6 +358,13 @@
           </label>
           <label class="edit-row">Target size (MB) <input id="videoTargetSize" type="number" min="0.5" max="2048" step="0.1" value="25" /></label>
           <label class="edit-row">Vertical offset (px) <input id="videoVerticalOffset" type="range" min="-400" max="400" step="1" value="0" /></label>
+          <div class="edit-row video-history">
+            <div class="video-history-header">
+              <span>Video history</span>
+              <button id="videoHistoryRefresh" class="btn small" type="button">Обновить</button>
+            </div>
+            <div id="videoHistoryList" class="video-history-list"></div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -548,6 +555,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=0.2.0-rc6"></script>
+  <script src="app.js?v=0.2.0-rc7"></script>
 </body>
 </html>
