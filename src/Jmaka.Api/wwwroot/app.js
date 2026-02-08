@@ -1,5 +1,5 @@
-// Jmaka frontend version: 0.2.0-rc6
-const APP_VERSION = '0.2.0-rc6';
+// Jmaka frontend version: 0.2.0-rc7
+const APP_VERSION = '0.2.0-rc7';
 
 const fileInput = document.getElementById('fileInput');
 const saveBtn = document.getElementById('saveBtn');
@@ -432,6 +432,8 @@ const videoEditApplyBtn = document.getElementById('videoEditApply');
 const videoEditHint = document.getElementById('videoEditHint');
 const videoEditPreview = document.getElementById('videoEditPreview');
 const videoUploadInput = document.getElementById('videoUploadInput');
+const videoHistoryList = document.getElementById('videoHistoryList');
+const videoHistoryRefresh = document.getElementById('videoHistoryRefresh');
 const videoTrimStart = document.getElementById('videoTrimStart');
 const videoTrimEnd = document.getElementById('videoTrimEnd');
 const videoCutStart = document.getElementById('videoCutStart');
@@ -4437,6 +4439,7 @@ function openVideoEdit() {
   videoEditState.open = true;
   if (videoEditHint) videoEditHint.textContent = 'Загрузите видео, затем настройте параметры.';
   if (videoEditApplyBtn) videoEditApplyBtn.disabled = true;
+  loadVideoHistory();
 }
 
 if (videoEditToolBtn) {
@@ -4452,6 +4455,100 @@ if (videoEditModal) {
     const t = e.target;
     if (t && t.dataset && t.dataset.close) closeVideoEdit();
   });
+}
+
+if (videoHistoryRefresh) {
+  videoHistoryRefresh.addEventListener('click', (e) => {
+    e.preventDefault();
+    loadVideoHistory();
+  });
+}
+
+function formatBytes(v) {
+  if (!Number.isFinite(v)) return '';
+  if (v < 1024) return `${v} B`;
+  const kb = v / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(2)} MB`;
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
+}
+
+async function loadVideoHistory() {
+  if (!videoHistoryList) return;
+  videoHistoryList.innerHTML = 'Загрузка...';
+  try {
+    const res = await fetch(toAbsoluteUrl('video-history'), { cache: 'no-store' });
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data)) {
+      videoHistoryList.innerHTML = 'Ошибка загрузки истории.';
+      return;
+    }
+    if (data.length === 0) {
+      videoHistoryList.innerHTML = 'История пуста.';
+      return;
+    }
+
+    const items = data.map((item) => {
+      const div = document.createElement('div');
+      div.className = 'video-history-item';
+      const meta = document.createElement('div');
+      meta.className = 'video-history-meta';
+      const name = item.originalName || item.storedName || 'video';
+      meta.innerHTML = `
+        <div><strong>${name}</strong> <span>${item.kind || ''}</span></div>
+        <div>${formatDate(item.createdAt)} · ${formatBytes(item.size || 0)}</div>
+        <div>${item.relativePath || ''}</div>
+      `;
+      const actions = document.createElement('div');
+      actions.className = 'video-history-actions';
+      if (item.relativePath) {
+        const link = document.createElement('a');
+        link.href = toAbsoluteUrl(item.relativePath);
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        link.className = 'btn small';
+        link.textContent = 'Открыть';
+        actions.appendChild(link);
+      }
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn small';
+      del.textContent = 'Удалить';
+      del.addEventListener('click', async () => {
+        del.disabled = true;
+        try {
+          const resDel = await fetch(toAbsoluteUrl('delete-video'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ storedName: item.storedName })
+          });
+          if (!resDel.ok) throw new Error('delete failed');
+        } catch {
+          del.disabled = false;
+          return;
+        }
+        loadVideoHistory();
+      });
+      actions.appendChild(del);
+      div.appendChild(meta);
+      div.appendChild(actions);
+      return div;
+    });
+
+    videoHistoryList.innerHTML = '';
+    for (const node of items) {
+      videoHistoryList.appendChild(node);
+    }
+  } catch {
+    videoHistoryList.innerHTML = 'Ошибка загрузки истории.';
+  }
 }
 
 if (videoUploadInput) {
@@ -4476,6 +4573,7 @@ if (videoUploadInput) {
       }
       if (videoEditHint) videoEditHint.textContent = 'Настройте параметры и нажмите "Сделать".';
       if (videoEditApplyBtn) videoEditApplyBtn.disabled = false;
+      loadVideoHistory();
     } catch (err) {
       if (videoEditHint) videoEditHint.textContent = `Ошибка загрузки видео. ${String(err || '').trim()}`.trim();
     }
@@ -4515,6 +4613,7 @@ if (videoEditApplyBtn) {
           ? `Готово: <a href="${link}" target="_blank" rel="noreferrer">скачать</a>`
           : 'Готово.';
       }
+      loadVideoHistory();
     } catch (err) {
       if (videoEditHint) videoEditHint.textContent = `Ошибка обработки видео. ${String(err || '').trim()}`.trim();
     }
