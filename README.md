@@ -76,11 +76,11 @@
 #### Одна команда: скачать архив + (опционально) распаковать в домашнюю папку + запустить установщик
 ```bash path=null start=null
 curl -L -o ~/jmaka.tar.gz \
-  https://github.com/Fastdust/Jmaka/releases/latest/download/jmaka-linux-x64.tar.gz \
+  https://github.com/Efidripy/Jmaka/releases/latest/download/jmaka-linux-x64.tar.gz \
 && mkdir -p ~/jmaka_bundle \
 && tar -xzf ~/jmaka.tar.gz -C ~/jmaka_bundle \
 && curl -L -o ~/jmaka-install.sh \
-  https://raw.githubusercontent.com/Fastdust/Jmaka/main/deploy/ubuntu24/install.sh \
+  https://raw.githubusercontent.com/Efidripy/Jmaka/main/deploy/ubuntu24/install.sh \
 && bash ~/jmaka-install.sh --interactive
 ```
 
@@ -141,7 +141,7 @@ curl -L -o ~/jmaka.tar.gz \
    ```bash
    cd ~
    curl -L -o jmaka.tar.gz \
-     https://github.com/Fastdust/Jmaka/releases/latest/download/jmaka-linux-x64.tar.gz
+     https://github.com/Efidripy/Jmaka/releases/latest/download/jmaka-linux-x64.tar.gz
    ```
 
 2. Запустить апдейтер из корня репозитория **или** после скачивания `update-instance.sh`:
@@ -151,7 +151,7 @@ curl -L -o ~/jmaka.tar.gz \
 
    # либо скачать скрипт отдельно и запустить
    curl -L -o ~/jmaka-update.sh \
-     https://raw.githubusercontent.com/Fastdust/Jmaka/main/deploy/ubuntu24/update-instance.sh
+     https://raw.githubusercontent.com/Efidripy/Jmaka/main/deploy/ubuntu24/update-instance.sh
    sudo bash ~/jmaka-update.sh
    ```
 
