@@ -6,6 +6,8 @@ on:
       tag:
         description: "Release tag (e.g. v0.2.0-rc3)"
         required: true
+  release:
+    types: [published]
   push:
     tags:
       - "v*"
@@ -41,6 +43,8 @@ jobs:
         run: |
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
           else
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
