@@ -62,8 +62,22 @@ src/Jmaka.Api/data/composites.json
 !src/Jmaka.Api/data/.gitkeep
 
 # OknoFix/OknoScale composites (runtime files)
-src/Jmaka.Api/trashimg/*
-!src/Jmaka.Api/trashimg/.gitkeep
+src/Jmaka.Api/oknofix/*
+!src/Jmaka.Api/oknofix/.gitkeep
+src/Jmaka.Api/oknoscale/*
+!src/Jmaka.Api/oknoscale/.gitkeep
+
+# Image edits (runtime files)
+src/Jmaka.Api/edits/*
+!src/Jmaka.Api/edits/.gitkeep
+src/Jmaka.Api/edits-preview/*
+!src/Jmaka.Api/edits-preview/.gitkeep
+
+# Video runtime files
+src/Jmaka.Api/video/*
+!src/Jmaka.Api/video/.gitkeep
+src/Jmaka.Api/video-out/*
+!src/Jmaka.Api/video-out/.gitkeep
 
 # Build outputs
 /dist/

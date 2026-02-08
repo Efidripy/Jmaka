@@ -269,6 +269,8 @@ const cropAspectBtns = cropModal ? Array.from(cropModal.querySelectorAll('button
 const toolButtons = document.querySelector('.tool-buttons');
 const cropToolBtn = document.getElementById('cropToolBtn');
 const splitToolBtn = document.getElementById('splitToolBtn');
+const imageEditToolBtn = document.getElementById('imageEditToolBtn');
+const videoEditToolBtn = document.getElementById('videoEditToolBtn');
 
 // split modal elements
 // RU: Окно Split: две половины 16:9, галерея миниатюр 1280 и элементы управления.
@@ -313,7 +315,7 @@ const split3ItemB = document.getElementById('split3ItemB');
 const split3ItemC = document.getElementById('split3ItemC');
 const split3Hint = document.getElementById('split3Hint');
 
-// TrashImg / OknoFix elements
+// OknoFix elements
 // RU: Элементы модалки OknoFix (жёсткий PNG‑шаблон вертикальной карточки).
 // EN: Elements of the OknoFix modal that uses a fixed PNG card template.
 const trashToolBtn = document.getElementById('trashToolBtn');
@@ -349,6 +351,36 @@ const oknoScaleHandleRight = document.getElementById('oknoScaleHandleRight');
 const oknoScaleHint = document.getElementById('oknoScaleHint');
 const oknoScaleZoomInBtn = document.getElementById('oknoScaleZoomIn');
 const oknoScaleZoomOutBtn = document.getElementById('oknoScaleZoomOut');
+
+// Image Edit modal elements
+const imageEditModal = document.getElementById('imageEditModal');
+const imageEditCloseBtn = document.getElementById('imageEditClose');
+const imageEditCancelBtn = document.getElementById('imageEditCancel');
+const imageEditApplyBtn = document.getElementById('imageEditApply');
+const imageEditPreview = document.getElementById('imageEditPreview');
+const imageEditHint = document.getElementById('imageEditHint');
+const editBrightness = document.getElementById('editBrightness');
+const editContrast = document.getElementById('editContrast');
+const editSaturation = document.getElementById('editSaturation');
+const editHue = document.getElementById('editHue');
+const editExposure = document.getElementById('editExposure');
+const editVibrance = document.getElementById('editVibrance');
+
+// Video Edit modal elements
+const videoEditModal = document.getElementById('videoEditModal');
+const videoEditCloseBtn = document.getElementById('videoEditClose');
+const videoEditCancelBtn = document.getElementById('videoEditCancel');
+const videoEditApplyBtn = document.getElementById('videoEditApply');
+const videoEditHint = document.getElementById('videoEditHint');
+const videoEditPreview = document.getElementById('videoEditPreview');
+const videoUploadInput = document.getElementById('videoUploadInput');
+const videoTrimStart = document.getElementById('videoTrimStart');
+const videoTrimEnd = document.getElementById('videoTrimEnd');
+const videoCutStart = document.getElementById('videoCutStart');
+const videoCutEnd = document.getElementById('videoCutEnd');
+const videoOutputWidth = document.getElementById('videoOutputWidth');
+const videoTargetSize = document.getElementById('videoTargetSize');
+const videoVerticalOffset = document.getElementById('videoVerticalOffset');
 
 function syncCropAspectButtons() {
   if (!cropAspectBtns || cropAspectBtns.length === 0) return;
@@ -1138,6 +1170,20 @@ const oknoScaleState = {
   window: { y: 0, w: 0, h: 0 },
   img: { x: 0, y: 0, w: 0, h: 0 },
   action: null // { type: 'window-resize' | 'img-move' | 'img-scale', ... }
+};
+
+const imageEditState = {
+  open: false,
+  storedName: null,
+  previewUrl: null,
+  pending: null
+};
+
+const videoEditState = {
+  open: false,
+  storedName: null,
+  previewUrl: null,
+  durationSeconds: 0
 };
 
 function split3ShowItem(which) {
@@ -3190,8 +3236,9 @@ async function loadComposites() {
       const kind = (it && it.kind) ? String(it.kind) : '';
       let kindLabel = 'Split';
       if (kind === 'split3') kindLabel = 'Split3';
-      else if (kind === 'trashimg') kindLabel = 'OknoFix';
+      else if (kind === 'oknofix') kindLabel = 'OknoFix';
       else if (kind === 'oknoscale') kindLabel = 'OknoScale';
+      else if (kind === 'edit') kindLabel = 'Edit';
       tdKind.textContent = kindLabel;
 
       const tdImg = document.createElement('td');
@@ -3203,8 +3250,9 @@ async function loadComposites() {
         const fileName = rel.split('/').pop() || '';
         let op = 'split';
         if (kind === 'split3') op = 'split3';
-        else if (kind === 'trashimg') op = 'oknofix';
+        else if (kind === 'oknofix') op = 'oknofix';
         else if (kind === 'oknoscale') op = 'oknoscale';
+        else if (kind === 'edit') op = 'edit';
         const dlName = buildOpDownloadName(fileName, fileName, op);
         appendLinkWithDownload(tdImg, link, href, dlName);
       } else {
@@ -4134,7 +4182,7 @@ function wireTrashUI() {
         setBusy(true);
         if (trashHint) trashHint.textContent = 'Генерирую OknoFix...';
 
-        const res = await fetch('trashimg', {
+        const res = await fetch('oknofix', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(req)
@@ -4167,5 +4215,236 @@ function wireTrashUI() {
     if (!oknoFixState.open) return;
     layoutTrashWindowInitial();
     layoutTrashImageCover();
+  });
+}
+
+// -------- Image Edit --------
+function resetImageEditSliders() {
+  const inputs = [editBrightness, editContrast, editSaturation, editHue, editExposure, editVibrance];
+  for (const input of inputs) {
+    if (input) {
+      input.value = '0';
+    }
+  }
+}
+
+function getImageEditPayload() {
+  return {
+    storedName: imageEditState.storedName,
+    brightness: Number(editBrightness?.value || 0),
+    contrast: Number(editContrast?.value || 0),
+    saturation: Number(editSaturation?.value || 0),
+    hue: Number(editHue?.value || 0),
+    exposure: Number(editExposure?.value || 0),
+    vibrance: Number(editVibrance?.value || 0)
+  };
+}
+
+function closeImageEdit() {
+  if (!imageEditModal) return;
+  imageEditModal.hidden = true;
+  imageEditState.open = false;
+  imageEditState.storedName = null;
+  imageEditState.previewUrl = null;
+  if (imageEditPreview) {
+    imageEditPreview.removeAttribute('src');
+    imageEditPreview.alt = '';
+  }
+}
+
+async function updateImageEditPreview() {
+  if (!imageEditState.open || !imageEditState.storedName) return;
+  const payload = getImageEditPayload();
+  if (imageEditHint) imageEditHint.textContent = 'Применяю правки...';
+  try {
+    const res = await fetch('image-edit-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data && data.error ? data.error : 'preview failed');
+    if (imageEditPreview && data && data.relativePath) {
+      const url = withCacheBust(data.relativePath, imageEditState.storedName || '');
+      imageEditPreview.src = url;
+      imageEditState.previewUrl = url;
+    }
+    if (imageEditHint) imageEditHint.textContent = 'Настройте параметры и сохраните.';
+  } catch (err) {
+    if (imageEditHint) imageEditHint.textContent = 'Ошибка предпросмотра.';
+  }
+}
+
+function scheduleImageEditPreview() {
+  if (!imageEditState.open) return;
+  if (imageEditState.pending) {
+    clearTimeout(imageEditState.pending);
+  }
+  imageEditState.pending = setTimeout(updateImageEditPreview, 250);
+}
+
+function openImageEdit() {
+  if (!imageEditModal) return;
+  imageEditModal.hidden = false;
+  imageEditState.open = true;
+  resetImageEditSliders();
+
+  if (!lastUpload || !lastUpload.storedName) {
+    if (imageEditHint) imageEditHint.textContent = 'Сначала выберите строку в таблице файлов.';
+    if (imageEditApplyBtn) imageEditApplyBtn.disabled = true;
+    return;
+  }
+
+  imageEditState.storedName = lastUpload.storedName;
+  const base = lastUpload.previewRelativePath || lastUpload.originalRelativePath;
+  if (imageEditPreview && base) {
+    imageEditPreview.src = withCacheBust(base, lastUpload.storedName);
+    imageEditPreview.alt = lastUpload.originalName || lastUpload.storedName;
+  }
+  if (imageEditHint) imageEditHint.textContent = 'Настройте параметры и сохраните.';
+  if (imageEditApplyBtn) imageEditApplyBtn.disabled = false;
+}
+
+if (imageEditToolBtn) {
+  imageEditToolBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    openImageEdit();
+  });
+}
+if (imageEditCloseBtn) imageEditCloseBtn.addEventListener('click', closeImageEdit);
+if (imageEditCancelBtn) imageEditCancelBtn.addEventListener('click', closeImageEdit);
+if (imageEditModal) {
+  imageEditModal.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.close) closeImageEdit();
+  });
+}
+
+const editInputs = [editBrightness, editContrast, editSaturation, editHue, editExposure, editVibrance];
+for (const input of editInputs) {
+  if (!input) continue;
+  input.addEventListener('input', scheduleImageEditPreview);
+}
+
+if (imageEditApplyBtn) {
+  imageEditApplyBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (!imageEditState.open || !imageEditState.storedName) return;
+    const payload = getImageEditPayload();
+    if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+    try {
+      const res = await fetch('image-edit-apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data && data.error ? data.error : 'apply failed');
+      if (imageEditHint) imageEditHint.textContent = 'Готово.';
+      await loadComposites();
+    } catch (err) {
+      if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+    }
+  });
+}
+
+// -------- Video Edit --------
+function closeVideoEdit() {
+  if (!videoEditModal) return;
+  videoEditModal.hidden = true;
+  videoEditState.open = false;
+  videoEditState.storedName = null;
+  videoEditState.previewUrl = null;
+  videoEditState.durationSeconds = 0;
+  if (videoEditPreview) {
+    videoEditPreview.removeAttribute('src');
+  }
+}
+
+function openVideoEdit() {
+  if (!videoEditModal) return;
+  videoEditModal.hidden = false;
+  videoEditState.open = true;
+  if (videoEditHint) videoEditHint.textContent = 'Загрузите видео, затем настройте параметры.';
+  if (videoEditApplyBtn) videoEditApplyBtn.disabled = true;
+}
+
+if (videoEditToolBtn) {
+  videoEditToolBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    openVideoEdit();
+  });
+}
+if (videoEditCloseBtn) videoEditCloseBtn.addEventListener('click', closeVideoEdit);
+if (videoEditCancelBtn) videoEditCancelBtn.addEventListener('click', closeVideoEdit);
+if (videoEditModal) {
+  videoEditModal.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.close) closeVideoEdit();
+  });
+}
+
+if (videoUploadInput) {
+  videoUploadInput.addEventListener('change', async (e) => {
+    const file = videoUploadInput.files && videoUploadInput.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file);
+    if (videoEditHint) videoEditHint.textContent = 'Загружаю видео...';
+    try {
+      const res = await fetch('upload-video', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data && data.error ? data.error : 'upload failed');
+      videoEditState.storedName = data.storedName;
+      videoEditState.durationSeconds = data.durationSeconds || 0;
+      if (videoTrimEnd && videoEditState.durationSeconds) {
+        videoTrimEnd.value = String(Math.round(videoEditState.durationSeconds * 10) / 10);
+      }
+      if (videoEditPreview && data.relativePath) {
+        videoEditPreview.src = withCacheBust(data.relativePath, data.storedName);
+      }
+      if (videoEditHint) videoEditHint.textContent = 'Настройте параметры и нажмите "Сделать".';
+      if (videoEditApplyBtn) videoEditApplyBtn.disabled = false;
+    } catch (err) {
+      if (videoEditHint) videoEditHint.textContent = 'Ошибка загрузки видео.';
+    }
+  });
+}
+
+if (videoEditApplyBtn) {
+  videoEditApplyBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (!videoEditState.open || !videoEditState.storedName) return;
+    const payload = {
+      storedName: videoEditState.storedName,
+      trimStartSec: Number(videoTrimStart?.value || 0),
+      trimEndSec: Number(videoTrimEnd?.value || 0) || null,
+      cutStartSec: Number(videoCutStart?.value || 0) || null,
+      cutEndSec: Number(videoCutEnd?.value || 0) || null,
+      outputWidth: Number(videoOutputWidth?.value || 1280),
+      targetSizeMb: Number(videoTargetSize?.value || 25),
+      verticalOffsetPx: Number(videoVerticalOffset?.value || 0)
+    };
+    if (videoEditHint) videoEditHint.textContent = 'Обрабатываю видео...';
+    try {
+      const res = await fetch('video-process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data && data.error ? data.error : 'process failed');
+      if (videoEditPreview && data.relativePath) {
+        videoEditPreview.src = withCacheBust(data.relativePath, videoEditState.storedName);
+      }
+      if (videoEditHint) {
+        const link = data && data.relativePath ? data.relativePath : '';
+        videoEditHint.innerHTML = link
+          ? `Готово: <a href="${link}" target="_blank" rel="noreferrer">скачать</a>`
+          : 'Готово.';
+      }
+    } catch (err) {
+      if (videoEditHint) videoEditHint.textContent = 'Ошибка обработки видео.';
+    }
   });
 }
