@@ -1,6 +1,11 @@
 @Jmaka.Api_HostAddress = http://localhost:5189
 
-GET {{Jmaka.Api_HostAddress}}/weatherforecast/
+GET {{Jmaka.Api_HostAddress}}/history
+Accept: application/json
+
+###
+
+GET {{Jmaka.Api_HostAddress}}/composites
 Accept: application/json
 
 ###
