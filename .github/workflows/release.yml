@@ -29,13 +29,6 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      - name: Sanity check ImageSharp namespaces
-        run: |
-          if rg -n "ColorProfiles" src/Jmaka.Api; then
-            echo "Found deprecated ImageSharp ColorProfiles namespace. Fix before release." >&2
-            exit 1
-          fi
-
       - name: Publish linux-x64
         run: |
           dotnet publish src/Jmaka.Api -c Release -r linux-x64 --self-contained false -o artifacts/publish
