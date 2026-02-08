@@ -1779,10 +1779,7 @@ function showResult(obj) {
 function setMainPreviewFromItem(item) {
   const hasItem = !!(item && item.originalRelativePath);
 
-  // Tools availability should not depend on the preview element.
-  if (toolButtons) {
-    toolButtons.hidden = !hasItem;
-  }
+  setToolButtonsEnabled(hasItem);
 
   // Preview is optional (we may remove it from UI).
   if (!preview) {
@@ -2218,10 +2215,23 @@ function setCellLink(storedName, width, relativePath) {
 
 function resetSizeButtons() {
   if (!sizeButtons) return;
-  sizeButtons.hidden = true;
   for (const btn of sizeBtns) {
     btn.disabled = true;
     delete btn.dataset.href;
+  }
+}
+
+function setToolButtonsEnabled(hasItem) {
+  if (!toolButtons) return;
+  const imageToolBtns = [cropToolBtn, splitToolBtn, split3ToolBtn, trashFixToolBtn, trashToolBtn, imageEditToolBtn]
+    .filter(Boolean);
+
+  for (const btn of imageToolBtns) {
+    btn.disabled = !hasItem;
+  }
+
+  if (videoEditToolBtn) {
+    videoEditToolBtn.disabled = false;
   }
 }
 
@@ -2235,8 +2245,6 @@ function updateSizeButtonsForCurrent() {
     resetSizeButtons();
     return;
   }
-
-  sizeButtons.hidden = false;
 
   const u = uploads.get(storedName);
 
@@ -3291,6 +3299,8 @@ async function loadComposites() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  setToolButtonsEnabled(false);
+  resetSizeButtons();
   loadHistory();
   loadComposites();
 });
