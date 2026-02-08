@@ -53,7 +53,8 @@
 - `POST /crop` (JSON `{ storedName, x, y, width, height }`)
 - `POST /split` (JSON `{ storedNameA, storedNameB, a, b }`, результат 1280×720)
 - `POST /split3` (JSON `{ storedNameA, storedNameB, storedNameC, a, b, c }`, результат 1280×720)
-- `POST /trashimg` (JSON `{ storedName, x, y, w, h }`, вертикальная карточка по PNG-шаблону)
+- `POST /oknofix` (JSON `{ storedName, x, y, w, h }`, вертикальная карточка по PNG-шаблону)
+- `POST /oknoscale` (JSON `{ storedName, x, y, w, h }`, вертикальная карточка с изменяемой шириной окна)
 - `GET /history`
 - `GET /composites`
 - `POST /delete` (JSON `{ storedName }`)
