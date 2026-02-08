@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.FileProviders;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.ColorProfiles;
+using Jmaka.Api.Services;
 
 // Jmaka Minimal API entry point.
 // RU: Этот файл настраивает веб-приложение и описывает все HTTP‑эндпоинты и работу с файловым хранилищем.
@@ -38,6 +40,7 @@ builder.Services.Configure<IISServerOptions>(options =>
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddAntiforgery();
+builder.Services.AddSingleton<ImagePipelineService>();
 
 var app = builder.Build();
 
@@ -73,7 +76,12 @@ var resizedDir = Path.Combine(storageRoot, "resized");
 var previewDir = Path.Combine(storageRoot, "preview");
 var splitDir = Path.Combine(storageRoot, "split");
 var split3Dir = Path.Combine(storageRoot, "split3");
-var trashDir = Path.Combine(storageRoot, "trashimg");
+var oknoFixDir = Path.Combine(storageRoot, "oknofix");
+var oknoScaleDir = Path.Combine(storageRoot, "oknoscale");
+var editsDir = Path.Combine(storageRoot, "edits");
+var editsPreviewDir = Path.Combine(storageRoot, "edits-preview");
+var videoDir = Path.Combine(storageRoot, "video");
+var videoOutDir = Path.Combine(storageRoot, "video-out");
 var dataDir = Path.Combine(storageRoot, "data");
 var historyPath = Path.Combine(dataDir, "history.json");
 var compositesPath = Path.Combine(dataDir, "composites.json");
@@ -83,7 +91,12 @@ Directory.CreateDirectory(resizedDir);
 Directory.CreateDirectory(previewDir);
 Directory.CreateDirectory(splitDir);
 Directory.CreateDirectory(split3Dir);
-Directory.CreateDirectory(trashDir);
+Directory.CreateDirectory(oknoFixDir);
+Directory.CreateDirectory(oknoScaleDir);
+Directory.CreateDirectory(editsDir);
+Directory.CreateDirectory(editsPreviewDir);
+Directory.CreateDirectory(videoDir);
+Directory.CreateDirectory(videoOutDir);
 Directory.CreateDirectory(dataDir);
 foreach (var w in resizeWidths)
 {
@@ -143,10 +156,19 @@ string? GetCompositeAbsolutePath(CompositeHistoryItem it)
         return Path.Combine(split3Dir, fileName);
     }
 
-    if (string.Equals(it.Kind, "trashimg", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(it.Kind, "oknoscale", StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(it.Kind, "oknofix", StringComparison.OrdinalIgnoreCase))
     {
-        return Path.Combine(trashDir, fileName);
+        return Path.Combine(oknoFixDir, fileName);
+    }
+
+    if (string.Equals(it.Kind, "oknoscale", StringComparison.OrdinalIgnoreCase))
+    {
+        return Path.Combine(oknoScaleDir, fileName);
+    }
+
+    if (string.Equals(it.Kind, "edit", StringComparison.OrdinalIgnoreCase))
+    {
+        return Path.Combine(editsDir, fileName);
     }
 
     return Path.Combine(splitDir, fileName);
@@ -475,6 +497,17 @@ app.UseStaticFiles(new StaticFileOptions
 });
 app.UseStaticFiles(new StaticFileOptions
 {
+    FileProvider = new PhysicalFileProvider(videoDir),
+    RequestPath = "/video",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
+app.UseStaticFiles(new StaticFileOptions
+{
     FileProvider = new PhysicalFileProvider(previewDir),
     RequestPath = "/preview",
     OnPrepareResponse = ctx =>
@@ -508,8 +541,52 @@ app.UseStaticFiles(new StaticFileOptions
 });
 app.UseStaticFiles(new StaticFileOptions
 {
-    FileProvider = new PhysicalFileProvider(trashDir),
-    RequestPath = "/trashimg",
+    FileProvider = new PhysicalFileProvider(oknoFixDir),
+    RequestPath = "/oknofix",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(oknoScaleDir),
+    RequestPath = "/oknoscale",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(editsDir),
+    RequestPath = "/edits",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(editsPreviewDir),
+    RequestPath = "/edits-preview",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(videoOutDir),
+    RequestPath = "/video-out",
     OnPrepareResponse = ctx =>
     {
         ctx.Context.Response.Headers["Cache-Control"] = "no-store";
@@ -521,7 +598,7 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseAntiforgery();
 
 // PNG-шаблон для TrashImg (готовая карточка с рамкой/тенью)
-var trashOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "jmaka-template-trash-001.png");
+var oknoFixOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "jmaka-template-oknofix-001.png");
 
 // --- History & composites endpoints ---
 // RU: Эти эндпоинты отдают историю загрузок и историю составных изображений.
@@ -635,7 +712,7 @@ app.MapPost("/delete", async Task<IResult> (DeleteRequest req, CancellationToken
 // --- Upload endpoint ---
 // RU: Принимает multipart/form-data, сохраняет оригиналы и миниатюры, пишет запись в history.json.
 // EN: Accepts multipart/form-data, stores originals/thumbnails and appends to history.json.
-app.MapPost("/upload", async Task<IResult> (HttpRequest request, CancellationToken ct) =>
+app.MapPost("/upload", async Task<IResult> (HttpRequest request, ImagePipelineService imagePipeline, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
 
@@ -672,40 +749,41 @@ app.MapPost("/upload", async Task<IResult> (HttpRequest request, CancellationTok
             throw new InvalidOperationException($"file is too large (max {MaxUploadBytes} bytes)");
         }
 
-        var ext = SanitizeExtension(Path.GetExtension(file.FileName));
-        var storedName = $"{Guid.NewGuid():N}{ext}";
-
-        // Оригинал всегда сохраняем в upload/
+        var storedName = $"{Guid.NewGuid():N}.jpg";
         var originalAbsolutePath = Path.Combine(uploadDir, storedName);
+        var tempPath = Path.Combine(uploadDir, $"{Guid.NewGuid():N}.upload");
 
-        await using (var stream = File.Create(originalAbsolutePath))
+        await using (var stream = File.Create(tempPath))
         {
             await file.CopyToAsync(stream, ct);
         }
 
-        var imageInfo = await TryGetImageInfoAsync(originalAbsolutePath, ct);
-
-        // Генерируем миниатюру для превью (если это изображение)
-        string? previewRelativePath = null;
-        if (imageInfo.Width > 0 && imageInfo.Height > 0)
+        var imageInfo = await TryGetImageInfoAsync(tempPath, ct);
+        if (imageInfo.Width <= 0 || imageInfo.Height <= 0)
         {
-            // Сохраняем неизменённую копию для crop (чтобы каждый раз резать заново исходник)
-            var originalCopyAbsolutePath = Path.Combine(uploadOriginalDir, storedName);
-            if (!File.Exists(originalCopyAbsolutePath))
-            {
-                File.Copy(originalAbsolutePath, originalCopyAbsolutePath);
-            }
-
-            var previewAbsolutePath = Path.Combine(previewDir, storedName);
-            previewRelativePath = $"preview/{storedName}";
-            await CreatePreviewImageAsync(originalAbsolutePath, previewAbsolutePath, PreviewWidthPx, ct);
+            TryDeleteFile(tempPath);
+            throw new InvalidOperationException("file is not a supported image");
         }
+
+        await imagePipeline.ConvertToJpegSrgbAsync(tempPath, originalAbsolutePath, ct);
+        TryDeleteFile(tempPath);
+
+        // Сохраняем неизменённую копию для crop (чтобы каждый раз резать заново исходник)
+        var originalCopyAbsolutePath = Path.Combine(uploadOriginalDir, storedName);
+        if (!File.Exists(originalCopyAbsolutePath))
+        {
+            File.Copy(originalAbsolutePath, originalCopyAbsolutePath);
+        }
+
+        var previewAbsolutePath = Path.Combine(previewDir, storedName);
+        var previewRelativePath = $"preview/{storedName}";
+        await CreatePreviewImageAsync(originalAbsolutePath, previewAbsolutePath, PreviewWidthPx, ct);
 
         var entry = new UploadHistoryItem(
             StoredName: storedName,
             OriginalName: file.FileName,
             CreatedAt: DateTimeOffset.UtcNow,
-            Size: file.Length,
+            Size: new FileInfo(originalAbsolutePath).Length,
             OriginalRelativePath: $"upload/{storedName}",
             PreviewRelativePath: previewRelativePath,
             ImageWidth: imageInfo.Width > 0 ? imageInfo.Width : null,
@@ -749,6 +827,143 @@ app.MapPost("/upload", async Task<IResult> (HttpRequest request, CancellationTok
 .Accepts<IFormFileCollection>("multipart/form-data")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
+
+// --- Video upload endpoint ---
+app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+
+    IFormCollection form;
+    try
+    {
+        form = await request.ReadFormAsync(ct);
+    }
+    catch
+    {
+        return Results.BadRequest(new { error = "invalid multipart form" });
+    }
+
+    var file = form.Files.FirstOrDefault();
+    if (file is null || file.Length == 0)
+    {
+        return Results.BadRequest(new { error = "file is required" });
+    }
+
+    if (file.Length > MaxUploadBytes * 4)
+    {
+        return Results.BadRequest(new { error = "file is too large" });
+    }
+
+    var ext = SanitizeExtension(Path.GetExtension(file.FileName));
+    if (string.IsNullOrWhiteSpace(ext))
+    {
+        ext = ".mp4";
+    }
+
+    var storedName = $"{Guid.NewGuid():N}{ext}";
+    var absolutePath = Path.Combine(videoDir, storedName);
+    await using (var stream = File.Create(absolutePath))
+    {
+        await file.CopyToAsync(stream, ct);
+    }
+
+    var duration = await TryGetVideoDurationSecondsAsync(absolutePath, ct);
+
+    return Results.Ok(new
+    {
+        storedName,
+        originalName = file.FileName,
+        relativePath = $"video/{storedName}",
+        size = file.Length,
+        durationSeconds = duration
+    });
+})
+.DisableAntiforgery()
+.Accepts<IFormFile>("multipart/form-data")
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest);
+
+// --- Image edit endpoints ---
+app.MapPost("/image-edit-preview", async Task<IResult> (ImageEditRequest req, ImagePipelineService imagePipeline, CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+
+    var storedName = Path.GetFileName(req.StoredName);
+    if (!string.Equals(storedName, req.StoredName, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "invalid storedName" });
+    }
+
+    var originalPath = Path.Combine(uploadOriginalDir, storedName);
+    if (!File.Exists(originalPath))
+    {
+        originalPath = Path.Combine(uploadDir, storedName);
+    }
+    if (!File.Exists(originalPath))
+    {
+        return Results.NotFound(new { error = "original file not found" });
+    }
+
+    var fileName = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.jpg";
+    var outAbsolutePath = Path.Combine(editsPreviewDir, fileName);
+    var relPath = $"edits-preview/{fileName}";
+
+    using var image = await imagePipeline.LoadImageAsync(originalPath, ct);
+    imagePipeline.ApplyAdjustments(image, req);
+    imagePipeline.ApplySrgbProfile(image);
+    await imagePipeline.SaveJpegAsync(image, outAbsolutePath, ct);
+
+    return Results.Ok(new { ok = true, relativePath = relPath });
+})
+.DisableAntiforgery()
+.Accepts<ImageEditRequest>("application/json")
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
+
+app.MapPost("/image-edit-apply", async Task<IResult> (ImageEditRequest req, ImagePipelineService imagePipeline, CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+
+    var storedName = Path.GetFileName(req.StoredName);
+    if (!string.Equals(storedName, req.StoredName, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "invalid storedName" });
+    }
+
+    var originalPath = Path.Combine(uploadOriginalDir, storedName);
+    if (!File.Exists(originalPath))
+    {
+        originalPath = Path.Combine(uploadDir, storedName);
+    }
+    if (!File.Exists(originalPath))
+    {
+        return Results.NotFound(new { error = "original file not found" });
+    }
+
+    var createdAt = DateTimeOffset.UtcNow;
+    var fileName = $"{createdAt:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.jpg";
+    var outAbsolutePath = Path.Combine(editsDir, fileName);
+    var relPath = $"edits/{fileName}";
+
+    using var image = await imagePipeline.LoadImageAsync(originalPath, ct);
+    imagePipeline.ApplyAdjustments(image, req);
+    imagePipeline.ApplySrgbProfile(image);
+    await imagePipeline.SaveJpegAsync(image, outAbsolutePath, ct);
+
+    await AppendCompositeAsync(
+        compositesPath,
+        compositesLock,
+        new CompositeHistoryItem("edit", createdAt, relPath, new[] { storedName }),
+        ct);
+
+    return Results.Ok(new { ok = true, kind = "edit", createdAt, relativePath = relPath });
+})
+.DisableAntiforgery()
+.Accepts<ImageEditRequest>("application/json")
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
 
 // --- Resize endpoint ---
 // RU: Строит или возвращает кешированный ресайз по фиксированной ширине (1280/1920/2440).
@@ -1211,10 +1426,10 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
 
-// --- OknoFix (/trashimg) endpoint ---
+// --- OknoFix (/oknofix) endpoint ---
 // RU: Вырезает окно из исходника и помещает под PNG-шаблон вертикальной карточки.
 // EN: Crops a window from the original image and places it under the fixed PNG card template.
-app.MapPost("/trashimg", async Task<IResult> (WindowCropRequest req, CancellationToken ct) =>
+app.MapPost("/oknofix", async Task<IResult> (WindowCropRequest req, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
 
@@ -1281,9 +1496,9 @@ app.MapPost("/trashimg", async Task<IResult> (WindowCropRequest req, Cancellatio
         int outW;
         int outH;
 
-        if (File.Exists(trashOverlayPath))
+        if (File.Exists(oknoFixOverlayPath))
         {
-            baseOverlay = await Image.LoadAsync<SixLabors.ImageSharp.PixelFormats.Rgba32>(trashOverlayPath, ct);
+            baseOverlay = await Image.LoadAsync<SixLabors.ImageSharp.PixelFormats.Rgba32>(oknoFixOverlayPath, ct);
             outW = baseOverlay.Width;
             outH = baseOverlay.Height;
         }
@@ -1351,8 +1566,8 @@ app.MapPost("/trashimg", async Task<IResult> (WindowCropRequest req, Cancellatio
         }
 
         var fileName = MakeCompositeFileName();
-        var outAbsolutePath = Path.Combine(trashDir, fileName);
-        var relPath = $"trashimg/{fileName}";
+        var outAbsolutePath = Path.Combine(oknoFixDir, fileName);
+        var relPath = $"oknofix/{fileName}";
 
         await SaveImageWithSafeTempAsync(output, outAbsolutePath, ct);
 
@@ -1360,10 +1575,10 @@ app.MapPost("/trashimg", async Task<IResult> (WindowCropRequest req, Cancellatio
         await AppendCompositeAsync(
             compositesPath,
             compositesLock,
-            new CompositeHistoryItem("trashimg", createdAt, relPath, new[] { storedName }),
+            new CompositeHistoryItem("oknofix", createdAt, relPath, new[] { storedName }),
             ct);
 
-        return Results.Ok(new { ok = true, kind = "trashimg", createdAt, relativePath = relPath });
+        return Results.Ok(new { ok = true, kind = "oknofix", createdAt, relativePath = relPath });
     }
     catch (Exception ex)
     {
@@ -1527,8 +1742,8 @@ app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, Cancellati
         // PNG, чтобы сохранить аккуратные края центрального окна.
         var createdAt = DateTimeOffset.UtcNow;
         var fileName = $"{createdAt:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.png";
-        var outAbsolutePath = Path.Combine(trashDir, fileName);
-        var relPath = $"trashimg/{fileName}";
+        var outAbsolutePath = Path.Combine(oknoScaleDir, fileName);
+        var relPath = $"oknoscale/{fileName}";
 
         await SaveImageWithSafeTempAsync(output, outAbsolutePath, ct);
 
@@ -1551,7 +1766,229 @@ app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, Cancellati
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
 
+// --- Video processing endpoint ---
+app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+
+    var storedName = Path.GetFileName(req.StoredName ?? string.Empty);
+    if (string.IsNullOrWhiteSpace(storedName) || !string.Equals(storedName, req.StoredName, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "invalid storedName" });
+    }
+
+    var inputPath = Path.Combine(videoDir, storedName);
+    if (!File.Exists(inputPath))
+    {
+        return Results.NotFound(new { error = "video not found" });
+    }
+
+    if (!HasCommand("ffmpeg"))
+    {
+        return Results.BadRequest(new { error = "ffmpeg not found" });
+    }
+
+    var duration = await TryGetVideoDurationSecondsAsync(inputPath, ct);
+    if (duration <= 0)
+    {
+        return Results.BadRequest(new { error = "unable to detect duration" });
+    }
+
+    var trimStart = Math.Max(0, req.TrimStartSec ?? 0);
+    var trimEnd = req.TrimEndSec.HasValue ? Math.Min(duration, req.TrimEndSec.Value) : duration;
+    if (trimEnd <= trimStart)
+    {
+        return Results.BadRequest(new { error = "invalid trim range" });
+    }
+
+    var cutStart = req.CutStartSec ?? 0;
+    var cutEnd = req.CutEndSec ?? 0;
+    var hasMiddleCut = cutEnd > cutStart && cutStart > trimStart && cutEnd < trimEnd;
+
+    var targetWidth = req.OutputWidth is 720 or 1280 ? req.OutputWidth : 1280;
+    var targetHeight = (int)Math.Round(targetWidth * 9.0 / 16.0);
+    var verticalOffset = Math.Clamp(req.VerticalOffsetPx, -targetHeight, targetHeight);
+
+    var scalePad = $"scale={targetWidth}:-2:force_original_aspect_ratio=decrease," +
+                   $"pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2+{verticalOffset}";
+
+    string filter;
+    double outputDuration;
+    if (hasMiddleCut)
+    {
+        filter = $"[0:v]trim=start={trimStart}:end={cutStart},setpts=PTS-STARTPTS[v0];" +
+                 $"[0:v]trim=start={cutEnd}:end={trimEnd},setpts=PTS-STARTPTS[v1];" +
+                 $"[v0][v1]concat=n=2:v=1:a=0,{scalePad}[v]";
+        outputDuration = (cutStart - trimStart) + (trimEnd - cutEnd);
+    }
+    else
+    {
+        filter = $"[0:v]trim=start={trimStart}:end={trimEnd},setpts=PTS-STARTPTS,{scalePad}[v]";
+        outputDuration = trimEnd - trimStart;
+    }
+
+    if (outputDuration <= 0.5)
+    {
+        return Results.BadRequest(new { error = "resulting duration too short" });
+    }
+
+    var targetSizeMb = Math.Clamp(req.TargetSizeMb, 2, 2048);
+    var targetBits = targetSizeMb * 1024L * 1024L * 8L;
+    var bitrate = (long)Math.Max(250_000, targetBits / outputDuration);
+
+    var createdAt = DateTimeOffset.UtcNow;
+    var outName = $"{createdAt:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.mp4";
+    var outPath = Path.Combine(videoOutDir, outName);
+    var relPath = $"video-out/{outName}";
+    var passLog = Path.Combine(videoOutDir, $"pass-{Guid.NewGuid():N}");
+
+    var pass1Args = new List<string>
+    {
+        "-y",
+        "-i", inputPath,
+        "-filter_complex", filter,
+        "-map", "[v]",
+        "-an",
+        "-c:v", "libx264",
+        "-b:v", $"{bitrate}",
+        "-pass", "1",
+        "-passlogfile", passLog,
+        "-f", "mp4",
+        "/dev/null"
+    };
+
+    var pass2Args = new List<string>
+    {
+        "-y",
+        "-i", inputPath,
+        "-filter_complex", filter,
+        "-map", "[v]",
+        "-an",
+        "-c:v", "libx264",
+        "-b:v", $"{bitrate}",
+        "-pass", "2",
+        "-passlogfile", passLog,
+        outPath
+    };
+
+    var pass1 = await RunProcessAsync("ffmpeg", pass1Args, ct);
+    if (!pass1.Success)
+    {
+        CleanupPassLogs(passLog);
+        return Results.BadRequest(new { error = "ffmpeg pass 1 failed", details = pass1.Error });
+    }
+
+    var pass2 = await RunProcessAsync("ffmpeg", pass2Args, ct);
+    CleanupPassLogs(passLog);
+    if (!pass2.Success)
+    {
+        return Results.BadRequest(new { error = "ffmpeg pass 2 failed", details = pass2.Error });
+    }
+
+    return Results.Ok(new
+    {
+        ok = true,
+        createdAt,
+        relativePath = relPath,
+        durationSeconds = outputDuration,
+        targetSizeMb
+    });
+})
+.DisableAntiforgery()
+.Accepts<VideoProcessRequest>("application/json")
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
+
 app.Run();
+
+static bool HasCommand(string name)
+{
+    try
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "which",
+            Arguments = name,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        using var p = System.Diagnostics.Process.Start(psi);
+        if (p is null) return false;
+        p.WaitForExit(2000);
+        return p.ExitCode == 0;
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+static async Task<double> TryGetVideoDurationSecondsAsync(string absolutePath, CancellationToken ct)
+{
+    if (!HasCommand("ffprobe"))
+    {
+        return 0;
+    }
+
+    var args = new List<string>
+    {
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        absolutePath
+    };
+
+    var result = await RunProcessAsync("ffprobe", args, ct);
+    if (!result.Success || string.IsNullOrWhiteSpace(result.Output))
+    {
+        return 0;
+    }
+
+    if (double.TryParse(result.Output.Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var duration))
+    {
+        return duration;
+    }
+
+    return 0;
+}
+
+static void CleanupPassLogs(string passLogBase)
+{
+    TryDeleteFile($"{passLogBase}-0.log");
+    TryDeleteFile($"{passLogBase}-0.log.mbtree");
+}
+
+static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> args, CancellationToken ct)
+{
+    var psi = new System.Diagnostics.ProcessStartInfo
+    {
+        FileName = fileName,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false
+    };
+
+    foreach (var arg in args)
+    {
+        psi.ArgumentList.Add(arg);
+    }
+
+    using var process = new System.Diagnostics.Process { StartInfo = psi };
+    var started = process.Start();
+    if (!started)
+    {
+        return new ProcessResult(false, string.Empty, "failed to start process");
+    }
+
+    var outputTask = process.StandardOutput.ReadToEndAsync(ct);
+    var errorTask = process.StandardError.ReadToEndAsync(ct);
+    await process.WaitForExitAsync(ct);
+    var output = await outputTask;
+    var error = await errorTask;
+
+    return new ProcessResult(process.ExitCode == 0, output, error);
+}
 
 static async Task<ImageInfo> TryGetImageInfoAsync(string absolutePath, CancellationToken ct)
 {
@@ -1590,6 +2027,7 @@ static async Task CreateResizedImageAsync(
         throw new InvalidOperationException("Invalid image");
     }
 
+    image.Metadata.IccProfile = IccProfile.Srgb;
 
     var newHeight = (int)Math.Round(imageHeight * (targetWidthPx / (double)imageWidth));
     newHeight = Math.Max(1, newHeight);
@@ -1612,6 +2050,8 @@ static async Task CreatePreviewImageAsync(
     {
         return;
     }
+
+    image.Metadata.IccProfile = IccProfile.Srgb;
 
     // Не апскейлим: если картинка уже меньше — просто копируем.
     if (targetWidthPx <= 0 || image.Width <= targetWidthPx)
@@ -1926,3 +2366,16 @@ record UploadHistoryItem(
 );
 
 record CompositeDeleteRequest(string RelativePath);
+
+record VideoProcessRequest(
+    string StoredName,
+    double? TrimStartSec,
+    double? TrimEndSec,
+    double? CutStartSec,
+    double? CutEndSec,
+    int OutputWidth,
+    int TargetSizeMb,
+    double VerticalOffsetPx
+);
+
+record ProcessResult(bool Success, string Output, string Error);
