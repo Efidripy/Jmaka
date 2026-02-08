@@ -504,6 +504,7 @@ nginx_snippet() {
 client_max_body_size 80m;
 location / {
     proxy_redirect off;
+    proxy_intercept_errors off;
     proxy_pass         http://127.0.0.1:${PORT};
     proxy_http_version 1.1;
     proxy_set_header   Upgrade \$http_upgrade;
@@ -526,6 +527,7 @@ location ${prefix} {
 
 location ${prefix_slash} {
     proxy_redirect off;
+    proxy_intercept_errors off;
 
     # App is configured with JMAKA_BASE_PATH=${prefix}
     # so we MUST pass the full URI including the prefix to the upstream.
