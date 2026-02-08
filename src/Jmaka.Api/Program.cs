@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.FileProviders;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.ColorProfiles;
 using Jmaka.Api.Services;
 
 // Jmaka Minimal API entry point.
@@ -2027,8 +2026,6 @@ static async Task CreateResizedImageAsync(
         throw new InvalidOperationException("Invalid image");
     }
 
-    image.Metadata.IccProfile = IccProfile.Srgb;
-
     var newHeight = (int)Math.Round(imageHeight * (targetWidthPx / (double)imageWidth));
     newHeight = Math.Max(1, newHeight);
 
@@ -2050,8 +2047,6 @@ static async Task CreatePreviewImageAsync(
     {
         return;
     }
-
-    image.Metadata.IccProfile = IccProfile.Srgb;
 
     // Не апскейлим: если картинка уже меньше — просто копируем.
     if (targetWidthPx <= 0 || image.Width <= targetWidthPx)
