@@ -30,12 +30,13 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 - `JMAKA_STORAGE_ROOT=/var/www/jmaka/<instance>/storage`
 
 ## API endpoints
-- `POST /upload` (multipart/form-data поле `file`)
+- `POST /upload` (multipart/form-data поле `files`, можно несколько)
   - сохраняет оригинал в `upload/{storedName}` (storedName = uuid + ext)
+  - сохраняет неизменённую копию для crop в `upload-original/{storedName}`
   - для изображений создаёт миниатюру `preview/{storedName}` и пишет запись в историю
 - `GET /history` — общая история (последние 200)
 - `POST /resize` (JSON `{ storedName, width }`)
-  - создаёт `resized/{width}/{storedName}` (апскейл запрещён)
+  - создаёт `resized/{width}/{storedName}` (апскейл разрешён)
   - обновляет историю (`resized[width] = relativePath`)
 - `POST /delete` (JSON `{ storedName }`)
   - удаляет запись истории и все связанные файлы (upload/preview/resized)
