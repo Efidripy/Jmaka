@@ -62,6 +62,37 @@ function toAbsoluteUrl(url) {
   return `${getBasePath()}${raw}`;
 }
 
+function buildApiUrlCandidates(relativePath) {
+  const clean = String(relativePath || '').replace(/^\/+/, '');
+  if (!clean) return [];
+  const candidates = [];
+  const primary = toAbsoluteUrl(clean);
+  if (primary) candidates.push(primary);
+
+  const root = `/${clean}`;
+  if (!candidates.includes(root)) candidates.push(root);
+
+  const base = getBasePath();
+  if (base && base !== '/') {
+    const baseClean = base.endsWith('/') ? base : `${base}/`;
+    const baseUrl = `${baseClean}${clean}`;
+    if (!candidates.includes(baseUrl)) candidates.push(baseUrl);
+  }
+
+  return candidates;
+}
+
+async function fetchWithFallback(relativePath, options) {
+  const candidates = buildApiUrlCandidates(relativePath);
+  let lastRes = null;
+  for (const url of candidates) {
+    const res = await fetch(url, options);
+    if (res.status !== 404) return res;
+    lastRes = res;
+  }
+  return lastRes || fetch(toAbsoluteUrl(relativePath), options);
+}
+
 function isLikelyImageUrl(url) {
   if (!url) return false;
   // Strip query/hash (we often add ?v=... for cache-busting)
@@ -2385,7 +2416,7 @@ async function upload(files) {
       fd.append('files', f);
     }
 
-    const res = await fetch(toAbsoluteUrl('upload'), {
+    const res = await fetchWithFallback('upload', {
       method: 'POST',
       body: fd
     });
@@ -4320,7 +4351,7 @@ function scheduleImageEditPreview() {
 }
 
 function openImageEdit() {
-  if (!imageEditModal) return;
+  if (!imageEditModal) return;  
   imageEditModal.hidden = false;
   imageEditState.open = true;
   resetImageEditSliders();
@@ -4428,7 +4459,7 @@ if (videoUploadInput) {
     form.append('file', file);
     if (videoEditHint) videoEditHint.textContent = 'Загружаю видео...';
     try {
-      const res = await fetch(toAbsoluteUrl('upload-video'), { method: 'POST', body: form });
+      const res = await fetchWithFallback('upload-video', { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data && data.error ? data.error : 'upload failed');
       videoEditState.storedName = data.storedName;
