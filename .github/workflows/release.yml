@@ -1,0 +1,62 @@
+name: Release (linux-x64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.2.0-rc3)"
+        required: true
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Sanity check ImageSharp namespaces
+        run: |
+          if rg -n "ColorProfiles" src/Jmaka.Api; then
+            echo "Found deprecated ImageSharp ColorProfiles namespace. Fix before release." >&2
+            exit 1
+          fi
+
+      - name: Publish linux-x64
+        run: |
+          dotnet publish src/Jmaka.Api -c Release -r linux-x64 --self-contained false -o artifacts/publish
+          mkdir -p artifacts
+          tar -czf artifacts/jmaka-linux-x64.tar.gz -C artifacts/publish .
+
+      - name: Determine tag
+        id: tag
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          files: |
+            artifacts/jmaka-linux-x64.tar.gz
+          generate_release_notes: true
