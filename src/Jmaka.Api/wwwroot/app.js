@@ -1,5 +1,5 @@
-// Jmaka frontend version: 0.2.0-rc5
-const APP_VERSION = '0.2.0-rc5';
+// Jmaka frontend version: 0.2.0-rc6
+const APP_VERSION = '0.2.0-rc6';
 
 const fileInput = document.getElementById('fileInput');
 const saveBtn = document.getElementById('saveBtn');
@@ -4463,7 +4463,8 @@ if (videoUploadInput) {
     if (videoEditHint) videoEditHint.textContent = 'Загружаю видео...';
     try {
       const res = await fetchWithFallback('upload-video', { method: 'POST', body: form });
-      const data = await res.json();
+      let data;
+      try { data = await res.json(); } catch { data = null; }
       if (!res.ok) throw new Error(data && data.error ? data.error : 'upload failed');
       videoEditState.storedName = data.storedName;
       videoEditState.durationSeconds = data.durationSeconds || 0;
@@ -4476,7 +4477,7 @@ if (videoUploadInput) {
       if (videoEditHint) videoEditHint.textContent = 'Настройте параметры и нажмите "Сделать".';
       if (videoEditApplyBtn) videoEditApplyBtn.disabled = false;
     } catch (err) {
-      if (videoEditHint) videoEditHint.textContent = 'Ошибка загрузки видео.';
+      if (videoEditHint) videoEditHint.textContent = `Ошибка загрузки видео. ${String(err || '').trim()}`.trim();
     }
   });
 }
@@ -4502,7 +4503,8 @@ if (videoEditApplyBtn) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+      let data;
+      try { data = await res.json(); } catch { data = null; }
       if (!res.ok) throw new Error(data && data.error ? data.error : 'process failed');
       if (videoEditPreview && data.relativePath) {
         videoEditPreview.src = withCacheBust(data.relativePath, videoEditState.storedName);
@@ -4514,7 +4516,7 @@ if (videoEditApplyBtn) {
           : 'Готово.';
       }
     } catch (err) {
-      if (videoEditHint) videoEditHint.textContent = 'Ошибка обработки видео.';
+      if (videoEditHint) videoEditHint.textContent = `Ошибка обработки видео. ${String(err || '').trim()}`.trim();
     }
   });
 }
