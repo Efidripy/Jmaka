@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.FileProviders;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.ColorProfiles;
 using Jmaka.Api.Services;
 
 // Jmaka Minimal API entry point.
@@ -751,7 +750,12 @@ app.MapPost("/upload", async Task<IResult> (HttpRequest request, ImagePipelineSe
 
         var storedName = $"{Guid.NewGuid():N}.jpg";
         var originalAbsolutePath = Path.Combine(uploadDir, storedName);
-        var tempPath = Path.Combine(uploadDir, $"{Guid.NewGuid():N}.upload");
+        var uploadExt = SanitizeExtension(Path.GetExtension(file.FileName));
+        if (string.IsNullOrWhiteSpace(uploadExt))
+        {
+            uploadExt = ".upload";
+        }
+        var tempPath = Path.Combine(uploadDir, $"{Guid.NewGuid():N}{uploadExt}");
 
         await using (var stream = File.Create(tempPath))
         {
@@ -1832,7 +1836,7 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         return Results.BadRequest(new { error = "resulting duration too short" });
     }
 
-    var targetSizeMb = Math.Clamp(req.TargetSizeMb, 2, 2048);
+    var targetSizeMb = Math.Clamp(req.TargetSizeMb, 0.5, 2048);
     var targetBits = targetSizeMb * 1024L * 1024L * 8L;
     var bitrate = (long)Math.Max(250_000, targetBits / outputDuration);
 
@@ -1992,12 +1996,6 @@ static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> a
 
 static async Task<ImageInfo> TryGetImageInfoAsync(string absolutePath, CancellationToken ct)
 {
-    var ext = Path.GetExtension(absolutePath);
-    if (!IsLikelyImageExtension(ext))
-    {
-        return new ImageInfo(0, 0);
-    }
-
     try
     {
         await using var input = File.OpenRead(absolutePath);
@@ -2027,8 +2025,6 @@ static async Task CreateResizedImageAsync(
         throw new InvalidOperationException("Invalid image");
     }
 
-    image.Metadata.IccProfile = IccProfile.Srgb;
-
     var newHeight = (int)Math.Round(imageHeight * (targetWidthPx / (double)imageWidth));
     newHeight = Math.Max(1, newHeight);
 
@@ -2050,8 +2046,6 @@ static async Task CreatePreviewImageAsync(
     {
         return;
     }
-
-    image.Metadata.IccProfile = IccProfile.Srgb;
 
     // Не апскейлим: если картинка уже меньше — просто копируем.
     if (targetWidthPx <= 0 || image.Width <= targetWidthPx)
@@ -2374,7 +2368,7 @@ record VideoProcessRequest(
     double? CutStartSec,
     double? CutEndSec,
     int OutputWidth,
-    int TargetSizeMb,
+    double TargetSizeMb,
     double VerticalOffsetPx
 );
 
