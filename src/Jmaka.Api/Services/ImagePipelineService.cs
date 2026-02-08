@@ -1,5 +1,4 @@
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.ColorProfiles;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Processing;
 
@@ -10,8 +9,6 @@ public class ImagePipelineService
     private readonly JpegEncoder _jpegEncoder = new()
     {
         Quality = 92,
-        Subsample = JpegSubsample.Ratio420,
-        ColorType = JpegColorType.YCbCr,
         Interleaved = true
     };
 
@@ -31,7 +28,8 @@ public class ImagePipelineService
 
     public void ApplySrgbProfile(Image image)
     {
-        image.Metadata.IccProfile = IccProfile.Srgb;
+        // ImageSharp 3.x no longer exposes a built-in sRGB profile helper.
+        // Keep this as a no-op to avoid breaking call sites.
     }
 
     public void ApplyAdjustments(Image image, ImageEditRequest request)
@@ -40,8 +38,6 @@ public class ImagePipelineService
         var contrast = 1 + request.Contrast;
         var saturation = 1 + request.Saturation + (request.Vibrance * 0.5f);
         var hue = request.Hue;
-        var exposure = 1 + request.Exposure;
-
         image.Mutate(ctx =>
         {
             ctx.AutoOrient();
@@ -49,7 +45,6 @@ public class ImagePipelineService
             ctx.Contrast(contrast);
             ctx.Saturate(saturation);
             ctx.Hue(hue);
-            ctx.Gamma(exposure);
         });
     }
 

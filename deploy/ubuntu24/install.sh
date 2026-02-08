@@ -516,12 +516,18 @@ location / {
 }
 NGINX
   else
+    local prefix="${PATH_PREFIX%/}"
+    local prefix_slash="${prefix}/"
     cat <<NGINX
 client_max_body_size 80m;
-location ${PATH_PREFIX} {
+location ${prefix} {
+    return 301 ${prefix_slash};
+}
+
+location ${prefix_slash} {
     proxy_redirect off;
 
-    # App is configured with JMAKA_BASE_PATH=${PATH_PREFIX%/}
+    # App is configured with JMAKA_BASE_PATH=${prefix}
     # so we MUST pass the full URI including the prefix to the upstream.
     # Therefore NO trailing slash in proxy_pass here.
     proxy_pass         http://127.0.0.1:${PORT};
