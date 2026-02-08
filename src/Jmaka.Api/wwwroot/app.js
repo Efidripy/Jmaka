@@ -4354,7 +4354,7 @@ function scheduleImageEditPreview() {
 }
 
 function openImageEdit() {
-  if (!imageEditModal) return;
+  if (!imageEditModal) return;  
   imageEditModal.hidden = false;
   imageEditState.open = true;
   resetImageEditSliders();
