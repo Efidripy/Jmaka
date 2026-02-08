@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.FileProviders;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Metadata.Profiles.Icc;
+using SixLabors.ImageSharp.ColorProfiles;
 using Jmaka.Api.Services;
 
 // Jmaka Minimal API entry point.
