@@ -421,6 +421,12 @@ mkdir -p \
   "$DATA_DIR/preview" \
   "$DATA_DIR/split" \
   "$DATA_DIR/split3" \
+  "$DATA_DIR/oknofix" \
+  "$DATA_DIR/oknoscale" \
+  "$DATA_DIR/edits" \
+  "$DATA_DIR/edits-preview" \
+  "$DATA_DIR/video" \
+  "$DATA_DIR/video-out" \
   "$DATA_DIR/resized" \
   "$DATA_DIR/data"
 

@@ -34,6 +34,8 @@
             <button id="split3ToolBtn" class="btn tool-btn" type="button">Split3</button>
             <button id="trashFixToolBtn" class="btn tool-btn" type="button">OknoFix</button>
             <button id="trashToolBtn" class="btn tool-btn" type="button">OknoScale</button>
+            <button id="imageEditToolBtn" class="btn tool-btn" type="button">Edit</button>
+            <button id="videoEditToolBtn" class="btn tool-btn" type="button">Video Edit</button>
             <button id="cropToolBtn" class="btn tool-btn" type="button">Crop</button>
           </div>
 
@@ -49,6 +51,7 @@
       </div>
 
       <input id="fileInput" class="file-input" type="file" accept="image/*" multiple />
+      <input id="videoInput" class="file-input" type="file" accept="video/*" hidden />
     </section>
 
     <div class="tables-wrap" aria-label="Таблицы файлов">
@@ -73,7 +76,7 @@
       </div>
 
       <div class="links-wrap composites-wrap" aria-label="Таблица Split">
-      <div class="links-title">Split / Split3 / OknoFix / OknoScale</div>
+      <div class="links-title">Split / Split3 / OknoFix / OknoScale / Edits</div>
         <div class="table-wrap">
           <table class="files-table" aria-label="Split / Split3">
             <thead>
@@ -283,6 +286,85 @@
           </div>
           <button id="oknoScaleCancel" class="btn" type="button">Закрыть</button>
           <button id="oknoScaleApply" class="btn primary" type="button" disabled>Сделать</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Image Edit -->
+  <div id="imageEditModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card edit-card" role="dialog" aria-modal="true" aria-label="Image Edit">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-title">Image Edit</div>
+          <div class="modal-sub">
+            <span class="modal-subtext">Правки применяются на сервере и сохраняются как новый файл.</span>
+          </div>
+        </div>
+        <button id="imageEditClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body edit-body">
+        <div class="edit-preview">
+          <img id="imageEditPreview" class="edit-preview-img" alt="" />
+        </div>
+        <div class="edit-controls">
+          <label class="edit-row">Brightness <input id="editBrightness" type="range" min="-1" max="1" step="0.01" value="0" /></label>
+          <label class="edit-row">Contrast <input id="editContrast" type="range" min="-1" max="1" step="0.01" value="0" /></label>
+          <label class="edit-row">Saturation <input id="editSaturation" type="range" min="-1" max="1" step="0.01" value="0" /></label>
+          <label class="edit-row">Hue <input id="editHue" type="range" min="-180" max="180" step="1" value="0" /></label>
+          <label class="edit-row">Exposure <input id="editExposure" type="range" min="-1" max="1" step="0.01" value="0" /></label>
+          <label class="edit-row">Vibrance <input id="editVibrance" type="range" min="-1" max="1" step="0.01" value="0" /></label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div id="imageEditHint" class="modal-hint">Выберите изображение из таблицы.</div>
+        <div class="modal-actions">
+          <button id="imageEditCancel" class="btn" type="button">Закрыть</button>
+          <button id="imageEditApply" class="btn primary" type="button" disabled>Сохранить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video Edit -->
+  <div id="videoEditModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card edit-card" role="dialog" aria-modal="true" aria-label="Video Edit">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-title">Video Edit</div>
+          <div class="modal-sub">
+            <span class="modal-subtext">Тримминг, сжатие в размер и позиция вертикального видео.</span>
+          </div>
+        </div>
+        <button id="videoEditClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body edit-body">
+        <div class="edit-preview">
+          <video id="videoEditPreview" class="edit-preview-img" controls></video>
+        </div>
+        <div class="edit-controls">
+          <label class="edit-row">Upload video <input id="videoUploadInput" type="file" accept="video/*" /></label>
+          <label class="edit-row">Trim start (sec) <input id="videoTrimStart" type="number" min="0" step="0.1" value="0" /></label>
+          <label class="edit-row">Trim end (sec) <input id="videoTrimEnd" type="number" min="0" step="0.1" value="0" /></label>
+          <label class="edit-row">Cut middle start (sec) <input id="videoCutStart" type="number" min="0" step="0.1" value="0" /></label>
+          <label class="edit-row">Cut middle end (sec) <input id="videoCutEnd" type="number" min="0" step="0.1" value="0" /></label>
+          <label class="edit-row">Output width
+            <select id="videoOutputWidth">
+              <option value="1280" selected>1280</option>
+              <option value="720">720</option>
+            </select>
+          </label>
+          <label class="edit-row">Target size (MB) <input id="videoTargetSize" type="number" min="2" max="2048" step="1" value="25" /></label>
+          <label class="edit-row">Vertical offset (px) <input id="videoVerticalOffset" type="range" min="-400" max="400" step="1" value="0" /></label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div id="videoEditHint" class="modal-hint">Загрузите видео, затем настройте параметры.</div>
+        <div class="modal-actions">
+          <button id="videoEditCancel" class="btn" type="button">Закрыть</button>
+          <button id="videoEditApply" class="btn primary" type="button" disabled>Сделать</button>
         </div>
       </div>
     </div>
