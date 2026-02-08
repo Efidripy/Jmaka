@@ -166,7 +166,7 @@ ensure_packages() {
   # Minimal packages for this installer and port detection.
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y ca-certificates curl tar iproute2
+  apt-get install -y ca-certificates curl tar iproute2 ffmpeg
 }
 
 ensure_nginx_if_needed() {

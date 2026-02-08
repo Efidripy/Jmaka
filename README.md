@@ -2,10 +2,11 @@
 
 Версия: 0.2.0-rc2
 
-Небольшое веб-приложение на ASP.NET Core (Minimal API) для загрузки и обработки изображений через простой веб-интерфейс.
+Небольшое веб-приложение на ASP.NET Core (Minimal API) для загрузки и обработки изображений/видео через простой веб-интерфейс.
 
 ## Что умеет Jmaka
-- Загрузка нескольких файлов (до 15 за раз), лимит 75 MB на файл, серверные имена — UUID.
+- Загрузка нескольких изображений (до 15 за раз), лимит 75 MB на файл, серверные имена — UUID.
+- Все загруженные изображения нормализуются в JPEG + sRGB.
 - Для изображений автоматически создаются миниатюры превью (`/preview/*`).
 - Общая история загрузок (`/history`) с сортировкой «новые сверху».
 - Ресайз по фиксированным ширинам **1280 / 1920 / 2440** по запросу (`/resize`), апскейл разрешён.
@@ -14,6 +15,8 @@
 - Split3: склейка трёх изображений в одно 1280×720 с двумя белыми полосами 7px (`/split3`).
 - OknoFix: генерация вертикальной карточки по PNG-шаблону (портретная «карточка» с рамкой/тенями).
 - OknoScale: экспериментальный режим той же карточки с изменяемой шириной окна.
+- Image Edit: серверный редактор с параметрами Brightness/Contrast/Saturation/Hue/Exposure/Vibrance (результат сохраняется как новый файл).
+- Video Edit: загрузка видео, тримминг/вырезание середины, 2‑pass сжатие в целевой размер, 16:9 кадр, H.264 без аудио.
 - Удаление записи из истории и всех связанных файлов (`/delete`).
 - Авто-очистка старых файлов по времени хранения (retention, по умолчанию 48 часов).
 
@@ -41,7 +44,7 @@
   - результат на выходе совпадает с тем, что видно в окне.
 - **OknoScale** — экспериментальный режим той же карточки с изменяемой шириной окна (для проб разных компоновок).
 
-Правая таблица показывает историю результатов Split / Split3 / TrashImg, каждый результат можно открыть, скачать или удалить.
+Правая таблица показывает историю результатов Split / Split3 / OknoFix / OknoScale / Edits, каждый результат можно открыть, скачать или удалить.
 
 ## Запуск локально
 - `dotnet run --project src/Jmaka.Api --launch-profile http`
@@ -49,19 +52,23 @@
 
 ## API (кратко)
 - `POST /upload` (multipart/form-data поле `files`, можно несколько)
+- `POST /upload-video` (multipart/form-data поле `file`, один файл)
+- `POST /video-process` (JSON `{ storedName, trimStartSec, trimEndSec, cutStartSec, cutEndSec, outputWidth, targetSizeMb, verticalOffsetPx }`)
 - `POST /resize` (JSON `{ storedName, width }`)
 - `POST /crop` (JSON `{ storedName, x, y, width, height }`)
 - `POST /split` (JSON `{ storedNameA, storedNameB, a, b }`, результат 1280×720)
 - `POST /split3` (JSON `{ storedNameA, storedNameB, storedNameC, a, b, c }`, результат 1280×720)
 - `POST /oknofix` (JSON `{ storedName, x, y, w, h }`, вертикальная карточка по PNG-шаблону)
 - `POST /oknoscale` (JSON `{ storedName, x, y, w, h }`, вертикальная карточка с изменяемой шириной окна)
+- `POST /image-edit-preview` (JSON `{ storedName, brightness, contrast, saturation, hue, exposure, vibrance }`)
+- `POST /image-edit-apply` (JSON `{ storedName, brightness, contrast, saturation, hue, exposure, vibrance }`)
 - `GET /history`
 - `GET /composites`
 - `POST /delete` (JSON `{ storedName }`)
 - `POST /delete-composite` (JSON `{ relativePath }`)
 
 ## Деплой на Ubuntu 24 (максимально просто)
-Нужно: VPS с Ubuntu 24 + установленный nginx (как reverse-proxy).
+Нужно: VPS с Ubuntu 24 + установленный nginx (как reverse-proxy). Установщик сам поставит ffmpeg/ffprobe для работы видео.
 
 ### Вариант A (рекомендуется) — скачать готовый архив из GitHub Releases
 Мы прикладываем готовые архивы к релизам и будем делать так всегда.
