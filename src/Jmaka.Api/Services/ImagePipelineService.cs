@@ -83,7 +83,8 @@ public class ImagePipelineService
             }
             if (Math.Abs(vignette) > 0.01f)
             {
-                ctx.Vignette(Math.Abs(vignette) * 0.6f, Color.Black);
+                var vignetteRadius = Math.Abs(vignette) * 0.6f;
+                ctx.Vignette(vignetteRadius, vignetteRadius);
             }
         });
     }
