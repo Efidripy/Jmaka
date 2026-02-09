@@ -218,6 +218,14 @@ void DeleteCompositesForStoredName(string storedName)
                 {
                     TryDeleteFile(abs);
                 }
+                if (!string.IsNullOrWhiteSpace(it.PreviewRelativePath) && string.Equals(it.Kind, "edit", StringComparison.OrdinalIgnoreCase))
+                {
+                    var previewName = Path.GetFileName(it.PreviewRelativePath);
+                    if (!string.IsNullOrWhiteSpace(previewName))
+                    {
+                        TryDeleteFile(Path.Combine(editsPreviewDir, previewName));
+                    }
+                }
             }
             catch
             {
@@ -905,85 +913,137 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, Cancellat
 .Produces(StatusCodes.Status400BadRequest);
 
 // --- Image edit endpoints ---
-app.MapPost("/image-edit-preview", async Task<IResult> (ImageEditRequest req, ImagePipelineService imagePipeline, CancellationToken ct) =>
+app.MapGet("/images", async Task<IResult> (CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
+    var history = await ReadHistoryAsync(historyPath, historyLock, ct);
+    var composites = await ReadCompositesAsync(compositesPath, compositesLock, ct);
 
-    var storedName = Path.GetFileName(req.StoredName);
-    if (!string.Equals(storedName, req.StoredName, StringComparison.Ordinal))
+    var items = new List<object>();
+    foreach (var it in history)
     {
-        return Results.BadRequest(new { error = "invalid storedName" });
+        items.Add(new
+        {
+            id = it.StoredName,
+            name = it.OriginalName,
+            type = "original",
+            storedName = it.StoredName,
+            url = it.OriginalRelativePath,
+            previewUrl = it.PreviewRelativePath ?? it.OriginalRelativePath,
+            thumbnailUrl = it.PreviewRelativePath ?? it.OriginalRelativePath,
+            createdAt = it.CreatedAt
+        });
     }
 
-    var originalPath = Path.Combine(uploadOriginalDir, storedName);
-    if (!File.Exists(originalPath))
+    foreach (var it in composites.Where(x => string.Equals(x.Kind, "edit", StringComparison.OrdinalIgnoreCase)))
     {
-        originalPath = Path.Combine(uploadDir, storedName);
+        var fileName = Path.GetFileName(it.RelativePath);
+        items.Add(new
+        {
+            id = fileName,
+            name = fileName,
+            type = "saved",
+            url = it.RelativePath,
+            previewUrl = it.PreviewRelativePath ?? it.RelativePath,
+            thumbnailUrl = it.PreviewRelativePath ?? it.RelativePath,
+            createdAt = it.CreatedAt,
+            editParams = it.EditParams
+        });
     }
-    if (!File.Exists(originalPath))
+
+    return Results.Ok(items);
+})
+.DisableAntiforgery()
+.Produces(StatusCodes.Status200OK);
+
+app.MapPost("/images/{id}/render", async Task<IResult> (string id, ImageEditParams req, ImagePipelineService imagePipeline, CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+    var sourceInfo = await ResolveImageEditSourceAsync(id, ct);
+    if (sourceInfo is null)
     {
-        return Results.NotFound(new { error = "original file not found" });
+        return Results.NotFound(new { error = "image not found" });
     }
 
     var fileName = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.jpg";
     var outAbsolutePath = Path.Combine(editsPreviewDir, fileName);
     var relPath = $"edits-preview/{fileName}";
 
-    using var image = await imagePipeline.LoadImageAsync(originalPath, ct);
-    imagePipeline.ApplyAdjustments(image, req);
+    using var image = await imagePipeline.LoadImageAsync(sourceInfo.AbsolutePath, ct);
+    imagePipeline.ApplyAdjustments(image, EnsureEditParams(req));
     imagePipeline.ApplySrgbProfile(image);
     await imagePipeline.SaveJpegAsync(image, outAbsolutePath, ct);
 
     return Results.Ok(new { ok = true, relativePath = relPath });
 })
 .DisableAntiforgery()
-.Accepts<ImageEditRequest>("application/json")
+.Accepts<ImageEditParams>("application/json")
 .Produces(StatusCodes.Status200OK)
-.Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
 
-app.MapPost("/image-edit-apply", async Task<IResult> (ImageEditRequest req, ImagePipelineService imagePipeline, CancellationToken ct) =>
+app.MapPost("/images/{id}/save-edit", async Task<IResult> (string id, ImageEditParams req, ImagePipelineService imagePipeline, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
-
-    var storedName = Path.GetFileName(req.StoredName);
-    if (!string.Equals(storedName, req.StoredName, StringComparison.Ordinal))
+    var sourceInfo = await ResolveImageEditSourceAsync(id, ct);
+    if (sourceInfo is null)
     {
-        return Results.BadRequest(new { error = "invalid storedName" });
-    }
-
-    var originalPath = Path.Combine(uploadOriginalDir, storedName);
-    if (!File.Exists(originalPath))
-    {
-        originalPath = Path.Combine(uploadDir, storedName);
-    }
-    if (!File.Exists(originalPath))
-    {
-        return Results.NotFound(new { error = "original file not found" });
+        return Results.NotFound(new { error = "image not found" });
     }
 
     var createdAt = DateTimeOffset.UtcNow;
     var fileName = $"{createdAt:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.jpg";
     var outAbsolutePath = Path.Combine(editsDir, fileName);
     var relPath = $"edits/{fileName}";
+    var previewPath = Path.Combine(editsPreviewDir, fileName);
+    var previewRelativePath = $"edits-preview/{fileName}";
 
-    using var image = await imagePipeline.LoadImageAsync(originalPath, ct);
-    imagePipeline.ApplyAdjustments(image, req);
+    using var image = await imagePipeline.LoadImageAsync(sourceInfo.AbsolutePath, ct);
+    var normalized = EnsureEditParams(req);
+    imagePipeline.ApplyAdjustments(image, normalized);
     imagePipeline.ApplySrgbProfile(image);
     await imagePipeline.SaveJpegAsync(image, outAbsolutePath, ct);
+    await CreatePreviewImageAsync(outAbsolutePath, previewPath, PreviewWidthPx, ct);
 
     await AppendCompositeAsync(
         compositesPath,
         compositesLock,
-        new CompositeHistoryItem("edit", createdAt, relPath, new[] { storedName }),
+        new CompositeHistoryItem("edit", createdAt, relPath, sourceInfo.Sources, previewRelativePath, normalized),
         ct);
 
-    return Results.Ok(new { ok = true, kind = "edit", createdAt, relativePath = relPath });
+    return Results.Ok(new { ok = true, kind = "edit", createdAt, relativePath = relPath, previewRelativePath });
 })
 .DisableAntiforgery()
-.Accepts<ImageEditRequest>("application/json")
+.Accepts<ImageEditParams>("application/json")
 .Produces(StatusCodes.Status200OK)
-.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
+
+app.MapDelete("/images/{id}", async Task<IResult> (string id, CancellationToken ct) =>
+{
+    await PruneExpiredAsync(ct);
+
+    var storedName = Path.GetFileName(id);
+    if (string.Equals(storedName, id, StringComparison.Ordinal))
+    {
+        var removed = await RemoveHistoryEntryAsync(historyPath, historyLock, storedName, ct);
+        if (removed)
+        {
+            DeleteAllFilesForStoredName(storedName);
+            return Results.Ok(new { ok = true });
+        }
+    }
+
+    var removedComposite = await RemoveCompositeByFileNameAsync(compositesPath, compositesLock, storedName, ct);
+    if (removedComposite)
+    {
+        TryDeleteFile(Path.Combine(editsDir, storedName));
+        TryDeleteFile(Path.Combine(editsPreviewDir, storedName));
+        return Results.Ok(new { ok = true });
+    }
+
+    return Results.NotFound(new { error = "image not found" });
+})
+.DisableAntiforgery()
+.Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);
 
 // --- Resize endpoint ---
@@ -2293,6 +2353,95 @@ static async Task AppendCompositeAsync(string compositesPath, SemaphoreSlim comp
     await WriteCompositesAsync(compositesPath, compositesLock, items, ct);
 }
 
+static ImageEditParams EnsureEditParams(ImageEditParams req)
+{
+    var color = req.Color ?? new ImageEditColorParams(0, 0, 0, 0, 0);
+    var light = req.Light ?? new ImageEditLightParams(0, 0, 0, 0, 0, 0, 0);
+    var details = req.Details ?? new ImageEditDetailsParams(0, 0, 0, 0, 0);
+    var scene = req.Scene ?? new ImageEditSceneParams(0, 0, 0, 0);
+    return req with
+    {
+        Preset = string.IsNullOrWhiteSpace(req.Preset) ? "None" : req.Preset,
+        Color = color,
+        Light = light,
+        Details = details,
+        Scene = scene
+    };
+}
+
+static async Task<bool> RemoveCompositeByFileNameAsync(
+    string compositesPath,
+    SemaphoreSlim compositesLock,
+    string fileName,
+    CancellationToken ct)
+{
+    await compositesLock.WaitAsync(ct);
+    try
+    {
+        if (!File.Exists(compositesPath))
+        {
+            return false;
+        }
+
+        var json = await File.ReadAllTextAsync(compositesPath, ct);
+        var items = JsonSerializer.Deserialize<List<CompositeHistoryItem>>(json) ?? new List<CompositeHistoryItem>();
+        var removed = items.FirstOrDefault(x => string.Equals(Path.GetFileName(x.RelativePath), fileName, StringComparison.Ordinal));
+        if (removed is null)
+        {
+            return false;
+        }
+
+        items = items.Where(x => !string.Equals(Path.GetFileName(x.RelativePath), fileName, StringComparison.Ordinal)).ToList();
+        var outJson = JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(compositesPath, outJson, ct);
+        return true;
+    }
+    catch
+    {
+        return false;
+    }
+    finally
+    {
+        compositesLock.Release();
+    }
+}
+
+static async Task<(string AbsolutePath, string[] Sources)?> ResolveImageEditSourceAsync(string id, CancellationToken ct)
+{
+    var storedName = Path.GetFileName(id);
+    if (string.IsNullOrWhiteSpace(storedName))
+    {
+        return null;
+    }
+
+    var originalPath = Path.Combine(uploadOriginalDir, storedName);
+    if (File.Exists(originalPath))
+    {
+        return (originalPath, new[] { storedName });
+    }
+
+    var uploadPath = Path.Combine(uploadDir, storedName);
+    if (File.Exists(uploadPath))
+    {
+        return (uploadPath, new[] { storedName });
+    }
+
+    var composites = await ReadCompositesAsync(compositesPath, compositesLock, ct);
+    var match = composites.FirstOrDefault(x => string.Equals(Path.GetFileName(x.RelativePath), storedName, StringComparison.OrdinalIgnoreCase));
+    if (match is null)
+    {
+        return null;
+    }
+
+    var abs = GetCompositeAbsolutePath(match);
+    if (string.IsNullOrWhiteSpace(abs) || !File.Exists(abs))
+    {
+        return null;
+    }
+
+    return (abs, match.Sources ?? Array.Empty<string>());
+}
+
 static async Task<List<VideoHistoryItem>> ReadVideoHistoryAsync(string historyPath, SemaphoreSlim historyLock, CancellationToken ct)
 {
     await historyLock.WaitAsync(ct);
@@ -2497,7 +2646,9 @@ record CompositeHistoryItem(
     string Kind,
     DateTimeOffset CreatedAt,
     string RelativePath,
-    string[] Sources
+    string[] Sources,
+    string? PreviewRelativePath = null,
+    ImageEditParams? EditParams = null
 );
 record VideoHistoryItem(
     string Kind,

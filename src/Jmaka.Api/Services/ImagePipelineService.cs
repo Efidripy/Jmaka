@@ -32,19 +32,38 @@ public class ImagePipelineService
         // Keep this as a no-op to avoid breaking call sites.
     }
 
-    public void ApplyAdjustments(Image image, ImageEditRequest request)
+    public void ApplyAdjustments(Image image, ImageEditParams request)
     {
-        var brightness = 1 + request.Brightness;
-        var contrast = 1 + request.Contrast;
-        var saturation = 1 + request.Saturation + (request.Vibrance * 0.5f);
-        var hue = request.Hue;
+        var brightnessBoost = (request.Light.Brightness + request.Light.Exposure * 0.7f + request.Scene.Bloom * 0.4f) / 100f;
+        var contrastBoost = (request.Light.Contrast + request.Details.Clarity * 0.5f + request.Scene.Dehaze * 0.4f) / 100f;
+        var saturationBoost = (request.Color.Saturation + request.Color.Vibrance * 0.6f) / 100f;
+        var hue = request.Color.Hue;
+        var blur = Math.Max(request.Details.Blur, request.Details.Smooth) / 100f;
+        var sharpen = Math.Max(request.Details.Sharpen, 0) / 100f;
+        var vignette = request.Scene.Vignette / 100f;
+
         image.Mutate(ctx =>
         {
             ctx.AutoOrient();
-            ctx.Brightness(brightness);
-            ctx.Contrast(contrast);
-            ctx.Saturate(saturation);
-            ctx.Hue(hue);
+            ctx.Brightness(1 + brightnessBoost);
+            ctx.Contrast(1 + contrastBoost);
+            ctx.Saturate(1 + saturationBoost);
+            if (Math.Abs(hue) > 0.01f)
+            {
+                ctx.Hue(hue);
+            }
+            if (blur > 0)
+            {
+                ctx.GaussianBlur(blur * 6);
+            }
+            if (sharpen > 0)
+            {
+                ctx.GaussianSharpen(sharpen * 3);
+            }
+            if (Math.Abs(vignette) > 0.01f)
+            {
+                ctx.Vignette(new GraphicsOptions(), Math.Abs(vignette) * 0.6f);
+            }
         });
     }
 
@@ -60,12 +79,54 @@ public class ImagePipelineService
     }
 }
 
-public record ImageEditRequest(
-    string StoredName,
-    float Brightness,
-    float Contrast,
+public record ImageEditParams(
+    string? ImageId,
+    string? Preset,
+    ImageEditColorParams? Color,
+    ImageEditLightParams? Light,
+    ImageEditDetailsParams? Details,
+    ImageEditSceneParams? Scene
+)
+{
+    public static ImageEditParams Default => new(
+        ImageId: null,
+        Preset: "None",
+        Color: new ImageEditColorParams(0, 0, 0, 0, 0),
+        Light: new ImageEditLightParams(0, 0, 0, 0, 0, 0, 0),
+        Details: new ImageEditDetailsParams(0, 0, 0, 0, 0),
+        Scene: new ImageEditSceneParams(0, 0, 0, 0)
+    );
+}
+
+public record ImageEditColorParams(
+    float Vibrance,
     float Saturation,
-    float Hue,
+    float Temperature,
+    float Tint,
+    float Hue
+);
+
+public record ImageEditLightParams(
+    float Brightness,
     float Exposure,
-    float Vibrance
+    float Contrast,
+    float Black,
+    float White,
+    float Highlights,
+    float Shadows
+);
+
+public record ImageEditDetailsParams(
+    float Sharpen,
+    float Clarity,
+    float Smooth,
+    float Blur,
+    float Grain
+);
+
+public record ImageEditSceneParams(
+    float Vignette,
+    float Glamour,
+    float Bloom,
+    float Dehaze
 );
