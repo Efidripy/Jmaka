@@ -20,9 +20,9 @@ public class ImagePipelineService
     public async Task ConvertToJpegSrgbAsync(string inputPath, string outputPath, CancellationToken ct)
     {
         await using var input = File.OpenRead(inputPath);
-        using var image = await Image.LoadAsync(input, ct);
-        NormalizeToSrgb(ref image);
-        await SaveJpegAsync(image, outputPath, ct);
+        var image = await Image.LoadAsync(input, ct);
+        using var normalized = NormalizeToSrgb(image);
+        await SaveJpegAsync(normalized, outputPath, ct);
     }
 
     public async Task<Image> LoadImageAsync(string inputPath, CancellationToken ct)
@@ -31,7 +31,7 @@ public class ImagePipelineService
         return await Image.LoadAsync(input, ct);
     }
 
-    public void NormalizeToSrgb(ref Image image)
+    public Image NormalizeToSrgb(Image image)
     {
         if (image.PixelType.AlphaRepresentation != PixelAlphaRepresentation.None)
         {
@@ -45,17 +45,23 @@ public class ImagePipelineService
         image.Metadata.IptcProfile = null;
         image.Metadata.XmpProfile = null;
         image.Metadata.IccProfile = new IccProfile(SrgbIccProfileBytes);
+        return image;
     }
 
     public void ApplyAdjustments(Image image, ImageEditParams request)
     {
-        var brightnessBoost = (request.Light.Brightness + request.Light.Exposure * 0.7f + request.Scene.Bloom * 0.4f) / 100f;
-        var contrastBoost = (request.Light.Contrast + request.Details.Clarity * 0.5f + request.Scene.Dehaze * 0.4f) / 100f;
-        var saturationBoost = (request.Color.Saturation + request.Color.Vibrance * 0.6f) / 100f;
-        var hue = request.Color.Hue;
-        var blur = Math.Max(request.Details.Blur, request.Details.Smooth) / 100f;
-        var sharpen = Math.Max(request.Details.Sharpen, 0) / 100f;
-        var vignette = request.Scene.Vignette / 100f;
+        var color = request.Color ?? new ImageEditColorParams(0, 0, 0, 0, 0);
+        var light = request.Light ?? new ImageEditLightParams(0, 0, 0, 0, 0, 0, 0);
+        var details = request.Details ?? new ImageEditDetailsParams(0, 0, 0, 0, 0);
+        var scene = request.Scene ?? new ImageEditSceneParams(0, 0, 0, 0);
+
+        var brightnessBoost = (light.Brightness + light.Exposure * 0.7f + scene.Bloom * 0.4f) / 100f;
+        var contrastBoost = (light.Contrast + details.Clarity * 0.5f + scene.Dehaze * 0.4f) / 100f;
+        var saturationBoost = (color.Saturation + color.Vibrance * 0.6f) / 100f;
+        var hue = color.Hue;
+        var blur = Math.Max(details.Blur, details.Smooth) / 100f;
+        var sharpen = Math.Max(details.Sharpen, 0) / 100f;
+        var vignette = scene.Vignette / 100f;
 
         image.Mutate(ctx =>
         {
@@ -77,7 +83,7 @@ public class ImagePipelineService
             }
             if (Math.Abs(vignette) > 0.01f)
             {
-                ctx.Vignette(new GraphicsOptions(), Math.Abs(vignette) * 0.6f);
+                ctx.Vignette(Math.Abs(vignette) * 0.6f);
             }
         });
     }
