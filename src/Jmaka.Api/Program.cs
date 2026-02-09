@@ -969,10 +969,11 @@ app.MapPost("/images/{id}/render", async Task<IResult> (string id, ImageEditPara
     var outAbsolutePath = Path.Combine(editsPreviewDir, fileName);
     var relPath = $"edits-preview/{fileName}";
 
-    using var image = await imagePipeline.LoadImageAsync(sourceInfo.AbsolutePath, ct);
+    var resolved = sourceInfo.Value;
+    var image = await imagePipeline.LoadImageAsync(resolved.AbsolutePath, ct);
     imagePipeline.ApplyAdjustments(image, EnsureEditParams(req));
-    imagePipeline.NormalizeToSrgb(ref image);
-    await imagePipeline.SaveJpegAsync(image, outAbsolutePath, ct);
+    using var normalized = imagePipeline.NormalizeToSrgb(image);
+    await imagePipeline.SaveJpegAsync(normalized, outAbsolutePath, ct);
 
     return Results.Ok(new { ok = true, relativePath = relPath });
 })
@@ -997,17 +998,18 @@ app.MapPost("/images/{id}/save-edit", async Task<IResult> (string id, ImageEditP
     var previewPath = Path.Combine(editsPreviewDir, fileName);
     var previewRelativePath = $"edits-preview/{fileName}";
 
-    using var image = await imagePipeline.LoadImageAsync(sourceInfo.AbsolutePath, ct);
+    var resolved = sourceInfo.Value;
+    var image = await imagePipeline.LoadImageAsync(resolved.AbsolutePath, ct);
     var normalized = EnsureEditParams(req);
     imagePipeline.ApplyAdjustments(image, normalized);
-    imagePipeline.NormalizeToSrgb(ref image);
-    await imagePipeline.SaveJpegAsync(image, outAbsolutePath, ct);
+    using var normalizedImage = imagePipeline.NormalizeToSrgb(image);
+    await imagePipeline.SaveJpegAsync(normalizedImage, outAbsolutePath, ct);
     await CreatePreviewImageAsync(outAbsolutePath, previewPath, PreviewWidthPx, ct);
 
     await AppendCompositeAsync(
         compositesPath,
         compositesLock,
-        new CompositeHistoryItem("edit", createdAt, relPath, sourceInfo.Sources, previewRelativePath, normalized),
+        new CompositeHistoryItem("edit", createdAt, relPath, resolved.Sources, previewRelativePath, normalized),
         ct);
 
     return Results.Ok(new { ok = true, kind = "edit", createdAt, relativePath = relPath, previewRelativePath });
@@ -2214,21 +2216,6 @@ static async Task SaveImageWithSafeTempAsync(Image image, string outAbsolutePath
     }
 }
 
-static bool IsLikelyImageExtension(string? ext)
-{
-    if (string.IsNullOrWhiteSpace(ext))
-    {
-        return false;
-    }
-
-    return ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
-        || ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
-        || ext.Equals(".png", StringComparison.OrdinalIgnoreCase)
-        || ext.Equals(".webp", StringComparison.OrdinalIgnoreCase)
-        || ext.Equals(".bmp", StringComparison.OrdinalIgnoreCase)
-        || ext.Equals(".gif", StringComparison.OrdinalIgnoreCase);
-}
-
 static string SanitizeExtension(string? ext)
 {
     if (string.IsNullOrWhiteSpace(ext))
@@ -2406,7 +2393,7 @@ static async Task<bool> RemoveCompositeByFileNameAsync(
     }
 }
 
-static async Task<(string AbsolutePath, string[] Sources)?> ResolveImageEditSourceAsync(string id, CancellationToken ct)
+async Task<(string AbsolutePath, string[] Sources)?> ResolveImageEditSourceAsync(string id, CancellationToken ct)
 {
     var storedName = Path.GetFileName(id);
     if (string.IsNullOrWhiteSpace(storedName))
