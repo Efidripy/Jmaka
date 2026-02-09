@@ -971,7 +971,7 @@ app.MapPost("/images/{id}/render", async Task<IResult> (string id, ImageEditPara
 
     using var image = await imagePipeline.LoadImageAsync(sourceInfo.AbsolutePath, ct);
     imagePipeline.ApplyAdjustments(image, EnsureEditParams(req));
-    imagePipeline.ApplySrgbProfile(image);
+    imagePipeline.NormalizeToSrgb(ref image);
     await imagePipeline.SaveJpegAsync(image, outAbsolutePath, ct);
 
     return Results.Ok(new { ok = true, relativePath = relPath });
@@ -1000,7 +1000,7 @@ app.MapPost("/images/{id}/save-edit", async Task<IResult> (string id, ImageEditP
     using var image = await imagePipeline.LoadImageAsync(sourceInfo.AbsolutePath, ct);
     var normalized = EnsureEditParams(req);
     imagePipeline.ApplyAdjustments(image, normalized);
-    imagePipeline.ApplySrgbProfile(image);
+    imagePipeline.NormalizeToSrgb(ref image);
     await imagePipeline.SaveJpegAsync(image, outAbsolutePath, ct);
     await CreatePreviewImageAsync(outAbsolutePath, previewPath, PreviewWidthPx, ct);
 
