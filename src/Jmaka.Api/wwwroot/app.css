@@ -1095,40 +1095,250 @@ html, body {
 }
 
 .edit-card {
-  width: min(1100px, 96vw);
+  width: min(1320px, 96vw);
 }
 
 .edit-body {
   display: grid;
-  grid-template-columns: 1fr 280px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 20px;
+  align-items: start;
+}
+
+.edit-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .edit-preview {
   background: #0f1115;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  min-height: 360px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.edit-preview-canvas,
+.edit-preview-img {
+  max-width: 100%;
+  max-height: 70vh;
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.edit-preview-overlay {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.compare-btn {
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(20, 20, 24, 0.8);
+  color: #f3f4f6;
+}
+
+.edit-sidebar {
+  display: grid;
+  gap: 16px;
+}
+
+.edit-section {
+  background: rgba(17, 24, 39, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.edit-section-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 10px;
+}
+
+.preset-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.preset-btn {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(17, 24, 39, 0.9);
+  color: #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.preset-btn.is-active {
+  border-color: rgba(34, 211, 238, 0.6);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.4);
+}
+
+.edit-panels {
+  display: grid;
+  gap: 12px;
+}
+
+.edit-panel {
   border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 320px;
+  background: rgba(11, 15, 23, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   overflow: hidden;
 }
 
-.edit-preview-img {
-  max-width: 100%;
-  max-height: 65vh;
+.edit-panel-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: rgba(17, 24, 39, 0.7);
+  color: #e5e7eb;
+  border: none;
+  font-weight: 600;
 }
 
-.edit-controls {
+.edit-panel-body {
+  padding: 10px 12px 14px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
-.edit-row {
+.edit-panel.is-collapsed .edit-panel-body {
+  display: none;
+}
+
+.edit-panel-icon {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.slider-row {
   display: grid;
   gap: 6px;
+}
+
+.slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 13px;
-  color: #d1d5db;
+  color: #e5e7eb;
+}
+
+.slider-label,
+.slider-value {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 13px;
+  padding: 0;
+}
+
+.slider-value {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.slider-track {
+  position: relative;
+  display: grid;
+}
+
+.slider-track input[type="range"] {
+  width: 100%;
+}
+
+.slider-zero {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.edit-images {
+  display: grid;
+  gap: 12px;
+}
+
+.edit-images-group {
+  display: grid;
+  gap: 8px;
+}
+
+.edit-images-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.edit-images-list {
+  display: grid;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.edit-image-item {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(17, 24, 39, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+
+.edit-image-item.is-active {
+  border-color: rgba(59, 130, 246, 0.7);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4);
+}
+
+.edit-image-thumb {
+  width: 48px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.edit-image-meta {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.edit-image-meta span {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.edit-image-actions {
+  display: grid;
+  gap: 4px;
+}
+
+.edit-image-actions .btn {
+  padding: 4px 6px;
+  font-size: 11px;
 }
 
 .video-history {
