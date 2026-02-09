@@ -1,11 +1,16 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Metadata.Profiles.Icc;
+using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
 namespace Jmaka.Api.Services;
 
 public class ImagePipelineService
 {
+    private static readonly byte[] SrgbIccProfileBytes = Convert.FromBase64String(
+        "AAACTGxjbXMEQAAAbW50clJHQiBYWVogB+oAAgAJAAoAJwA4YWNzcEFQUEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPbWAAEAAAAA0y1sY21zAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALZGVzYwAAAQgAAAA2Y3BydAAAAUAAAABMd3RwdAAAAYwAAAAUY2hhZAAAAaAAAAAsclhZWgAAAcwAAAAUYlhZWgAAAeAAAAAUZ1hZWgAAAfQAAAAUclRSQwAAAggAAAAgZ1RSQwAAAggAAAAgYlRSQwAAAggAAAAgY2hybQAAAigAAAAkbWx1YwAAAAAAAAABAAAADGVuVVMAAAAaAAAAHABzAFIARwBCACAAYgB1AGkAbAB0AC0AaQBuAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAADAAAAAcAE4AbwAgAGMAbwBwAHkAcgBpAGcAaAB0ACwAIAB1AHMAZQAgAGYAcgBlAGUAbAB5WFlaIAAAAAAAAPbWAAEAAAAA0y1zZjMyAAAAAAABDEIAAAXe///zJQAAB5MAAP2Q///7of///aIAAAPcAADAblhZWiAAAAAAAABvoAAAOPUAAAOQWFlaIAAAAAAAACSfAAAPhAAAtsNYWVogAAAAAAAAYpcAALeHAAAY2XBhcmEAAAAAAAMAAAACZmYAAPKnAAANWQAAE9AAAApbY2hybQAAAAAAAwAAAACj1wAAVHsAAEzNAACZmgAAJmYAAA9c");
+
     private readonly JpegEncoder _jpegEncoder = new()
     {
         Quality = 92,
@@ -16,7 +21,7 @@ public class ImagePipelineService
     {
         await using var input = File.OpenRead(inputPath);
         using var image = await Image.LoadAsync(input, ct);
-        ApplySrgbProfile(image);
+        NormalizeToSrgb(ref image);
         await SaveJpegAsync(image, outputPath, ct);
     }
 
@@ -26,10 +31,20 @@ public class ImagePipelineService
         return await Image.LoadAsync(input, ct);
     }
 
-    public void ApplySrgbProfile(Image image)
+    public void NormalizeToSrgb(ref Image image)
     {
-        // ImageSharp 3.x no longer exposes a built-in sRGB profile helper.
-        // Keep this as a no-op to avoid breaking call sites.
+        if (image.PixelType.AlphaRepresentation != PixelAlphaRepresentation.None)
+        {
+            var flattened = new Image<Rgb24>(image.Width, image.Height, Color.White);
+            flattened.Mutate(ctx => ctx.DrawImage(image, new Point(0, 0), 1f));
+            image.Dispose();
+            image = flattened;
+        }
+
+        image.Metadata.ExifProfile = null;
+        image.Metadata.IptcProfile = null;
+        image.Metadata.XmpProfile = null;
+        image.Metadata.IccProfile = new IccProfile(SrgbIccProfileBytes);
     }
 
     public void ApplyAdjustments(Image image, ImageEditParams request)
