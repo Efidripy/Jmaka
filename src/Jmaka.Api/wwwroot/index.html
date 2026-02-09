@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Jmaka 0.2.0-rc7</title>
   <link rel="stylesheet" href="app.css?v=0.2.0-rc7" />
+  <link rel="stylesheet" href="video-edit.css?v=0.2.0-rc7" />
 </head>
 <body>
   <main class="page">
@@ -330,48 +331,119 @@
   <!-- Video Edit -->
   <div id="videoEditModal" class="modal" hidden>
     <div class="modal-backdrop" data-close="1"></div>
-    <div class="modal-card edit-card" role="dialog" aria-modal="true" aria-label="Video Edit">
+    <div class="modal-card video-edit-card" role="dialog" aria-modal="true" aria-label="Video Edit">
       <div class="modal-header">
         <div class="modal-title-wrap">
           <div class="modal-title">Video Edit</div>
           <div class="modal-sub">
-            <span class="modal-subtext">Тримминг, сжатие в размер и позиция вертикального видео.</span>
+            <span class="modal-subtext">Тримминг, кадрирование, поворот и настройка размера.</span>
           </div>
         </div>
         <button id="videoEditClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
       </div>
-      <div class="modal-body edit-body">
-        <div class="edit-preview">
-          <video id="videoEditPreview" class="edit-preview-img" controls></video>
-        </div>
-        <div class="edit-controls">
-          <label class="edit-row">Upload video <input id="videoUploadInput" type="file" accept="video/*" /></label>
-          <label class="edit-row">Trim start (sec) <input id="videoTrimStart" type="number" min="0" step="0.1" value="0" /></label>
-          <label class="edit-row">Trim end (sec) <input id="videoTrimEnd" type="number" min="0" step="0.1" value="0" /></label>
-          <label class="edit-row">Cut middle start (sec) <input id="videoCutStart" type="number" min="0" step="0.1" value="0" /></label>
-          <label class="edit-row">Cut middle end (sec) <input id="videoCutEnd" type="number" min="0" step="0.1" value="0" /></label>
-          <label class="edit-row">Output width
-            <select id="videoOutputWidth">
-              <option value="1280" selected>1280</option>
-              <option value="720">720</option>
-            </select>
-          </label>
-          <label class="edit-row">Target size (MB) <input id="videoTargetSize" type="number" min="0.5" max="2048" step="0.1" value="25" /></label>
-          <label class="edit-row">Vertical offset (px) <input id="videoVerticalOffset" type="range" min="-400" max="400" step="1" value="0" /></label>
-          <div class="edit-row video-history">
-            <div class="video-history-header">
-              <span>Video history</span>
-              <button id="videoHistoryRefresh" class="btn small" type="button">Обновить</button>
+      <div class="modal-body video-edit-body">
+        <div class="video-edit-toolbar">
+          <div class="video-tool-group" role="tablist" aria-label="Инструменты видео">
+            <button class="btn tool-btn is-active" type="button" data-tool="trim">Trim</button>
+            <button class="btn tool-btn" type="button" data-tool="crop">Crop</button>
+            <button class="btn tool-btn" type="button" data-tool="rotate">Rotate</button>
+            <button class="btn tool-btn" type="button" data-tool="flip">Flip</button>
+            <button class="btn tool-btn" type="button" data-tool="speed">Speed</button>
+          </div>
+          <div class="video-tool-panels">
+            <div class="video-tool-panel" data-tool-panel="trim">Выделите отрезок на таймлайне.</div>
+            <div class="video-tool-panel" data-tool-panel="crop" hidden>Перетащите рамку кадрирования.</div>
+            <div class="video-tool-panel" data-tool-panel="rotate" hidden>
+              <button id="videoRotateCw" class="btn small" type="button">↻ 90°</button>
+              <button id="videoRotateCcw" class="btn small" type="button">↺ 90°</button>
+              <button id="videoRotateReset" class="btn small" type="button">Reset</button>
             </div>
-            <div id="videoHistoryList" class="video-history-list"></div>
+            <div class="video-tool-panel" data-tool-panel="flip" hidden>
+              <button id="videoFlipH" class="btn small" type="button">Flip H</button>
+              <button id="videoFlipV" class="btn small" type="button">Flip V</button>
+            </div>
+            <div class="video-tool-panel" data-tool-panel="speed" hidden>
+              <label class="video-speed-label">Speed
+                <input id="videoSpeedRange" type="range" min="0.5" max="2" step="0.1" value="1" />
+                <span id="videoSpeedValue">1.0x</span>
+              </label>
+            </div>
           </div>
         </div>
+        <div class="video-edit-layout">
+          <div class="video-edit-main">
+            <div class="video-preview-wrap">
+              <div class="video-preview-stage">
+                <video id="videoEditPreview" class="video-preview" playsinline></video>
+                <div id="videoCropOverlay" class="video-crop-overlay" hidden>
+                  <div id="videoCropRect" class="video-crop-rect" role="presentation">
+                    <span class="crop-handle tl" data-handle="tl"></span>
+                    <span class="crop-handle tr" data-handle="tr"></span>
+                    <span class="crop-handle bl" data-handle="bl"></span>
+                    <span class="crop-handle br" data-handle="br"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="video-timeline">
+              <div class="timeline-strip" id="videoTimelineStrip">
+                <canvas id="videoTimelineCanvas"></canvas>
+                <div id="videoTimelineSelection" class="timeline-selection">
+                  <span class="timeline-handle start" data-handle="start"></span>
+                  <span class="timeline-handle end" data-handle="end"></span>
+                </div>
+                <div id="videoTimelinePlayhead" class="timeline-playhead"></div>
+              </div>
+              <div class="timeline-meta">
+                <div class="timeline-range">
+                  IN <span id="videoTrimStartLabel">00:00</span> · OUT <span id="videoTrimEndLabel">00:00</span>
+                </div>
+                <div class="timeline-help">Перетащите границы, чтобы задать отрезок.</div>
+              </div>
+            </div>
+            <div class="video-edit-controls">
+              <button id="videoPlayToggle" class="btn icon-btn" type="button">▶</button>
+              <div class="video-timecode"><span id="videoCurrentTime">00:00</span> / <span id="videoDuration">00:00</span></div>
+              <div class="video-output-select">
+                <label><input type="radio" name="videoOutputWidth" value="1280" checked /> 1280</label>
+                <label><input type="radio" name="videoOutputWidth" value="720" /> 720</label>
+              </div>
+              <label class="video-advanced">Target size (MB)
+                <input id="videoTargetSize" type="number" min="0.5" max="2048" step="0.1" value="5" />
+              </label>
+              <label class="video-advanced">Vertical offset (px)
+                <input id="videoVerticalOffset" type="number" min="-400" max="400" step="1" value="0" />
+              </label>
+              <div class="video-controls-spacer"></div>
+              <button id="videoEditSave" class="btn primary large" type="button" disabled>Save</button>
+            </div>
+          </div>
+          <aside class="video-edit-sidebar">
+            <div class="sidebar-section">
+              <div class="sidebar-header">
+                <span>Originals</span>
+                <label class="btn small">
+                  Upload
+                  <input id="videoUploadInput" type="file" accept="video/*" hidden />
+                </label>
+                <button id="videoHistoryRefresh" class="btn small" type="button">Refresh</button>
+              </div>
+              <div id="videoOriginalsList" class="video-list"></div>
+            </div>
+            <div class="sidebar-section">
+              <div class="sidebar-header">
+                <span>Processed</span>
+              </div>
+              <div id="videoProcessedList" class="video-list"></div>
+            </div>
+          </aside>
+        </div>
+        <div id="videoEditHint" class="video-edit-hint">Загрузите видео и выберите отрезок.</div>
+        <div id="videoProcessingOverlay" class="video-processing-overlay" hidden>Processing…</div>
       </div>
       <div class="modal-footer">
-        <div id="videoEditHint" class="modal-hint">Загрузите видео, затем настройте параметры.</div>
         <div class="modal-actions">
           <button id="videoEditCancel" class="btn" type="button">Закрыть</button>
-          <button id="videoEditApply" class="btn primary" type="button" disabled>Сделать</button>
         </div>
       </div>
     </div>
@@ -556,5 +628,6 @@
   </div>
 
   <script src="app.js?v=0.2.0-rc7"></script>
+  <script src="video-edit.js?v=0.2.0-rc7"></script>
 </body>
 </html>
