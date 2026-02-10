@@ -3,6 +3,7 @@ using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Metadata.Profiles.Icc;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using System.Reflection;
 
 namespace Jmaka.Api.Services;
 
@@ -16,6 +17,14 @@ public class ImagePipelineService
         Quality = 92,
         Interleaved = true
     };
+
+    private static readonly MethodInfo[] VignetteMethods = typeof(IImageProcessingContext)
+        .Assembly
+        .GetTypes()
+        .Where(t => t.IsSealed && t.IsAbstract && t.Name == "VignetteExtensions")
+        .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
+        .Where(m => m.Name == "Vignette")
+        .ToArray();
 
     public async Task ConvertToJpegSrgbAsync(string inputPath, string outputPath, CancellationToken ct)
     {
@@ -83,9 +92,36 @@ public class ImagePipelineService
             }
             if (Math.Abs(vignette) > 0.01f)
             {
-                ctx.Vignette(Math.Abs(vignette) * 0.6f, Color.Black);
+                ApplyVignetteCompat(ctx, Math.Abs(vignette) * 0.6f);
             }
         });
+    }
+
+    private static void ApplyVignetteCompat(IImageProcessingContext ctx, float strength)
+    {
+        // ImageSharp API has differed between versions/build agents.
+        // We resolve and invoke a compatible overload dynamically to avoid CI compile failures.
+        foreach (var method in VignetteMethods)
+        {
+            var ps = method.GetParameters();
+            if (ps.Length == 2 && ps[1].ParameterType == typeof(float))
+            {
+                method.Invoke(null, [ctx, strength]);
+                return;
+            }
+
+            if (ps.Length == 3 && ps[1].ParameterType == typeof(float) && ps[2].ParameterType == typeof(Color))
+            {
+                method.Invoke(null, [ctx, strength, Color.Black]);
+                return;
+            }
+
+            if (ps.Length == 3 && ps[1].ParameterType == typeof(Color) && ps[2].ParameterType == typeof(float))
+            {
+                method.Invoke(null, [ctx, Color.Black, strength]);
+                return;
+            }
+        }
     }
 
     public async Task SaveJpegAsync(Image image, string outputPath, CancellationToken ct)
