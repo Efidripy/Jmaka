@@ -19,22 +19,36 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  padding: 10px 16px;
   background: rgba(8, 40, 80, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .video-tool-group {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .video-tool-group .tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
   background: rgba(11, 18, 32, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.video-tool-group .tool-btn:hover {
+  background: rgba(14, 165, 233, 0.15);
+  border-color: rgba(56, 189, 248, 0.3);
 }
 
 .video-tool-group .tool-btn.is-active {
@@ -43,18 +57,45 @@
   color: #0b1220;
 }
 
+.video-tool-group .tool-btn svg {
+  flex-shrink: 0;
+}
+
+.video-tool-group .tool-toggle {
+  cursor: pointer;
+}
+
+.video-tool-group .tool-toggle input:checked + svg {
+  opacity: 0.5;
+}
+
 .video-tool-panels {
+  padding: 12px 16px;
+  background: rgba(4, 20, 40, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  min-height: 52px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: 13px;
 }
 
 .video-tool-panel {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+}
+
+.video-tool-panel .panel-hint {
+  color: #94a3b8;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.video-tool-panel .panel-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .video-speed-label {

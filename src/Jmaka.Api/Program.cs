@@ -1889,8 +1889,46 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
     var targetHeight = (int)Math.Round(targetWidth * 9.0 / 16.0);
     var verticalOffset = Math.Clamp(req.VerticalOffsetPx, -targetHeight, targetHeight);
 
+    // Build video filter components
+    var filterParts = new List<string>();
+    
+    // 1. Crop (if specified)
+    if (req.CropX.HasValue && req.CropY.HasValue && req.CropW.HasValue && req.CropH.HasValue)
+    {
+        var cx = Math.Clamp(req.CropX.Value, 0, 1);
+        var cy = Math.Clamp(req.CropY.Value, 0, 1);
+        var cw = Math.Clamp(req.CropW.Value, 0, 1 - cx);
+        var ch = Math.Clamp(req.CropH.Value, 0, 1 - cy);
+        if (cw > 0.01 && ch > 0.01 && (cx > 0.001 || cy > 0.001 || cw < 0.999 || ch < 0.999))
+        {
+            filterParts.Add($"crop=iw*{F(cw)}:ih*{F(ch)}:iw*{F(cx)}:ih*{F(cy)}");
+        }
+    }
+    
+    // 2. Rotation (90° increments)
+    var rotateDeg = (req.RotateDeg ?? 0) % 360;
+    if (rotateDeg < 0) rotateDeg += 360;
+    if (rotateDeg == 90) filterParts.Add("transpose=1");
+    else if (rotateDeg == 180) filterParts.Add("transpose=1,transpose=1");
+    else if (rotateDeg == 270) filterParts.Add("transpose=2");
+    
+    // 3. Flip
+    if (req.FlipH == true && req.FlipV == true) filterParts.Add("hflip,vflip");
+    else if (req.FlipH == true) filterParts.Add("hflip");
+    else if (req.FlipV == true) filterParts.Add("vflip");
+    
+    // 4. Speed
+    var speed = req.Speed.HasValue ? Math.Clamp(req.Speed.Value, 0.25, 4.0) : 1.0;
+    if (Math.Abs(speed - 1.0) > 0.01)
+    {
+        filterParts.Add($"setpts={F(1.0 / speed)}*PTS");
+    }
+
     var scalePad = $"scale={targetWidth}:-2:force_original_aspect_ratio=decrease," +
                    $"pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2+{verticalOffset}";
+    
+    // Append transform filters to the base scale/pad
+    var transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
 
     string filter;
     double outputDuration;
@@ -1934,19 +1972,19 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         {
             filter = $"[0:v]trim=start={F(trimStart)}:end={F(cutStart)},setpts=PTS-STARTPTS[v0];" +
                      $"[0:v]trim=start={F(cutEnd)}:end={F(trimEnd)},setpts=PTS-STARTPTS[v1];" +
-                     $"[v0][v1]concat=n=2:v=1:a=0,{scalePad}[v]";
+                     $"[v0][v1]concat=n=2:v=1:a=0,{transformFilter}{scalePad}[v]";
             outputDuration = (cutStart - trimStart) + (trimEnd - cutEnd);
         }
         else
         {
-            filter = $"[0:v]trim=start={F(trimStart)}:end={F(trimEnd)},setpts=PTS-STARTPTS,{scalePad}[v]";
+            filter = $"[0:v]trim=start={F(trimStart)}:end={F(trimEnd)},setpts=PTS-STARTPTS,{transformFilter}{scalePad}[v]";
             outputDuration = trimEnd - trimStart;
         }
     }
     else if (mergedSegments.Count == 1)
     {
         var seg = mergedSegments[0];
-        filter = $"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS,{scalePad}[v]";
+        filter = $"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS,{transformFilter}{scalePad}[v]";
         outputDuration = seg.End - seg.Start;
     }
     else
@@ -1962,10 +2000,16 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         {
             sb.Append($"[v{i}]");
         }
-        sb.Append($"concat=n={mergedSegments.Count}:v=1:a=0,{scalePad}[v]");
+        sb.Append($"concat=n={mergedSegments.Count}:v=1:a=0,{transformFilter}{scalePad}[v]");
 
         filter = sb.ToString();
         outputDuration = mergedSegments.Sum(x => x.End - x.Start);
+    }
+    
+    // Adjust output duration for speed changes
+    if (Math.Abs(speed - 1.0) > 0.01)
+    {
+        outputDuration = outputDuration / speed;
     }
 
     if (outputDuration <= 0.5)
@@ -1984,6 +2028,10 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
     var passLog = Path.Combine(videoOutDir, $"pass-{Guid.NewGuid():N}");
 
     var nullOutput = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
+    
+    // Determine audio handling
+    var muteAudio = req.MuteAudio ?? false;
+    var audioMap = muteAudio ? new[] { "-an" } : new[] { "-map", "0:a?", "-c:a", "aac", "-b:a", "128k" };
 
     var pass1Args = new List<string>
     {
@@ -1991,7 +2039,7 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         "-i", inputPath,
         "-filter_complex", filter,
         "-map", "[v]",
-        "-an",
+        "-an",  // Always no audio in pass 1
         "-c:v", "libx264",
         "-b:v", $"{bitrate}",
         "-pass", "1",
@@ -2005,14 +2053,17 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         "-y",
         "-i", inputPath,
         "-filter_complex", filter,
-        "-map", "[v]",
-        "-an",
+        "-map", "[v]"
+    };
+    pass2Args.AddRange(audioMap);
+    pass2Args.AddRange(new[]
+    {
         "-c:v", "libx264",
         "-b:v", $"{bitrate}",
         "-pass", "2",
         "-passlogfile", passLog,
         outPath
-    };
+    });
 
     var pass1 = await RunProcessAsync("ffmpeg", pass1Args, ct);
     if (!pass1.Success)
@@ -2736,7 +2787,16 @@ record VideoProcessRequest(
     int OutputWidth,
     double TargetSizeMb,
     double VerticalOffsetPx,
-    VideoProcessSegment[]? Segments
+    VideoProcessSegment[]? Segments,
+    double? CropX,
+    double? CropY,
+    double? CropW,
+    double? CropH,
+    int? RotateDeg,
+    bool? FlipH,
+    bool? FlipV,
+    double? Speed,
+    bool? MuteAudio
 );
 
 record VideoProcessSegment(
