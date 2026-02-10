@@ -1454,12 +1454,6 @@ html, body {
   z-index: 0;
 }
 
-.slider-track input[type="range"] {
-  position: relative;
-  z-index: 1;
-  background: transparent;
-}
-
 /* Saturation gradient: grayscale to vibrant */
 [data-param="color.saturation"] .slider-track::before {
   background: linear-gradient(to right, 
