@@ -2243,13 +2243,23 @@ static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> a
     
     if (success)
     {
-        logger?.LogDebug("{Context}FFMPEG SUCCESS (exit code 0)\nFFMPEG STDOUT:\n{Stdout}", contextPrefix, output);
+        logger?.LogDebug("{Context}FFMPEG SUCCESS (exit code 0)", contextPrefix);
+        if (!string.IsNullOrEmpty(output))
+        {
+            logger?.LogDebug("{Context}FFMPEG STDOUT: {Stdout}", contextPrefix, output);
+        }
     }
     else
     {
         logger?.LogError("{Context}FFMPEG FAILED with exit code {ExitCode}", contextPrefix, process.ExitCode);
-        logger?.LogError("{Context}FFMPEG STDERR:\n{Stderr}", contextPrefix, error);
-        logger?.LogError("{Context}FFMPEG STDOUT:\n{Stdout}", contextPrefix, output);
+        if (!string.IsNullOrEmpty(error))
+        {
+            logger?.LogError("{Context}FFMPEG STDERR: {Stderr}", contextPrefix, error);
+        }
+        if (!string.IsNullOrEmpty(output))
+        {
+            logger?.LogError("{Context}FFMPEG STDOUT: {Stdout}", contextPrefix, output);
+        }
     }
 
     return new ProcessResult(success, output, error);
