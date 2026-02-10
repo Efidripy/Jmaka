@@ -1199,6 +1199,9 @@ html, body {
 .edit-controls-column {
   display: grid;
   gap: 16px;
+  max-height: min(78vh, 900px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .edit-section {
