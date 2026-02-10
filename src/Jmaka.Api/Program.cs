@@ -113,6 +113,9 @@ var videoHistoryLock = new SemaphoreSlim(1, 1);
 var lastFfmpegExitCode = 0;
 var ffmpegExitCodeLock = new object();
 
+// Ultra-safe mode vertical offset limit (prevents pad errors with small scaled videos)
+const int UltraSafeOffsetLimit = 200; // ±200px safe for 720x405 output
+
 // Retention: delete entries/files older than N hours (default 48h)
 var retentionHours = 48;
 var retentionEnv = Environment.GetEnvironmentVariable("JMAKA_RETENTION_HOURS");
@@ -2053,8 +2056,8 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         // Ultra-safe mode: Conservative offset clamping to prevent pad errors
         // After scaling with decrease, the video will be <= 720x405. Worst case: scaled to 720x1 (or 1x405)
         // For 405p output, max safe offset range when scaled height could be as small as ~100px is [-150, 150]
-        // We use [-200, 200] as a very safe bound that prevents edge cases
-        var ultraSafeVerticalOffset = Math.Clamp(verticalOffset, -200, 200);
+        // We use ±200px as a very safe bound that prevents edge cases
+        var ultraSafeVerticalOffset = Math.Clamp(verticalOffset, -UltraSafeOffsetLimit, UltraSafeOffsetLimit);
         
         // Ultra-safe filter chain: force_divisible_by=2 for yuv420p, max() prevents negative pad coords
         scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
@@ -2264,11 +2267,12 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
             
             // F05: Fallback for pad dimension errors (exit code 234)
             // If pad filter fails due to dimension issues, retry with scale+crop (no pad)
-            if (ultraSafeMode && lastLocalExitCode == 234 && 
-                (result.Error.Contains("Padded dimensions cannot be smaller") || 
-                 result.Error.Contains("pad") || 
-                 result.Error.Contains("dimension")))
+            // Only retry once to prevent infinite loops
+            var alreadyRetried = false;
+            if (!alreadyRetried && ultraSafeMode && lastLocalExitCode == 234 && 
+                result.Error.Contains("Padded dimensions cannot be smaller"))
             {
+                alreadyRetried = true; // Guard against multiple retries
                 logger.LogWarning("Ultra-safe pad filter failed (exit code 234). Retrying with scale+crop fallback...");
                 
                 // Rebuild filter with fallback strategy: scale with increase + crop
