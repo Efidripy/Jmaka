@@ -1925,8 +1925,11 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         filterParts.Add($"setpts={F(1.0 / speed)}*PTS");
     }
 
-    var scalePad = $"scale={targetWidth}:-2:force_original_aspect_ratio=decrease," +
-                   $"pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2+{verticalOffset}";
+    // Safe scale+pad: always use fixed dimensions to avoid dynamic size issues
+    // Clamp vertical offset to ensure pad stays within canvas bounds
+    var safeVerticalOffset = Math.Clamp(verticalOffset, -(targetHeight / 2), targetHeight / 2);
+    var scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease," +
+                   $"pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2+{safeVerticalOffset}";
     
     // Append transform filters to the base scale/pad
     var transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
@@ -2026,58 +2029,103 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
     var outName = $"{createdAt:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.mp4";
     var outPath = Path.Combine(videoOutDir, outName);
     var relPath = $"video-out/{outName}";
-    var passLog = Path.Combine(videoOutDir, $"pass-{Guid.NewGuid():N}");
-
-    var nullOutput = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
     
     // Determine audio handling
     var muteAudio = req.MuteAudio ?? false;
     var audioMap = muteAudio ? new[] { "-an" } : new[] { "-map", "0:a?", "-c:a", "aac", "-b:a", "128k" };
 
-    var pass1Args = new List<string>
+    // Detect low-memory server and apply safe profile
+    var isLowMemory = IsLowMemoryServer();
+    if (isLowMemory)
     {
-        "-y",
-        "-i", inputPath,
-        "-filter_complex", filter,
-        "-map", "[v]",
-        "-an",  // Always no audio in pass 1
-        "-c:v", "libx264",
-        "-b:v", $"{bitrate}",
-        "-pass", "1",
-        "-passlogfile", passLog,
-        "-f", "mp4",
-        nullOutput
-    };
-
-    var pass2Args = new List<string>
-    {
-        "-y",
-        "-i", inputPath,
-        "-filter_complex", filter,
-        "-map", "[v]"
-    };
-    pass2Args.AddRange(audioMap);
-    pass2Args.AddRange(new[]
-    {
-        "-c:v", "libx264",
-        "-b:v", $"{bitrate}",
-        "-pass", "2",
-        "-passlogfile", passLog,
-        outPath
-    });
-
-    var pass1 = await RunProcessAsync("ffmpeg", pass1Args, ct, logger, "ffmpeg pass 1");
-    if (!pass1.Success)
-    {
-        CleanupPassLogs(passLog);
-        return Results.BadRequest(new { error = "ffmpeg pass 1 failed", details = pass1.Error });
+        logger.LogWarning("Low memory server detected (<= 2GB RAM), forcing safe ffmpeg profile: threads=1, 1-pass encoding");
     }
-
-    var pass2 = await RunProcessAsync("ffmpeg", pass2Args, ct, logger, "ffmpeg pass 2");
-    CleanupPassLogs(passLog);
-    if (!pass2.Success)
+    
+    // Decide on encoding mode: 2-pass only for short videos with explicit target size on non-low-memory servers
+    var use2Pass = !isLowMemory && outputDuration < 60.0 && req.TargetSizeMb > 0;
+    var threadCount = 1; // Always use 1 thread for stability (prevents OOM on VPS)
+    
+    logger.LogInformation("FFmpeg config: threads={Threads}, mode={Mode}, resolution={Width}x{Height}, duration={Duration}s, bitrate={Bitrate}",
+        threadCount, use2Pass ? "2-pass" : "1-pass", targetWidth, targetHeight, outputDuration, bitrate);
+    
+    if (use2Pass)
     {
-        return Results.BadRequest(new { error = "ffmpeg pass 2 failed", details = pass2.Error });
+        // 2-pass encoding for short videos
+        var passLog = Path.Combine(videoOutDir, $"pass-{Guid.NewGuid():N}");
+        var nullOutput = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
+        
+        var pass1Args = new List<string>
+        {
+            "-y",
+            "-threads", threadCount.ToString(),
+            "-i", inputPath,
+            "-filter_complex", filter,
+            "-map", "[v]",
+            "-an",  // Always no audio in pass 1
+            "-c:v", "libx264",
+            "-b:v", $"{bitrate}",
+            "-pass", "1",
+            "-passlogfile", passLog,
+            "-f", "mp4",
+            nullOutput
+        };
+
+        var pass2Args = new List<string>
+        {
+            "-y",
+            "-threads", threadCount.ToString(),
+            "-i", inputPath,
+            "-filter_complex", filter,
+            "-map", "[v]"
+        };
+        pass2Args.AddRange(audioMap);
+        pass2Args.AddRange(new[]
+        {
+            "-c:v", "libx264",
+            "-b:v", $"{bitrate}",
+            "-pass", "2",
+            "-passlogfile", passLog,
+            outPath
+        });
+
+        var pass1 = await RunProcessAsync("ffmpeg", pass1Args, ct, logger, "ffmpeg pass 1");
+        if (!pass1.Success)
+        {
+            CleanupPassLogs(passLog);
+            return Results.BadRequest(new { error = "ffmpeg pass 1 failed", details = pass1.Error });
+        }
+
+        var pass2 = await RunProcessAsync("ffmpeg", pass2Args, ct, logger, "ffmpeg pass 2");
+        CleanupPassLogs(passLog);
+        if (!pass2.Success)
+        {
+            return Results.BadRequest(new { error = "ffmpeg pass 2 failed", details = pass2.Error });
+        }
+    }
+    else
+    {
+        // 1-pass encoding (default, safer for memory)
+        var singlePassArgs = new List<string>
+        {
+            "-y",
+            "-threads", threadCount.ToString(),
+            "-i", inputPath,
+            "-filter_complex", filter,
+            "-map", "[v]"
+        };
+        singlePassArgs.AddRange(audioMap);
+        singlePassArgs.AddRange(new[]
+        {
+            "-c:v", "libx264",
+            "-b:v", $"{bitrate}",
+            outPath
+        });
+        
+        var result = await RunProcessAsync("ffmpeg", singlePassArgs, ct, logger, "ffmpeg 1-pass");
+        if (!result.Success)
+        {
+            return Results.BadRequest(new { error = "ffmpeg encoding failed", details = result.Error });
+        }
     }
 
     var entry = new VideoHistoryItem(
@@ -2203,6 +2251,32 @@ static void CleanupPassLogs(string passLogBase)
     TryDeleteFile($"{passLogBase}-0.log.mbtree");
 }
 
+static bool IsLowMemoryServer()
+{
+    try
+    {
+        if (OperatingSystem.IsLinux())
+        {
+            var memInfo = File.ReadAllText("/proc/meminfo");
+            var memTotalLine = memInfo.Split('\n').FirstOrDefault(l => l.StartsWith("MemTotal:"));
+            if (memTotalLine != null)
+            {
+                var parts = memTotalLine.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2 && long.TryParse(parts[1], out var memKb))
+                {
+                    var memGb = memKb / (1024.0 * 1024.0);
+                    return memGb <= 2.0;
+                }
+            }
+        }
+    }
+    catch
+    {
+        // If we can't detect, assume not low memory
+    }
+    return false;
+}
+
 static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> args, CancellationToken ct, Microsoft.Extensions.Logging.ILogger? logger = null, string? context = null)
 {
     var psi = new System.Diagnostics.ProcessStartInfo
@@ -2238,6 +2312,13 @@ static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> a
     await process.WaitForExitAsync(ct);
     var output = await outputTask;
     var error = await errorTask;
+
+    // Detect OOM killer first (exit code 137 = 128 + SIGKILL(9))
+    if (process.ExitCode == 137)
+    {
+        logger?.LogError("{Context}FFMPEG KILLED BY OOM: Process terminated by system OOM killer (exit code 137). Server likely ran out of memory.", contextPrefix);
+        return new ProcessResult(false, output, "Process killed by OOM killer (exit code 137). Server ran out of memory.");
+    }
 
     var success = process.ExitCode == 0;
     
