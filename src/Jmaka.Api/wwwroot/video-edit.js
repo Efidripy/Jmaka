@@ -36,6 +36,9 @@
   const videoAddSegment = document.getElementById('videoAddSegment');
   const videoRemoveSegment = document.getElementById('videoRemoveSegment');
   const videoSegmentsInfo = document.getElementById('videoSegmentsInfo');
+  const videoMuteAudio = document.getElementById('videoMuteAudio');
+  const videoMuteLabel = document.getElementById('videoMuteLabel');
+  const videoResetBtn = document.getElementById('videoResetBtn');
 
   const timelinePreviewState = {
     dirty: true,
@@ -54,11 +57,12 @@
     trim: { start: 0, end: 0 },
     segments: [{ start: 0, end: 0 }],
     activeSegmentIndex: 0,
-    crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+    crop: { x: 0, y: 0, w: 1, h: 1 },
     rotateDeg: 0,
     flipH: false,
     flipV: false,
     speed: 1,
+    muteAudio: false,
     outputWidth: 1280,
     targetSizeMb: 5,
     verticalOffsetPx: 0
@@ -536,6 +540,33 @@
     renderTimeline();
   }
 
+  function resetAllEdits() {
+    const duration = state.duration || 0;
+    state.segments = [{ start: 0, end: duration }];
+    state.activeSegmentIndex = 0;
+    state.trim = { start: 0, end: duration };
+    state.crop = { x: 0, y: 0, w: 1, h: 1 };
+    state.rotateDeg = 0;
+    state.flipH = false;
+    state.flipV = false;
+    state.speed = 1;
+    state.muteAudio = false;
+    state.tool = 'trim';
+    
+    // Update UI elements
+    if (videoSpeedRange) videoSpeedRange.value = '1';
+    if (videoMuteAudio) videoMuteAudio.checked = false;
+    if (videoMuteLabel) videoMuteLabel.textContent = 'Mute';
+    
+    // Re-render everything
+    renderToolState();
+    renderPlaybackState();
+    renderCropRect();
+    renderTimeline();
+    
+    setHint('Все изменения сброшены. Начните заново.');
+  }
+
   function handleCropPointerDown(event) {
     if (!videoCropRect || state.tool !== 'crop') return;
     const handle = event.target.dataset && event.target.dataset.handle;
@@ -602,6 +633,13 @@
     state.speed = Number(videoSpeedRange.value);
     renderPlaybackState();
   });
+
+  if (videoMuteAudio) videoMuteAudio.addEventListener('change', () => {
+    state.muteAudio = videoMuteAudio.checked;
+    if (videoMuteLabel) videoMuteLabel.textContent = state.muteAudio ? 'Muted' : 'Mute';
+  });
+
+  if (videoResetBtn) videoResetBtn.addEventListener('click', resetAllEdits);
 
   outputWidthInputs.forEach((input) => input.addEventListener('change', () => {
     state.outputWidth = Number(input.value);
@@ -685,7 +723,16 @@
         outputWidth: state.outputWidth,
         targetSizeMb: state.targetSizeMb,
         verticalOffsetPx: state.verticalOffsetPx,
-        segments: state.segments.map((x) => ({ startSec: x.start, endSec: x.end }))
+        segments: state.segments.map((x) => ({ startSec: x.start, endSec: x.end })),
+        cropX: state.crop.x,
+        cropY: state.crop.y,
+        cropW: state.crop.w,
+        cropH: state.crop.h,
+        rotateDeg: state.rotateDeg,
+        flipH: state.flipH,
+        flipV: state.flipV,
+        speed: state.speed,
+        muteAudio: state.muteAudio
       };
 
       setProcessing(true);
