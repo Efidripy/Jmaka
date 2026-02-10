@@ -4290,7 +4290,7 @@ const presetValues = {
     scene: { vignette: 0, glamour: 0, bloom: 0, dehaze: 5 }
   },
   BW: {
-    color: { vibrance: -100, saturation: -100, temperature: 0, tint: 0, hue: 0 },
+    color: { vibrance: 0, saturation: -100, temperature: 0, tint: 0, hue: 0 },
     light: { brightness: 0, exposure: 0, contrast: 12, black: 4, white: 4, highlights: -5, shadows: 6 },
     details: { sharpen: 4, clarity: 6, smooth: 0, blur: 0, grain: 5 },
     scene: { vignette: 10, glamour: 0, bloom: 0, dehaze: 0 }
@@ -4802,6 +4802,7 @@ if (imageEditApplyBtn) {
     if (!imageEditState.open || !imageEditState.storedName) return;
     const payload = getImageEditPayload();
     if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+    imageEditApplyBtn.disabled = true;
     try {
       const res = await fetch(toAbsoluteUrl('image-edit-apply'), {
         method: 'POST',
@@ -4812,8 +4813,11 @@ if (imageEditApplyBtn) {
       if (!res.ok) throw new Error(data && data.error ? data.error : 'apply failed');
       if (imageEditHint) imageEditHint.textContent = 'Готово.';
       await loadComposites();
+      await loadImageEditList();
+      imageEditApplyBtn.disabled = false;
     } catch (err) {
       if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+      imageEditApplyBtn.disabled = false;
     }
   });
 }
