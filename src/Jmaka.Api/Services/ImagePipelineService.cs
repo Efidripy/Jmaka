@@ -101,19 +101,24 @@ public class ImagePipelineService
         // For proper color management, a library with ICC support (like ImageMagick) would be needed.
         if (existingIccProfile != null && existingIccProfile.Entries.Length > 0)
         {
-            var description = TryGetIccDescription(existingIccProfile);
+            var profileInfo = TryGetIccDescription(existingIccProfile);
             
-            // Check if it's already sRGB
-            var isSrgb = description?.Contains("sRGB", StringComparison.OrdinalIgnoreCase) == true ||
-                         description?.Contains("IEC 61966", StringComparison.OrdinalIgnoreCase) == true;
+            // Check if it's already sRGB by checking the data color space and profile size
+            // sRGB profiles are typically small (< 50 entries) and use RGB color space
+            var colorSpace = existingIccProfile.Header.DataColorSpace;
+            var isSrgb = colorSpace.ToString().Contains("RGB", StringComparison.OrdinalIgnoreCase) &&
+                         (profileInfo?.Contains("sRGB", StringComparison.OrdinalIgnoreCase) == true ||
+                          existingIccProfile.Entries.Length < 50); // sRGB profiles are typically small
             
             if (!isSrgb)
             {
                 _logger.LogWarning(
-                    "NormalizeToSrgb: Input has non-sRGB ICC profile (description: {Description}). " +
+                    "NormalizeToSrgb: Input has non-sRGB ICC profile (colorSpace: {ColorSpace}, entries: {EntryCount}, info: {Info}). " +
                     "ImageSharp cannot perform ICC color conversion. Pixel colors will not be transformed. " +
                     "For accurate color conversion, consider preprocessing with ImageMagick.",
-                    description ?? "unknown"
+                    colorSpace.ToString(),
+                    existingIccProfile.Entries.Length,
+                    profileInfo ?? "unknown"
                 );
             }
             else
@@ -152,11 +157,16 @@ public class ImagePipelineService
     {
         try
         {
-            // Return basic info from the profile
-            return profile.Header.CmmType ?? "unknown";
+            // Try to get basic info from the profile header
+            var colorSpace = profile.Header.DataColorSpace.ToString();
+            var cmmType = profile.Header.CmmType ?? "unknown";
+            return $"{colorSpace}/{cmmType}";
         }
-        catch
+        catch (Exception ex)
         {
+            // Log the exception for diagnostics but don't fail the operation
+            // Using Console as logger might not be available in this context
+            Console.WriteLine($"Warning: Failed to extract ICC profile info: {ex.Message}");
             return null;
         }
     }
