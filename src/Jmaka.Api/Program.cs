@@ -114,7 +114,7 @@ var lastFfmpegExitCode = 0;
 var ffmpegExitCodeLock = new object();
 
 // Ultra-safe mode vertical offset limit (prevents pad errors with small scaled videos)
-const int UltraSafeOffsetLimit = 200; // ±200px safe for 720x405 output
+const int UltraSafeOffsetLimit = 200; // ±200px safe for 720x404 output
 
 // Retention: delete entries/files older than N hours (default 48h)
 var retentionHours = 48;
@@ -1893,8 +1893,20 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         return Results.BadRequest(new { error = "invalid trim range" });
     }
 
-    var targetWidth = req.OutputWidth is 720 or 1280 ? req.OutputWidth : 1280;
-    var targetHeight = (int)Math.Round(targetWidth * 9.0 / 16.0);
+    // Calculate target dimensions and normalize to even values for libx264/yuv420p compatibility
+    var requestedWidth = req.OutputWidth is 720 or 1280 ? req.OutputWidth : 1280;
+    var requestedHeight = (int)Math.Round(requestedWidth * 9.0 / 16.0);
+    
+    // Auto-even-resize: ensure dimensions are always even
+    var targetWidth = NormalizeToEven(requestedWidth);
+    var targetHeight = NormalizeToEven(requestedHeight);
+    
+    if (targetWidth != requestedWidth || targetHeight != requestedHeight)
+    {
+        logger.LogInformation("Auto-even resize applied: {OriginalW}x{OriginalH} -> {EvenW}x{EvenH}", 
+            requestedWidth, requestedHeight, targetWidth, targetHeight);
+    }
+    
     var verticalOffset = Math.Clamp(req.VerticalOffsetPx, -targetHeight, targetHeight);
 
     // Build video filter components
@@ -1937,7 +1949,8 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
     var safeVerticalOffset = Math.Clamp(verticalOffset, -(targetHeight / 2), targetHeight / 2);
     // Use force_divisible_by=2 for yuv420p compatibility and max() to prevent negative pad coordinates
     var scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
-                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{safeVerticalOffset}\\,0):color=black";
+                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{safeVerticalOffset}\\,0):color=black," +
+                   $"format=yuv420p";
     
     // Append transform filters to the base scale/pad
     var transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
@@ -2048,20 +2061,31 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         logger.LogWarning("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         
         // Override parameters for ultra-safe mode
-        // Resolution: 720x405 chosen to minimize memory usage while maintaining 16:9 aspect ratio
-        // (405 = 720 * 9/16, rounded to nearest odd number for better encoder compatibility)
-        targetWidth = 720;
-        targetHeight = 405;
+        // Resolution: 720x404 chosen to minimize memory usage while maintaining 16:9 aspect ratio
+        // (404 = even height closest to 405 for libx264/yuv420p compatibility)
+        var requestedUltraWidth = 720;
+        var requestedUltraHeight = 404;
+        
+        // Auto-even-resize: ensure dimensions are always even (defensive check)
+        targetWidth = NormalizeToEven(requestedUltraWidth);
+        targetHeight = NormalizeToEven(requestedUltraHeight);
+        
+        if (targetWidth != requestedUltraWidth || targetHeight != requestedUltraHeight)
+        {
+            logger.LogWarning("Auto-even resize applied in ultra-safe mode: {OriginalW}x{OriginalH} -> {EvenW}x{EvenH}", 
+                requestedUltraWidth, requestedUltraHeight, targetWidth, targetHeight);
+        }
         
         // Ultra-safe mode: Conservative offset clamping to prevent pad errors
-        // After scaling with decrease, the video will be <= 720x405. Worst case: scaled to 720x1 (or 1x405)
-        // For 405p output, max safe offset range when scaled height could be as small as ~100px is [-150, 150]
+        // After scaling with decrease, the video will be <= 720x404. Worst case: scaled to 720x1 (or 1x404)
+        // For 404p output, max safe offset range when scaled height could be as small as ~100px is [-150, 150]
         // We use ±200px as a very safe bound that prevents edge cases
         var ultraSafeVerticalOffset = Math.Clamp(verticalOffset, -UltraSafeOffsetLimit, UltraSafeOffsetLimit);
         
-        // Ultra-safe filter chain: force_divisible_by=2 for yuv420p, max() prevents negative pad coords
+        // Ultra-safe filter chain: force_divisible_by=2 for yuv420p, max() prevents negative pad coords, format=yuv420p for pixel format consistency
         scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
-                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{ultraSafeVerticalOffset}\\,0):color=black";
+                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{ultraSafeVerticalOffset}\\,0):color=black," +
+                   $"format=yuv420p";
         
         // Rebuild filter with new scale/pad
         transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
@@ -2275,10 +2299,11 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
                 alreadyRetried = true; // Guard against multiple retries
                 logger.LogWarning("Ultra-safe pad filter failed (exit code 234). Retrying with scale+crop fallback...");
                 
-                // Rebuild filter with fallback strategy: scale with increase + crop
-                // This guarantees exact 720x405 output without pad
+                // Rebuild filter with fallback strategy: scale with increase + crop + format
+                // This guarantees exact even dimensions output without pad
                 var fallbackScaleCrop = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=increase:force_divisible_by=2," +
-                                       $"crop={targetWidth}:{targetHeight}";
+                                       $"crop={targetWidth}:{targetHeight}," +
+                                       $"format=yuv420p";
                 
                 string fallbackFilter;
                 if (mergedSegments.Count == 0)
@@ -2503,6 +2528,15 @@ static bool IsLowMemoryServer()
         // If we can't detect, assume not low memory
     }
     return false;
+}
+
+/// <summary>
+/// Normalizes dimensions to even values required by libx264/yuv420p.
+/// Subtracts 1 if the dimension is odd to ensure compatibility.
+/// </summary>
+static int NormalizeToEven(int dimension)
+{
+    return dimension - (dimension % 2);
 }
 
 bool ShouldUseUltraSafeMode()
