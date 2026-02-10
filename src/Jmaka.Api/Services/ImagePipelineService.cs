@@ -30,6 +30,11 @@ namespace Jmaka.Api.Services;
 public class ImagePipelineService
 {
     private readonly ILogger<ImagePipelineService> _logger;
+    
+    // sRGB ICC profiles are typically small with fewer entries than wide-gamut profiles.
+    // Standard sRGB profiles usually have < 20 entries, while AdobeRGB/ProPhoto may have 50+.
+    private const int MaxSrgbProfileEntries = 50;
+    
     private static readonly byte[] SrgbIccProfileBytes = Convert.FromBase64String(
         "AAACTGxjbXMEQAAAbW50clJHQiBYWVogB+oAAgAJAAoAJwA4YWNzcEFQUEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPbWAAEAAAAA0y1sY21zAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALZGVzYwAAAQgAAAA2Y3BydAAAAUAAAABMd3RwdAAAAYwAAAAUY2hhZAAAAaAAAAAsclhZWgAAAcwAAAAUYlhZWgAAAeAAAAAUZ1hZWgAAAfQAAAAUclRSQwAAAggAAAAgZ1RSQwAAAggAAAAgYlRSQwAAAggAAAAgY2hybQAAAigAAAAkbWx1YwAAAAAAAAABAAAADGVuVVMAAAAaAAAAHABzAFIARwBCACAAYgB1AGkAbAB0AC0AaQBuAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAADAAAAAcAE4AbwAgAGMAbwBwAHkAcgBpAGcAaAB0ACwAIAB1AHMAZQAgAGYAcgBlAGUAbAB5WFlaIAAAAAAAAPbWAAEAAAAA0y1zZjMyAAAAAAABDEIAAAXe///zJQAAB5MAAP2Q///7of///aIAAAPcAADAblhZWiAAAAAAAABvoAAAOPUAAAOQWFlaIAAAAAAAACSfAAAPhAAAtsNYWVogAAAAAAAAYpcAALeHAAAY2XBhcmEAAAAAAAMAAAACZmYAAPKnAAANWQAAE9AAAApbY2hybQAAAAAAAwAAAACj1wAAVHsAAEzNAACZmgAAJmYAAA9c");
 
@@ -101,14 +106,14 @@ public class ImagePipelineService
         // For proper color management, a library with ICC support (like ImageMagick) would be needed.
         if (existingIccProfile != null && existingIccProfile.Entries.Length > 0)
         {
-            var profileInfo = TryGetIccDescription(existingIccProfile);
+            var profileInfo = TryGetIccDescription(existingIccProfile, _logger);
             
             // Check if it's already sRGB by checking the data color space and profile size
-            // sRGB profiles are typically small (< 50 entries) and use RGB color space
+            // sRGB profiles are typically small (< MaxSrgbProfileEntries) and use RGB color space
             var colorSpace = existingIccProfile.Header.DataColorSpace;
             var isSrgb = colorSpace.ToString().Contains("RGB", StringComparison.OrdinalIgnoreCase) &&
                          (profileInfo?.Contains("sRGB", StringComparison.OrdinalIgnoreCase) == true ||
-                          existingIccProfile.Entries.Length < 50); // sRGB profiles are typically small
+                          existingIccProfile.Entries.Length < MaxSrgbProfileEntries);
             
             if (!isSrgb)
             {
@@ -153,7 +158,7 @@ public class ImagePipelineService
         return image;
     }
 
-    private static string? TryGetIccDescription(IccProfile profile)
+    private static string? TryGetIccDescription(IccProfile profile, ILogger logger)
     {
         try
         {
@@ -164,9 +169,8 @@ public class ImagePipelineService
         }
         catch (Exception ex)
         {
-            // Log the exception for diagnostics but don't fail the operation
-            // Using Console as logger might not be available in this context
-            Console.WriteLine($"Warning: Failed to extract ICC profile info: {ex.Message}");
+            // Log the exception for diagnostics
+            logger.LogDebug(ex, "Failed to extract ICC profile info");
             return null;
         }
     }
