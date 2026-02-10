@@ -1,23 +1,37 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Metadata.Profiles.Icc;
+using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using System.Reflection;
 
 namespace Jmaka.Api.Services;
 
 public class ImagePipelineService
 {
+    private static readonly byte[] SrgbIccProfileBytes = Convert.FromBase64String(
+        "AAACTGxjbXMEQAAAbW50clJHQiBYWVogB+oAAgAJAAoAJwA4YWNzcEFQUEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPbWAAEAAAAA0y1sY21zAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALZGVzYwAAAQgAAAA2Y3BydAAAAUAAAABMd3RwdAAAAYwAAAAUY2hhZAAAAaAAAAAsclhZWgAAAcwAAAAUYlhZWgAAAeAAAAAUZ1hZWgAAAfQAAAAUclRSQwAAAggAAAAgZ1RSQwAAAggAAAAgYlRSQwAAAggAAAAgY2hybQAAAigAAAAkbWx1YwAAAAAAAAABAAAADGVuVVMAAAAaAAAAHABzAFIARwBCACAAYgB1AGkAbAB0AC0AaQBuAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAADAAAAAcAE4AbwAgAGMAbwBwAHkAcgBpAGcAaAB0ACwAIAB1AHMAZQAgAGYAcgBlAGUAbAB5WFlaIAAAAAAAAPbWAAEAAAAA0y1zZjMyAAAAAAABDEIAAAXe///zJQAAB5MAAP2Q///7of///aIAAAPcAADAblhZWiAAAAAAAABvoAAAOPUAAAOQWFlaIAAAAAAAACSfAAAPhAAAtsNYWVogAAAAAAAAYpcAALeHAAAY2XBhcmEAAAAAAAMAAAACZmYAAPKnAAANWQAAE9AAAApbY2hybQAAAAAAAwAAAACj1wAAVHsAAEzNAACZmgAAJmYAAA9c");
+
     private readonly JpegEncoder _jpegEncoder = new()
     {
         Quality = 92,
         Interleaved = true
     };
 
+    private static readonly MethodInfo[] VignetteMethods = typeof(IImageProcessingContext)
+        .Assembly
+        .GetTypes()
+        .Where(t => t.IsSealed && t.IsAbstract && t.Name == "VignetteExtensions")
+        .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
+        .Where(m => m.Name == "Vignette")
+        .ToArray();
+
     public async Task ConvertToJpegSrgbAsync(string inputPath, string outputPath, CancellationToken ct)
     {
         await using var input = File.OpenRead(inputPath);
-        using var image = await Image.LoadAsync(input, ct);
-        ApplySrgbProfile(image);
-        await SaveJpegAsync(image, outputPath, ct);
+        var image = await Image.LoadAsync(input, ct);
+        using var normalized = NormalizeToSrgb(image);
+        await SaveJpegAsync(normalized, outputPath, ct);
     }
 
     public async Task<Image> LoadImageAsync(string inputPath, CancellationToken ct)
@@ -26,26 +40,88 @@ public class ImagePipelineService
         return await Image.LoadAsync(input, ct);
     }
 
-    public void ApplySrgbProfile(Image image)
+    public Image NormalizeToSrgb(Image image)
     {
-        // ImageSharp 3.x no longer exposes a built-in sRGB profile helper.
-        // Keep this as a no-op to avoid breaking call sites.
+        if (image.PixelType.AlphaRepresentation != PixelAlphaRepresentation.None)
+        {
+            var flattened = new Image<Rgb24>(image.Width, image.Height, Color.White);
+            flattened.Mutate(ctx => ctx.DrawImage(image, new Point(0, 0), 1f));
+            image.Dispose();
+            image = flattened;
+        }
+
+        image.Metadata.ExifProfile = null;
+        image.Metadata.IptcProfile = null;
+        image.Metadata.XmpProfile = null;
+        image.Metadata.IccProfile = new IccProfile(SrgbIccProfileBytes);
+        return image;
     }
 
-    public void ApplyAdjustments(Image image, ImageEditRequest request)
+    public void ApplyAdjustments(Image image, ImageEditParams request)
     {
-        var brightness = 1 + request.Brightness;
-        var contrast = 1 + request.Contrast;
-        var saturation = 1 + request.Saturation + (request.Vibrance * 0.5f);
-        var hue = request.Hue;
+        var color = request.Color ?? new ImageEditColorParams(0, 0, 0, 0, 0);
+        var light = request.Light ?? new ImageEditLightParams(0, 0, 0, 0, 0, 0, 0);
+        var details = request.Details ?? new ImageEditDetailsParams(0, 0, 0, 0, 0);
+        var scene = request.Scene ?? new ImageEditSceneParams(0, 0, 0, 0);
+
+        var brightnessBoost = (light.Brightness + light.Exposure * 0.7f + scene.Bloom * 0.4f) / 100f;
+        var contrastBoost = (light.Contrast + details.Clarity * 0.5f + scene.Dehaze * 0.4f) / 100f;
+        var saturationBoost = (color.Saturation + color.Vibrance * 0.6f) / 100f;
+        var hue = color.Hue;
+        var blur = Math.Max(details.Blur, details.Smooth) / 100f;
+        var sharpen = Math.Max(details.Sharpen, 0) / 100f;
+        var vignette = scene.Vignette / 100f;
+
         image.Mutate(ctx =>
         {
             ctx.AutoOrient();
-            ctx.Brightness(brightness);
-            ctx.Contrast(contrast);
-            ctx.Saturate(saturation);
-            ctx.Hue(hue);
+            ctx.Brightness(1 + brightnessBoost);
+            ctx.Contrast(1 + contrastBoost);
+            ctx.Saturate(1 + saturationBoost);
+            if (Math.Abs(hue) > 0.01f)
+            {
+                ctx.Hue(hue);
+            }
+            if (blur > 0)
+            {
+                ctx.GaussianBlur(blur * 6);
+            }
+            if (sharpen > 0)
+            {
+                ctx.GaussianSharpen(sharpen * 3);
+            }
+            if (Math.Abs(vignette) > 0.01f)
+            {
+                ApplyVignetteCompat(ctx, Math.Abs(vignette) * 0.6f);
+            }
         });
+    }
+
+    private static void ApplyVignetteCompat(IImageProcessingContext ctx, float strength)
+    {
+        // ImageSharp API has differed between versions/build agents.
+        // We resolve and invoke a compatible overload dynamically to avoid CI compile failures.
+        foreach (var method in VignetteMethods)
+        {
+            var ps = method.GetParameters();
+            if (ps.Length == 2 && ps[1].ParameterType == typeof(float))
+            {
+                method.Invoke(null, [ctx, strength]);
+                return;
+            }
+
+            if (ps.Length == 3 && ps[1].ParameterType == typeof(float) && ps[2].ParameterType == typeof(Color))
+            {
+                method.Invoke(null, [ctx, strength, Color.Black]);
+                return;
+            }
+
+            if (ps.Length == 3 && ps[1].ParameterType == typeof(Color) && ps[2].ParameterType == typeof(float))
+            {
+                method.Invoke(null, [ctx, Color.Black, strength]);
+                return;
+            }
+        }
     }
 
     public async Task SaveJpegAsync(Image image, string outputPath, CancellationToken ct)
@@ -60,12 +136,54 @@ public class ImagePipelineService
     }
 }
 
-public record ImageEditRequest(
-    string StoredName,
-    float Brightness,
-    float Contrast,
+public record ImageEditParams(
+    string? ImageId,
+    string? Preset,
+    ImageEditColorParams? Color,
+    ImageEditLightParams? Light,
+    ImageEditDetailsParams? Details,
+    ImageEditSceneParams? Scene
+)
+{
+    public static ImageEditParams Default => new(
+        ImageId: null,
+        Preset: "None",
+        Color: new ImageEditColorParams(0, 0, 0, 0, 0),
+        Light: new ImageEditLightParams(0, 0, 0, 0, 0, 0, 0),
+        Details: new ImageEditDetailsParams(0, 0, 0, 0, 0),
+        Scene: new ImageEditSceneParams(0, 0, 0, 0)
+    );
+}
+
+public record ImageEditColorParams(
+    float Vibrance,
     float Saturation,
-    float Hue,
+    float Temperature,
+    float Tint,
+    float Hue
+);
+
+public record ImageEditLightParams(
+    float Brightness,
     float Exposure,
-    float Vibrance
+    float Contrast,
+    float Black,
+    float White,
+    float Highlights,
+    float Shadows
+);
+
+public record ImageEditDetailsParams(
+    float Sharpen,
+    float Clarity,
+    float Smooth,
+    float Blur,
+    float Grain
+);
+
+public record ImageEditSceneParams(
+    float Vignette,
+    float Glamour,
+    float Bloom,
+    float Dehaze
 );
