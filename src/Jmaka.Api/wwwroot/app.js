@@ -4770,13 +4770,6 @@ if (imageEditRefreshTopBtn) {
   });
 }
 
-if (imageEditRefreshTopBtn) {
-  imageEditRefreshTopBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    loadImageEditList();
-  });
-}
-
 if (imageEditPresetBtns) {
   for (const btn of imageEditPresetBtns) {
     btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
