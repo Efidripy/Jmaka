@@ -1949,7 +1949,8 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
     var safeVerticalOffset = Math.Clamp(verticalOffset, -(targetHeight / 2), targetHeight / 2);
     // Use force_divisible_by=2 for yuv420p compatibility and max() to prevent negative pad coordinates
     var scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
-                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{safeVerticalOffset}\\,0):color=black";
+                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{safeVerticalOffset}\\,0):color=black," +
+                   $"format=yuv420p";
     
     // Append transform filters to the base scale/pad
     var transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
