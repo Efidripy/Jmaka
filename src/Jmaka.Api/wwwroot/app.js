@@ -429,6 +429,7 @@ const editExposure = document.getElementById('editExposure');
 const editVibrance = document.getElementById('editVibrance');
 const imageEditPresetBtns = imageEditModal ? imageEditModal.querySelectorAll('.preset-btn') : [];
 const imageEditSliderRows = imageEditModal ? imageEditModal.querySelectorAll('.slider-row') : [];
+const imageEditPanelHeaders = imageEditModal ? imageEditModal.querySelectorAll('.edit-panel-header') : [];
 
 
 function syncCropAspectButtons() {
