@@ -793,7 +793,7 @@ app.MapPost("/upload", async Task<IResult> (HttpRequest request, ImagePipelineSe
 
         var previewAbsolutePath = Path.Combine(previewDir, storedName);
         var previewRelativePath = $"preview/{storedName}";
-        await CreatePreviewImageAsync(originalAbsolutePath, previewAbsolutePath, PreviewWidthPx, ct);
+        await CreatePreviewImageAsync(originalAbsolutePath, previewAbsolutePath, PreviewWidthPx, imagePipeline, ct);
 
         var entry = new UploadHistoryItem(
             StoredName: storedName,
@@ -973,7 +973,7 @@ app.MapPost("/images/{id}/render", async Task<IResult> (string id, ImageEditPara
     var resolved = sourceInfo.Value;
     var image = await imagePipeline.LoadImageAsync(resolved.AbsolutePath, ct);
     imagePipeline.ApplyAdjustments(image, EnsureEditParams(req));
-    using var normalized = imagePipeline.NormalizeToSrgb(image);
+    using var normalized = imagePipeline.NormalizeToSrgb(image, resolved.AbsolutePath);
     await imagePipeline.SaveJpegAsync(normalized, outAbsolutePath, ct);
 
     return Results.Ok(new { ok = true, relativePath = relPath });
@@ -1003,9 +1003,9 @@ app.MapPost("/images/{id}/save-edit", async Task<IResult> (string id, ImageEditP
     var image = await imagePipeline.LoadImageAsync(resolved.AbsolutePath, ct);
     var normalized = EnsureEditParams(req);
     imagePipeline.ApplyAdjustments(image, normalized);
-    using var normalizedImage = imagePipeline.NormalizeToSrgb(image);
+    using var normalizedImage = imagePipeline.NormalizeToSrgb(image, resolved.AbsolutePath);
     await imagePipeline.SaveJpegAsync(normalizedImage, outAbsolutePath, ct);
-    await CreatePreviewImageAsync(outAbsolutePath, previewPath, PreviewWidthPx, ct);
+    await CreatePreviewImageAsync(outAbsolutePath, previewPath, PreviewWidthPx, imagePipeline, ct);
 
     await AppendCompositeAsync(
         compositesPath,
@@ -1052,7 +1052,7 @@ app.MapDelete("/images/{id}", async Task<IResult> (string id, CancellationToken 
 // --- Resize endpoint ---
 // RU: Строит или возвращает кешированный ресайз по фиксированной ширине (1280/1920/2440).
 // EN: Builds or returns a cached resized copy for fixed widths (1280/1920/2440).
-app.MapPost("/resize", async Task<IResult> (ResizeRequest req, CancellationToken ct) =>
+app.MapPost("/resize", async Task<IResult> (ResizeRequest req, ImagePipelineService imagePipeline, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
     if (req.Width <= 0)
@@ -1106,7 +1106,7 @@ app.MapPost("/resize", async Task<IResult> (ResizeRequest req, CancellationToken
     }
 
     // Ресайз
-    await CreateResizedImageAsync(originalAbsolutePath, outPath, req.Width, ct);
+    await CreateResizedImageAsync(originalAbsolutePath, outPath, req.Width, imagePipeline, ct);
     await UpsertResizedInHistoryAsync(historyPath, historyLock, storedName, req.Width, relPath, ct);
 
     return Results.Ok(new { width = req.Width, relativePath = relPath });
@@ -1120,7 +1120,7 @@ app.MapPost("/resize", async Task<IResult> (ResizeRequest req, CancellationToken
 // --- Split endpoint ---
 // RU: Склеивает две картинки в один кадр 1280x720 с белой полосой по центру от исходников upload-original/*.
 // EN: Composes two images into a 1280x720 frame with a white divider, always from upload-original/*.
-app.MapPost("/split", async Task<IResult> (SplitRequest req, CancellationToken ct) =>
+app.MapPost("/split", async Task<IResult> (SplitRequest req, ImagePipelineService imagePipeline, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
 
@@ -1225,7 +1225,7 @@ app.MapPost("/split", async Task<IResult> (SplitRequest req, CancellationToken c
             }
         });
 
-        await SaveImageWithSafeTempAsync(output, outAbsolutePath, ct);
+        await SaveImageWithSafeTempAsync(output, outAbsolutePath, imagePipeline, ct);
 
         var createdAt = DateTimeOffset.UtcNow;
         await AppendCompositeAsync(
@@ -1249,7 +1249,7 @@ app.MapPost("/split", async Task<IResult> (SplitRequest req, CancellationToken c
 // --- Split3 endpoint ---
 // RU: Склеивает три картинки в один кадр 1280x720 с двумя белыми полосами.
 // EN: Composes three images into a 1280x720 frame with two white dividers.
-app.MapPost("/split3", async Task<IResult> (Split3Request req, CancellationToken ct) =>
+app.MapPost("/split3", async Task<IResult> (Split3Request req, ImagePipelineService imagePipeline, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
 
@@ -1371,7 +1371,7 @@ app.MapPost("/split3", async Task<IResult> (Split3Request req, CancellationToken
             }
         });
 
-        await SaveImageWithSafeTempAsync(output, outAbsolutePath, ct);
+        await SaveImageWithSafeTempAsync(output, outAbsolutePath, imagePipeline, ct);
 
         var createdAt = DateTimeOffset.UtcNow;
         await AppendCompositeAsync(
@@ -1395,7 +1395,7 @@ app.MapPost("/split3", async Task<IResult> (Split3Request req, CancellationToken
 // --- Crop endpoint ---
 // RU: Кадрирует изображение по координатам из UI, пересоздаёт preview и сбрасывает все ресайзы/сплиты.
 // EN: Crops an image using UI coordinates, regenerates preview and invalidates resized/split outputs.
-app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct) =>
+app.MapPost("/crop", async Task<IResult> (CropRequest req, ImagePipelineService imagePipeline, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
     if (string.IsNullOrWhiteSpace(req.StoredName))
@@ -1472,11 +1472,11 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
         image.Mutate(ctx => ctx.Crop(new Rectangle(x, y, w, h)));
 
         // Сохраняем результат в upload/<storedName> (атомарно)
-        await SaveImageWithSafeTempAsync(image, outAbsolutePath, ct);
+        await SaveImageWithSafeTempAsync(image, outAbsolutePath, imagePipeline, ct);
 
         // Пересоздаём preview
         var previewAbsolutePath = Path.Combine(previewDir, storedName);
-        await CreatePreviewImageAsync(outAbsolutePath, previewAbsolutePath, PreviewWidthPx, ct);
+        await CreatePreviewImageAsync(outAbsolutePath, previewAbsolutePath, PreviewWidthPx, imagePipeline, ct);
 
         // Удаляем все ресайзы, т.к. они больше не соответствуют новому оригиналу
         foreach (var rw in resizeWidths)
@@ -1513,7 +1513,7 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, CancellationToken ct)
 // --- OknoFix (/oknofix) endpoint ---
 // RU: Вырезает окно из исходника и помещает под PNG-шаблон вертикальной карточки.
 // EN: Crops a window from the original image and places it under the fixed PNG card template.
-app.MapPost("/oknofix", async Task<IResult> (WindowCropRequest req, CancellationToken ct) =>
+app.MapPost("/oknofix", async Task<IResult> (WindowCropRequest req, ImagePipelineService imagePipeline, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
 
@@ -1653,7 +1653,7 @@ app.MapPost("/oknofix", async Task<IResult> (WindowCropRequest req, Cancellation
         var outAbsolutePath = Path.Combine(oknoFixDir, fileName);
         var relPath = $"oknofix/{fileName}";
 
-        await SaveImageWithSafeTempAsync(output, outAbsolutePath, ct);
+        await SaveImageWithSafeTempAsync(output, outAbsolutePath, imagePipeline, ct);
 
         var createdAt = DateTimeOffset.UtcNow;
         await AppendCompositeAsync(
@@ -1678,7 +1678,7 @@ app.MapPost("/oknofix", async Task<IResult> (WindowCropRequest req, Cancellation
 // --- OknoScale endpoint ---
 // RU: Делает вариативную вертикальную карточку с изменяемой шириной окна и скруглёнными углами.
 // EN: Builds an experimental vertical card with adjustable window width and rounded corners.
-app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, CancellationToken ct) =>
+app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, ImagePipelineService imagePipeline, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
 
@@ -1829,7 +1829,7 @@ app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, Cancellati
         var outAbsolutePath = Path.Combine(oknoScaleDir, fileName);
         var relPath = $"oknoscale/{fileName}";
 
-        await SaveImageWithSafeTempAsync(output, outAbsolutePath, ct);
+        await SaveImageWithSafeTempAsync(output, outAbsolutePath, imagePipeline, ct);
 
         await AppendCompositeAsync(
             compositesPath,
@@ -2200,6 +2200,7 @@ static async Task CreateResizedImageAsync(
     string originalAbsolutePath,
     string outAbsolutePath,
     int targetWidthPx,
+    ImagePipelineService imagePipeline,
     CancellationToken ct)
 {
     await using var input = File.OpenRead(originalAbsolutePath);
@@ -2218,13 +2219,14 @@ static async Task CreateResizedImageAsync(
 
     image.Mutate(x => x.Resize(targetWidthPx, newHeight));
 
-    await SaveImageWithSafeTempAsync(image, outAbsolutePath, ct);
+    await SaveImageWithSafeTempAsync(image, outAbsolutePath, imagePipeline, ct);
 }
 
 static async Task CreatePreviewImageAsync(
     string originalAbsolutePath,
     string outAbsolutePath,
     int targetWidthPx,
+    ImagePipelineService imagePipeline,
     CancellationToken ct)
 {
     await using var input = File.OpenRead(originalAbsolutePath);
@@ -2247,11 +2249,14 @@ static async Task CreatePreviewImageAsync(
 
     image.Mutate(x => x.Resize(targetWidthPx, newHeight));
 
-    await SaveImageWithSafeTempAsync(image, outAbsolutePath, ct);
+    await SaveImageWithSafeTempAsync(image, outAbsolutePath, imagePipeline, ct);
 }
 
-static async Task SaveImageWithSafeTempAsync(Image image, string outAbsolutePath, CancellationToken ct)
+static async Task SaveImageWithSafeTempAsync(Image image, string outAbsolutePath, ImagePipelineService imagePipeline, CancellationToken ct)
 {
+    // CRITICAL: Always normalize to sRGB before saving JPEG
+    using var normalized = imagePipeline.NormalizeToSrgb(image, "composite");
+    
     var ext = Path.GetExtension(outAbsolutePath);
     var dir = Path.GetDirectoryName(outAbsolutePath) ?? throw new InvalidOperationException("Invalid output path");
     var fileNoExt = Path.GetFileNameWithoutExtension(outAbsolutePath);
@@ -2260,7 +2265,7 @@ static async Task SaveImageWithSafeTempAsync(Image image, string outAbsolutePath
     // иначе ImageSharp не сможет подобрать encoder при SaveAsync().
     var tempPath = Path.Combine(dir, $"{fileNoExt}.tmp{ext}");
 
-    await image.SaveAsync(tempPath, ct);
+    await normalized.SaveAsync(tempPath, ct);
 
     // Prefer atomic replace.
     // On Linux, this should succeed even if the old file is being read.
