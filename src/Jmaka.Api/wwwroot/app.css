@@ -1193,6 +1193,20 @@ html, body {
 
 .edit-controls-column {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  gap: 12px;
+  min-height: 0;
+}
+
+.edit-controls-column,
+.edit-images-column {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.edit-controls-column {
+  display: grid;
   gap: 16px;
   min-height: 0;
   overflow-y: auto;
@@ -1338,6 +1352,14 @@ html, body {
   border-color: rgba(59, 130, 246, 0.8);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) inset;
 }
+
+.edit-pick-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 
 .edit-pick-thumb {
   width: 100%;
