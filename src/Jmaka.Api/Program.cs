@@ -2064,7 +2064,7 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         // Resolution: 720x404 chosen to minimize memory usage while maintaining 16:9 aspect ratio
         // (404 = even height closest to 405 for libx264/yuv420p compatibility)
         var requestedUltraWidth = 720;
-        var requestedUltraHeight = 404; // Changed from 405 to 404 for even height
+        var requestedUltraHeight = 404;
         
         // Auto-even-resize: ensure dimensions are always even (defensive check)
         targetWidth = NormalizeToEven(requestedUltraWidth);
