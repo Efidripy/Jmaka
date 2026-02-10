@@ -2044,6 +2044,8 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         logger.LogWarning("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         
         // Override parameters for ultra-safe mode
+        // Resolution: 720x405 chosen to minimize memory usage while maintaining 16:9 aspect ratio
+        // (405 = 720 * 9/16, rounded to nearest odd number for better encoder compatibility)
         targetWidth = 720;
         targetHeight = 405;
         
@@ -2129,6 +2131,15 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
             threadCount, use2Pass ? "2-pass" : "1-pass", targetWidth, targetHeight, outputDuration, bitrate);
     }
     
+    // Track FFmpeg exit code for OOM detection (used for both 2-pass and 1-pass)
+    Action<int> trackExitCode = (exitCode) =>
+    {
+        lock (ffmpegExitCodeLock)
+        {
+            lastFfmpegExitCode = exitCode;
+        }
+    };
+    
     if (use2Pass)
     {
         // 2-pass encoding for short videos
@@ -2169,15 +2180,6 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
             outPath
         });
 
-        // Track FFmpeg exit code for OOM detection
-        Action<int> trackExitCode = (exitCode) =>
-        {
-            lock (ffmpegExitCodeLock)
-            {
-                lastFfmpegExitCode = exitCode;
-            }
-        };
-
         var pass1 = await RunProcessAsync("ffmpeg", pass1Args, ct, logger, "ffmpeg pass 1", trackExitCode);
         if (!pass1.Success)
         {
@@ -2201,7 +2203,7 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
             "-threads", threadCount.ToString()
         };
         
-        // Add FPS limit in ultra-safe mode
+        // Add FPS limit in ultra-safe mode (before input file)
         if (ultraSafeMode)
         {
             singlePassArgs.Add("-r");
@@ -2220,15 +2222,6 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         singlePassArgs.Add("-b:v");
         singlePassArgs.Add($"{bitrate}");
         singlePassArgs.Add(outPath);
-        
-        // Track FFmpeg exit code for OOM detection
-        Action<int> trackExitCode = (exitCode) =>
-        {
-            lock (ffmpegExitCodeLock)
-            {
-                lastFfmpegExitCode = exitCode;
-            }
-        };
         
         var result = await RunProcessAsync("ffmpeg", singlePassArgs, ct, logger, "ffmpeg 1-pass", trackExitCode);
         if (!result.Success)
