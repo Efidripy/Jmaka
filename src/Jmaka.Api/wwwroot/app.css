@@ -1188,7 +1188,7 @@ html, body {
 
 .edit-sidebar {
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .edit-controls-column {
@@ -1198,6 +1198,7 @@ html, body {
   align-content: start;
   gap: 16px;
   min-height: 0;
+  max-height: 100%;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1411,7 +1412,7 @@ html, body {
 
   .edit-sidebar {
     max-height: min(40vh, 360px);
-    overflow: hidden;
+    overflow: visible;
   }
 
   .edit-controls-column {
