@@ -3789,6 +3789,10 @@ function wireOknoScaleUI() {
         }
 
         showResult(data);
+
+        // OknoScale output is independent, but source may change; bump cache for source.
+        cacheBust.set(oknoScaleState.storedName, Date.now());
+
         await loadComposites();
         if (oknoScaleHint) oknoScaleHint.textContent = 'OknoScale создан.';
         closeOknoScaleModal();
@@ -4254,6 +4258,10 @@ function wireTrashUI() {
         }
 
         showResult(data);
+
+        // OknoFix output is independent, but source may change; bump cache for source.
+        cacheBust.set(oknoFixState.storedName, Date.now());
+
         await loadComposites();
         if (trashHint) trashHint.textContent = 'OknoFix создан.';
         closeTrashModal();
