@@ -2043,7 +2043,7 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
     
     // Decide on encoding mode: 2-pass only for short videos with explicit target size on non-low-memory servers
     var use2Pass = !isLowMemory && outputDuration < 60.0 && req.TargetSizeMb > 0;
-    var threadCount = isLowMemory ? 1 : 1; // Always use 1 thread for stability
+    var threadCount = 1; // Always use 1 thread for stability (prevents OOM on VPS)
     
     logger.LogInformation("FFmpeg config: threads={Threads}, mode={Mode}, resolution={Width}x{Height}, duration={Duration}s, bitrate={Bitrate}",
         threadCount, use2Pass ? "2-pass" : "1-pass", targetWidth, targetHeight, outputDuration, bitrate);
@@ -2313,14 +2313,14 @@ static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> a
     var output = await outputTask;
     var error = await errorTask;
 
-    var success = process.ExitCode == 0;
-    
-    // Detect OOM killer (exit code 137 = 128 + SIGKILL(9))
+    // Detect OOM killer first (exit code 137 = 128 + SIGKILL(9))
     if (process.ExitCode == 137)
     {
         logger?.LogError("{Context}FFMPEG KILLED BY OOM: Process terminated by system OOM killer (exit code 137). Server likely ran out of memory.", contextPrefix);
         return new ProcessResult(false, output, "Process killed by OOM killer (exit code 137). Server ran out of memory.");
     }
+
+    var success = process.ExitCode == 0;
     
     if (success)
     {
