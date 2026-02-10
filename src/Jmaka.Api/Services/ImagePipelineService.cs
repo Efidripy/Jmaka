@@ -83,7 +83,7 @@ public class ImagePipelineService
             }
             if (Math.Abs(vignette) > 0.01f)
             {
-                ctx.Vignette(Math.Abs(vignette) * 0.6f, Color.Black);
+                ctx.Vignette(Math.Abs(vignette) * 0.6f);
             }
         });
     }
