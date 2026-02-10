@@ -1,5 +1,6 @@
 .video-edit-card {
   width: min(1380px, 96vw);
+  max-height: 94vh;
   background: linear-gradient(180deg, #0b3a6e 0%, #172b4d 55%, #1c2440 100%);
   color: #e2e8f0;
 }
@@ -9,6 +10,7 @@
   gap: 16px;
   padding: 16px;
   position: relative;
+  overflow: auto;
 }
 
 .video-edit-toolbar {
@@ -358,5 +360,78 @@
 
   .video-edit-sidebar {
     max-height: none;
+  }
+}
+
+
+@media (max-width: 900px) {
+  .video-preview-stage {
+    min-height: 260px;
+  }
+
+  .video-preview {
+    width: 100%;
+    max-height: 42vh;
+  }
+
+  .video-edit-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+  }
+
+  .video-controls-spacer {
+    display: none;
+  }
+
+  .video-edit-controls #videoEditSave {
+    justify-self: end;
+    grid-column: 2;
+  }
+
+  .video-edit-controls .video-output-select,
+  .video-edit-controls .video-timecode {
+    grid-column: 1 / -1;
+  }
+
+  .video-tool-panels {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .video-edit-body {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .video-edit-toolbar,
+  .video-preview-wrap,
+  .video-timeline,
+  .video-edit-controls,
+  .video-edit-sidebar {
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .timeline-strip {
+    height: 64px;
+  }
+
+  .video-list {
+    max-height: 180px;
+  }
+
+  .video-list-item {
+    grid-template-columns: 48px 1fr auto;
+  }
+
+  .video-list-item.is-processed {
+    grid-template-columns: 56px auto;
+  }
+
+  .video-thumb {
+    width: 48px;
+    height: 34px;
   }
 }
