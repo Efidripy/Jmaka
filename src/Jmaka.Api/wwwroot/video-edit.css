@@ -283,6 +283,20 @@
   box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.6);
 }
 
+.video-list-item.is-processed {
+  grid-template-columns: 72px auto;
+  align-items: center;
+}
+
+.video-thumb-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+  background: #0f172a;
+}
+
 .video-thumb {
   width: 56px;
   height: 40px;

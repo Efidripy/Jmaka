@@ -4649,10 +4649,23 @@ function buildImagePickerElement(item) {
   el.type = 'button';
   el.dataset.id = item.id;
 
+  const thumbUrl = item.thumbnailUrl || item.previewUrl || item.url || '';
+
   const thumb = document.createElement('img');
   thumb.className = 'edit-pick-thumb';
-  thumb.src = withCacheBust(item.thumbnailUrl || item.previewUrl || item.url || '', item.storedName || '');
+  thumb.src = withCacheBust(thumbUrl, item.storedName || '');
   thumb.alt = item.name || item.id || '';
+  thumb.loading = 'lazy';
+
+  thumb.addEventListener('error', () => {
+    const fallback = item.previewUrl || item.url || item.thumbnailUrl || '';
+    if (!fallback || thumb.dataset.fallbackApplied === '1') {
+      el.classList.add('is-broken');
+      return;
+    }
+    thumb.dataset.fallbackApplied = '1';
+    thumb.src = withCacheBust(fallback, item.storedName || '');
+  });
 
   el.append(thumb);
   el.addEventListener('click', () => selectImageEditItem(item));
