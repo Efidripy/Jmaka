@@ -419,6 +419,8 @@ const imageEditCanvas = document.getElementById('imageEditCanvas');
 const imageEditOriginal = document.getElementById('imageEditOriginal');
 const imageEditCompareBtn = document.getElementById('imageEditCompare');
 const imageEditHint = document.getElementById('imageEditHint');
+const imageEditTopList = document.getElementById('imageEditTopList');
+const imageEditRefreshTop = document.getElementById('imageEditRefreshTop');
 const editBrightness = document.getElementById('editBrightness');
 const editContrast = document.getElementById('editContrast');
 const editSaturation = document.getElementById('editSaturation');
@@ -4649,10 +4651,23 @@ function buildImagePickerElement(item) {
   el.type = 'button';
   el.dataset.id = item.id;
 
+  const thumbUrl = item.thumbnailUrl || item.previewUrl || item.url || '';
+
   const thumb = document.createElement('img');
   thumb.className = 'edit-pick-thumb';
-  thumb.src = withCacheBust(item.thumbnailUrl || item.previewUrl || item.url || '', item.storedName || '');
+  thumb.src = withCacheBust(thumbUrl, item.storedName || '');
   thumb.alt = item.name || item.id || '';
+  thumb.loading = 'lazy';
+
+  thumb.addEventListener('error', () => {
+    const fallback = item.previewUrl || item.url || item.thumbnailUrl || '';
+    if (!fallback || thumb.dataset.fallbackApplied === '1') {
+      el.classList.add('is-broken');
+      return;
+    }
+    thumb.dataset.fallbackApplied = '1';
+    thumb.src = withCacheBust(fallback, item.storedName || '');
+  });
 
   el.append(thumb);
   el.addEventListener('click', () => selectImageEditItem(item));
@@ -4661,10 +4676,22 @@ function buildImagePickerElement(item) {
 
 async function loadImageEditList() {
   try {
-    const res = await fetch(toAbsoluteUrl('images'));
+    const res = await fetch(toAbsoluteUrl('history'), { cache: 'no-store' });
     const data = await res.json();
-    if (!res.ok) throw new Error(data && data.error ? data.error : 'failed');
-    imageEditState.items = Array.isArray(data) ? data : data.items || [];
+    if (!res.ok || !Array.isArray(data)) throw new Error('failed');
+
+    imageEditState.items = data
+      .filter((it) => it && it.storedName)
+      .map((it) => ({
+        id: it.storedName,
+        name: it.originalName || it.storedName,
+        type: 'original',
+        storedName: it.storedName,
+        url: it.originalRelativePath,
+        previewUrl: it.previewRelativePath || it.originalRelativePath,
+        thumbnailUrl: it.previewRelativePath || it.originalRelativePath,
+        createdAt: it.createdAt
+      }));
 
     if (imageEditTopList) {
       imageEditTopList.innerHTML = '';
@@ -4672,6 +4699,11 @@ async function loadImageEditList() {
         imageEditTopList.append(buildImagePickerElement(item));
       });
     }
+
+    if (!imageEditState.items.length && imageEditHint) {
+      imageEditHint.textContent = 'Нет загруженных изображений в разделе Original.';
+    }
+
     updateImageListActiveState();
   } catch (err) {
     if (imageEditHint) imageEditHint.textContent = 'Не удалось загрузить список изображений.';
@@ -4748,6 +4780,8 @@ if (imageEditModal) {
     if (t && t.dataset && t.dataset.close) closeImageEdit();
   });
 }
+
+if (imageEditRefreshTop) imageEditRefreshTop.addEventListener('click', () => loadImageEditList());
 
 if (imageEditApplyBtn) {
   imageEditApplyBtn.addEventListener('click', async (e) => {

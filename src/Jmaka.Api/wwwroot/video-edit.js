@@ -37,6 +37,12 @@
   const videoRemoveSegment = document.getElementById('videoRemoveSegment');
   const videoSegmentsInfo = document.getElementById('videoSegmentsInfo');
 
+  const timelinePreviewState = {
+    dirty: true,
+    sourceToken: '',
+    frameCount: 0
+  };
+
   const toolButtons = Array.from(videoEditModal.querySelectorAll('[data-tool]'));
   const toolPanels = Array.from(videoEditModal.querySelectorAll('[data-tool-panel]'));
   const outputWidthInputs = Array.from(videoEditModal.querySelectorAll('input[name="videoOutputWidth"]'));
@@ -167,12 +173,12 @@
     if (videoTrimEndLabel) videoTrimEndLabel.textContent = formatTime(active.end);
     if (videoDuration) videoDuration.textContent = formatTime(duration);
 
-    drawFilmstrip();
+    queueFilmstripRender(false);
     renderPlayhead();
     renderToolState();
   }
 
-  function drawFilmstrip() {
+  function drawFilmstripPlaceholder() {
     if (!videoTimelineCanvas || !videoTimelineStrip) return;
     const rect = videoTimelineStrip.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
@@ -184,6 +190,7 @@
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
+      timelinePreviewState.dirty = true;
     }
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
@@ -195,6 +202,83 @@
       ctx.strokeStyle = 'rgba(30, 41, 59, 0.6)';
       ctx.strokeRect(x + 1, 8, frameWidth - 2, height - 16);
     }
+  }
+
+  function queueFilmstripRender(force) {
+    if (!videoEditPreview || !videoTimelineCanvas || !state.duration) {
+      drawFilmstripPlaceholder();
+      return;
+    }
+
+    const canvas = videoTimelineCanvas;
+    const width = canvas.width || Math.floor(videoTimelineStrip.getBoundingClientRect().width || 0);
+    const height = canvas.height || Math.floor(videoTimelineStrip.getBoundingClientRect().height || 0);
+    if (!width || !height) {
+      drawFilmstripPlaceholder();
+      return;
+    }
+
+    const frameWidth = Math.max(48, Math.floor(width / 14));
+    const frameCount = Math.max(6, Math.ceil(width / frameWidth));
+    const sourceToken = `${videoEditPreview.currentSrc || videoEditPreview.src || ''}|${state.duration}|${width}x${height}`;
+    if (!force && !timelinePreviewState.dirty && timelinePreviewState.sourceToken === sourceToken && timelinePreviewState.frameCount === frameCount) {
+      return;
+    }
+
+    timelinePreviewState.dirty = false;
+    timelinePreviewState.sourceToken = sourceToken;
+    timelinePreviewState.frameCount = frameCount;
+
+    const captureVideo = document.createElement('video');
+    captureVideo.crossOrigin = 'anonymous';
+    captureVideo.muted = true;
+    captureVideo.preload = 'auto';
+    captureVideo.src = videoEditPreview.currentSrc || videoEditPreview.src;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const frameCanvas = document.createElement('canvas');
+    const frameCtx = frameCanvas.getContext('2d');
+    if (!frameCtx) return;
+
+    drawFilmstripPlaceholder();
+
+    const drawFrameAtIndex = (index) => {
+      const x = Math.floor(index * (width / frameCount));
+      const nextX = Math.floor((index + 1) * (width / frameCount));
+      const w = Math.max(1, nextX - x - 1);
+      const y = 6;
+      const h = height - 12;
+      frameCtx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
+      frameCtx.drawImage(captureVideo, 0, 0, frameCanvas.width, frameCanvas.height);
+      ctx.drawImage(frameCanvas, x + 1, y, w, h);
+      ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)';
+      ctx.strokeRect(x + 0.5, y + 0.5, w + 1, h - 1);
+    };
+
+    captureVideo.addEventListener('loadedmetadata', async () => {
+      if (!captureVideo.videoWidth || !captureVideo.videoHeight) return;
+      frameCanvas.width = captureVideo.videoWidth;
+      frameCanvas.height = captureVideo.videoHeight;
+
+      for (let i = 0; i < frameCount; i++) {
+        const t = frameCount === 1 ? 0 : (i / (frameCount - 1)) * Math.max(0, state.duration - 0.05);
+        try {
+          await new Promise((resolve) => {
+            const done = () => {
+              captureVideo.removeEventListener('seeked', done);
+              resolve();
+            };
+            captureVideo.addEventListener('seeked', done, { once: true });
+            captureVideo.currentTime = t;
+          });
+          drawFrameAtIndex(i);
+        } catch {
+          // ignore and keep placeholder if decoding fails
+        }
+      }
+    }, { once: true });
   }
 
   function renderPlayhead() {
@@ -250,11 +334,15 @@
     const renderItem = (item, listEl, isProcessed) => {
       const row = document.createElement('div');
       row.className = 'video-list-item';
+      if (isProcessed) row.classList.add('is-processed');
       if (!isProcessed && item.storedName === state.storedName) row.classList.add('is-active');
       row.addEventListener('click', () => {
         if (!item.relativePath) return;
         const url = withCacheBust ? withCacheBust(item.relativePath, item.storedName) : item.relativePath;
-        if (videoEditPreview) videoEditPreview.src = url;
+        if (videoEditPreview) {
+          videoEditPreview.src = url;
+          timelinePreviewState.dirty = true;
+        }
         if (isProcessed) {
           setHint('Просмотр результата. Для обработки выберите оригинал.');
           return;
@@ -267,8 +355,20 @@
 
       const thumb = document.createElement('div');
       thumb.className = 'video-thumb';
-      thumb.textContent = 'MP4';
-
+      if (item.relativePath) {
+        const videoThumb = document.createElement('video');
+        videoThumb.className = 'video-thumb-media';
+        videoThumb.muted = true;
+        videoThumb.preload = 'metadata';
+        videoThumb.src = toAbsoluteUrl(item.relativePath);
+        videoThumb.playsInline = true;
+        videoThumb.addEventListener('loadeddata', () => {
+          try { videoThumb.currentTime = Math.min(0.2, Math.max(0, (item.durationSeconds || 0) / 10)); } catch { /* ignore */ }
+        }, { once: true });
+        thumb.appendChild(videoThumb);
+      } else {
+        thumb.textContent = 'MP4';
+      }
       const meta = document.createElement('div');
       meta.className = 'video-list-meta';
       const name = document.createElement('div');
@@ -319,7 +419,7 @@
       actions.appendChild(del);
 
       row.appendChild(thumb);
-      row.appendChild(meta);
+      if (!isProcessed) row.appendChild(meta);
       row.appendChild(actions);
       listEl.appendChild(row);
     };
@@ -400,6 +500,10 @@
     }
 
     normalizeSegments();
+    if (videoEditPreview && Number.isFinite(time)) {
+      videoEditPreview.currentTime = clamp(time, 0, state.duration || 0);
+      renderPlayhead();
+    }
     renderTimeline();
   }
 
@@ -528,7 +632,9 @@
       state.segments = [{ start: 0, end: state.duration }];
       state.activeSegmentIndex = 0;
       state.trim = { ...state.segments[0] };
+      timelinePreviewState.dirty = true;
       renderTimeline();
+      queueFilmstripRender(true);
       renderCropRect();
     });
     videoEditPreview.addEventListener('timeupdate', renderPlayhead);
@@ -554,6 +660,7 @@
         if (videoEditPreview && data.relativePath) {
           const url = withCacheBust ? withCacheBust(data.relativePath, data.storedName) : data.relativePath;
           videoEditPreview.src = url;
+          timelinePreviewState.dirty = true;
         }
         setHint('Видео загружено. Выберите отрезки и нажмите Save.');
         await loadVideoHistory();
@@ -595,6 +702,7 @@
         if (videoEditPreview && data.relativePath) {
           const cacheKey = data.storedName || state.storedName;
           videoEditPreview.src = withCacheBust ? withCacheBust(data.relativePath, cacheKey) : data.relativePath;
+          timelinePreviewState.dirty = true;
         }
 
         setHint('Готово. Результат появился в Processed.');
