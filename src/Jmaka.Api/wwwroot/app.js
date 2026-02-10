@@ -427,6 +427,8 @@ const editSaturation = document.getElementById('editSaturation');
 const editHue = document.getElementById('editHue');
 const editExposure = document.getElementById('editExposure');
 const editVibrance = document.getElementById('editVibrance');
+const imageEditPresetBtns = imageEditModal ? imageEditModal.querySelectorAll('.preset-btn') : [];
+const imageEditSliderRows = imageEditModal ? imageEditModal.querySelectorAll('.slider-row') : [];
 
 
 function syncCropAspectButtons() {
