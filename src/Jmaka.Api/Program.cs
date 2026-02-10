@@ -109,6 +109,10 @@ var historyLock = new SemaphoreSlim(1, 1);
 var compositesLock = new SemaphoreSlim(1, 1);
 var videoHistoryLock = new SemaphoreSlim(1, 1);
 
+// Track last FFmpeg exit code to detect OOM and enable ultra-safe mode
+var lastFfmpegExitCode = 0;
+var ffmpegExitCodeLock = new object();
+
 // Retention: delete entries/files older than N hours (default 48h)
 var retentionHours = 48;
 var retentionEnv = Environment.GetEnvironmentVariable("JMAKA_RETENTION_HOURS");
@@ -2030,23 +2034,111 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
     var outPath = Path.Combine(videoOutDir, outName);
     var relPath = $"video-out/{outName}";
     
-    // Determine audio handling
-    var muteAudio = req.MuteAudio ?? false;
+    // Determine if ultra-safe mode should be enabled
+    var ultraSafeMode = ShouldUseUltraSafeMode();
+    
+    if (ultraSafeMode)
+    {
+        logger.LogWarning("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        logger.LogWarning("⚠️  ULTRA-SAFE FFMPEG PROFILE ENABLED");
+        logger.LogWarning("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        
+        // Override parameters for ultra-safe mode
+        // Resolution: 720x405 chosen to minimize memory usage while maintaining 16:9 aspect ratio
+        // (405 = 720 * 9/16, rounded to nearest odd number for better encoder compatibility)
+        targetWidth = 720;
+        targetHeight = 405;
+        
+        // Recalculate scale/pad with ultra-safe resolution
+        var ultraSafeVerticalOffset = Math.Clamp(verticalOffset, -(targetHeight / 2), targetHeight / 2);
+        scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease," +
+                   $"pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2+{ultraSafeVerticalOffset}";
+        
+        // Rebuild filter with new scale/pad
+        transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
+        
+        if (mergedSegments.Count == 0)
+        {
+            var cutStart = req.CutStartSec ?? 0;
+            var cutEnd = req.CutEndSec ?? 0;
+            var hasMiddleCut = cutEnd > cutStart && cutStart > trimStart && cutEnd < trimEnd;
+
+            if (hasMiddleCut)
+            {
+                filter = $"[0:v]trim=start={F(trimStart)}:end={F(cutStart)},setpts=PTS-STARTPTS[v0];" +
+                         $"[0:v]trim=start={F(cutEnd)}:end={F(trimEnd)},setpts=PTS-STARTPTS[v1];" +
+                         $"[v0][v1]concat=n=2:v=1:a=0,{transformFilter}{scalePad}[v]";
+            }
+            else
+            {
+                filter = $"[0:v]trim=start={F(trimStart)}:end={F(trimEnd)},setpts=PTS-STARTPTS,{transformFilter}{scalePad}[v]";
+            }
+        }
+        else if (mergedSegments.Count == 1)
+        {
+            var seg = mergedSegments[0];
+            filter = $"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS,{transformFilter}{scalePad}[v]";
+        }
+        else
+        {
+            var sb = new StringBuilder();
+            for (var i = 0; i < mergedSegments.Count; i++)
+            {
+                var seg = mergedSegments[i];
+                sb.Append($"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS[v{i}];");
+            }
+
+            for (var i = 0; i < mergedSegments.Count; i++)
+            {
+                sb.Append($"[v{i}]");
+            }
+            sb.Append($"concat=n={mergedSegments.Count}:v=1:a=0,{transformFilter}{scalePad}[v]");
+
+            filter = sb.ToString();
+        }
+        
+        // Ultra-safe bitrate: 180kbps default, max 250kbps
+        bitrate = Math.Min(250_000, Math.Max(180_000, bitrate));
+        
+        logger.LogWarning("Ultra-safe parameters:");
+        logger.LogWarning("  - threads: 1");
+        logger.LogWarning("  - mode: 1-pass only");
+        logger.LogWarning("  - resolution: {Width}x{Height}", targetWidth, targetHeight);
+        logger.LogWarning("  - fps: 24");
+        logger.LogWarning("  - bitrate: {Bitrate} bps", bitrate);
+        logger.LogWarning("  - audio: disabled");
+        logger.LogWarning("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    }
+    
+    // Determine audio handling (force disabled in ultra-safe mode)
+    var muteAudio = ultraSafeMode || (req.MuteAudio ?? false);
     var audioMap = muteAudio ? new[] { "-an" } : new[] { "-map", "0:a?", "-c:a", "aac", "-b:a", "128k" };
 
-    // Detect low-memory server and apply safe profile
+    // Detect low-memory server for regular safe profile (backwards compatibility)
     var isLowMemory = IsLowMemoryServer();
-    if (isLowMemory)
+    if (isLowMemory && !ultraSafeMode)
     {
         logger.LogWarning("Low memory server detected (<= 2GB RAM), forcing safe ffmpeg profile: threads=1, 1-pass encoding");
     }
     
-    // Decide on encoding mode: 2-pass only for short videos with explicit target size on non-low-memory servers
-    var use2Pass = !isLowMemory && outputDuration < 60.0 && req.TargetSizeMb > 0;
+    // Decide on encoding mode: ultra-safe always uses 1-pass; safe profile uses 2-pass only for short videos
+    var use2Pass = !ultraSafeMode && !isLowMemory && outputDuration < 60.0 && req.TargetSizeMb > 0;
     var threadCount = 1; // Always use 1 thread for stability (prevents OOM on VPS)
     
-    logger.LogInformation("FFmpeg config: threads={Threads}, mode={Mode}, resolution={Width}x{Height}, duration={Duration}s, bitrate={Bitrate}",
-        threadCount, use2Pass ? "2-pass" : "1-pass", targetWidth, targetHeight, outputDuration, bitrate);
+    if (!ultraSafeMode)
+    {
+        logger.LogInformation("FFmpeg config: threads={Threads}, mode={Mode}, resolution={Width}x{Height}, duration={Duration}s, bitrate={Bitrate}",
+            threadCount, use2Pass ? "2-pass" : "1-pass", targetWidth, targetHeight, outputDuration, bitrate);
+    }
+    
+    // Track FFmpeg exit code for OOM detection (used for both 2-pass and 1-pass)
+    Action<int> trackExitCode = (exitCode) =>
+    {
+        lock (ffmpegExitCodeLock)
+        {
+            lastFfmpegExitCode = exitCode;
+        }
+    };
     
     if (use2Pass)
     {
@@ -2088,14 +2180,14 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
             outPath
         });
 
-        var pass1 = await RunProcessAsync("ffmpeg", pass1Args, ct, logger, "ffmpeg pass 1");
+        var pass1 = await RunProcessAsync("ffmpeg", pass1Args, ct, logger, "ffmpeg pass 1", trackExitCode);
         if (!pass1.Success)
         {
             CleanupPassLogs(passLog);
             return Results.BadRequest(new { error = "ffmpeg pass 1 failed", details = pass1.Error });
         }
 
-        var pass2 = await RunProcessAsync("ffmpeg", pass2Args, ct, logger, "ffmpeg pass 2");
+        var pass2 = await RunProcessAsync("ffmpeg", pass2Args, ct, logger, "ffmpeg pass 2", trackExitCode);
         CleanupPassLogs(passLog);
         if (!pass2.Success)
         {
@@ -2108,22 +2200,41 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         var singlePassArgs = new List<string>
         {
             "-y",
-            "-threads", threadCount.ToString(),
-            "-i", inputPath,
-            "-filter_complex", filter,
-            "-map", "[v]"
+            "-threads", threadCount.ToString()
         };
-        singlePassArgs.AddRange(audioMap);
-        singlePassArgs.AddRange(new[]
-        {
-            "-c:v", "libx264",
-            "-b:v", $"{bitrate}",
-            outPath
-        });
         
-        var result = await RunProcessAsync("ffmpeg", singlePassArgs, ct, logger, "ffmpeg 1-pass");
+        // Add FPS limit in ultra-safe mode (before input file)
+        if (ultraSafeMode)
+        {
+            singlePassArgs.Add("-r");
+            singlePassArgs.Add("24");
+        }
+        
+        singlePassArgs.Add("-i");
+        singlePassArgs.Add(inputPath);
+        singlePassArgs.Add("-filter_complex");
+        singlePassArgs.Add(filter);
+        singlePassArgs.Add("-map");
+        singlePassArgs.Add("[v]");
+        singlePassArgs.AddRange(audioMap);
+        singlePassArgs.Add("-c:v");
+        singlePassArgs.Add("libx264");
+        singlePassArgs.Add("-b:v");
+        singlePassArgs.Add($"{bitrate}");
+        singlePassArgs.Add(outPath);
+        
+        var result = await RunProcessAsync("ffmpeg", singlePassArgs, ct, logger, "ffmpeg 1-pass", trackExitCode);
         if (!result.Success)
         {
+            // If OOM even in ultra-safe mode, provide user-friendly error
+            if (result.Error.Contains("OOM killer") || result.Error.Contains("exit code 137"))
+            {
+                return Results.BadRequest(new { 
+                    error = "Server out of memory", 
+                    details = "Video processing requires more memory than available. Please try with a shorter video or contact administrator to increase server resources." 
+                });
+            }
+            
             return Results.BadRequest(new { error = "ffmpeg encoding failed", details = result.Error });
         }
     }
@@ -2277,7 +2388,22 @@ static bool IsLowMemoryServer()
     return false;
 }
 
-static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> args, CancellationToken ct, Microsoft.Extensions.Logging.ILogger? logger = null, string? context = null)
+bool ShouldUseUltraSafeMode()
+{
+    // Ultra-safe mode activates if:
+    // 1. Low memory server detected (<= 2GB RAM)
+    // 2. OR previous FFmpeg run was killed by OOM (exit code 137)
+    var lowMem = IsLowMemoryServer();
+    int lastExitCode;
+    lock (ffmpegExitCodeLock)
+    {
+        lastExitCode = lastFfmpegExitCode;
+    }
+    var previousOom = lastExitCode == 137;
+    return lowMem || previousOom;
+}
+
+static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> args, CancellationToken ct, Microsoft.Extensions.Logging.ILogger? logger = null, string? context = null, Action<int>? exitCodeCallback = null)
 {
     var psi = new System.Diagnostics.ProcessStartInfo
     {
@@ -2312,6 +2438,9 @@ static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> a
     await process.WaitForExitAsync(ct);
     var output = await outputTask;
     var error = await errorTask;
+
+    // Track exit code via callback (used for FFmpeg OOM detection)
+    exitCodeCallback?.Invoke(process.ExitCode);
 
     // Detect OOM killer first (exit code 137 = 128 + SIGKILL(9))
     if (process.ExitCode == 137)
