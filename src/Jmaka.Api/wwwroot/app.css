@@ -1109,6 +1109,32 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+}
+
+.edit-source-picker {
+  background: rgba(17, 24, 39, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.edit-source-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.edit-source-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  max-height: 188px;
+  overflow-y: auto;
 }
 
 .edit-preview {
@@ -1149,6 +1175,9 @@ html, body {
 .edit-sidebar {
   display: grid;
   gap: 16px;
+  max-height: min(78vh, 900px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .edit-section {
@@ -1294,6 +1323,19 @@ html, body {
   gap: 8px;
   max-height: 180px;
   overflow-y: auto;
+}
+
+.edit-source-list .edit-image-item {
+  grid-template-columns: 56px 1fr;
+}
+
+.edit-source-list .edit-image-thumb {
+  width: 56px;
+  height: 42px;
+}
+
+.edit-source-list .edit-image-actions {
+  display: none;
 }
 
 .edit-image-item {
