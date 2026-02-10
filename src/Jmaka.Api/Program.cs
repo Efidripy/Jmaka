@@ -1983,6 +1983,8 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
     var relPath = $"video-out/{outName}";
     var passLog = Path.Combine(videoOutDir, $"pass-{Guid.NewGuid():N}");
 
+    var nullOutput = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
+
     var pass1Args = new List<string>
     {
         "-y",
@@ -1995,7 +1997,7 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         "-pass", "1",
         "-passlogfile", passLog,
         "-f", "mp4",
-        "/dev/null"
+        nullOutput
     };
 
     var pass2Args = new List<string>
