@@ -4796,6 +4796,18 @@ if (imageEditModal) {
 
 if (imageEditRefreshTop) imageEditRefreshTop.addEventListener('click', () => loadImageEditList());
 
+function getImageEditPayload() {
+  const params = imageEditState.params || defaultImageEditParams();
+  return {
+    imageId: imageEditState.storedName,
+    preset: imageEditState.selectedPreset || 'None',
+    color: params.color,
+    light: params.light,
+    details: params.details,
+    scene: params.scene
+  };
+}
+
 if (imageEditApplyBtn) {
   imageEditApplyBtn.addEventListener('click', async (e) => {
     e.preventDefault();
@@ -4807,7 +4819,7 @@ if (imageEditApplyBtn) {
       setBusy(true);
       if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
 
-      const res = await fetch(toAbsoluteUrl('image-edit-apply'), {
+      const res = await fetch(toAbsoluteUrl(`images/${imageEditState.storedName}/save-edit`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
