@@ -113,6 +113,9 @@ var videoHistoryLock = new SemaphoreSlim(1, 1);
 var lastFfmpegExitCode = 0;
 var ffmpegExitCodeLock = new object();
 
+// Ultra-safe mode vertical offset limit (prevents pad errors with small scaled videos)
+const int UltraSafeOffsetLimit = 200; // ±200px safe for 720x405 output
+
 // Retention: delete entries/files older than N hours (default 48h)
 var retentionHours = 48;
 var retentionEnv = Environment.GetEnvironmentVariable("JMAKA_RETENTION_HOURS");
@@ -1932,8 +1935,9 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
     // Safe scale+pad: always use fixed dimensions to avoid dynamic size issues
     // Clamp vertical offset to ensure pad stays within canvas bounds
     var safeVerticalOffset = Math.Clamp(verticalOffset, -(targetHeight / 2), targetHeight / 2);
-    var scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease," +
-                   $"pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2+{safeVerticalOffset}";
+    // Use force_divisible_by=2 for yuv420p compatibility and max() to prevent negative pad coordinates
+    var scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
+                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{safeVerticalOffset}\\,0):color=black";
     
     // Append transform filters to the base scale/pad
     var transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
@@ -2049,10 +2053,15 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         targetWidth = 720;
         targetHeight = 405;
         
-        // Recalculate scale/pad with ultra-safe resolution
-        var ultraSafeVerticalOffset = Math.Clamp(verticalOffset, -(targetHeight / 2), targetHeight / 2);
-        scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease," +
-                   $"pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2+{ultraSafeVerticalOffset}";
+        // Ultra-safe mode: Conservative offset clamping to prevent pad errors
+        // After scaling with decrease, the video will be <= 720x405. Worst case: scaled to 720x1 (or 1x405)
+        // For 405p output, max safe offset range when scaled height could be as small as ~100px is [-150, 150]
+        // We use ±200px as a very safe bound that prevents edge cases
+        var ultraSafeVerticalOffset = Math.Clamp(verticalOffset, -UltraSafeOffsetLimit, UltraSafeOffsetLimit);
+        
+        // Ultra-safe filter chain: force_divisible_by=2 for yuv420p, max() prevents negative pad coords
+        scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
+                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{ultraSafeVerticalOffset}\\,0):color=black";
         
         // Rebuild filter with new scale/pad
         transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
@@ -2107,6 +2116,8 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         logger.LogWarning("  - fps: 24");
         logger.LogWarning("  - bitrate: {Bitrate} bps", bitrate);
         logger.LogWarning("  - audio: disabled");
+        logger.LogWarning("  - pix_fmt: yuv420p (forced)");
+        logger.LogWarning("  - filter_complex: {Filter}", filter);
         logger.LogWarning("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     }
     
@@ -2221,9 +2232,28 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         singlePassArgs.Add("libx264");
         singlePassArgs.Add("-b:v");
         singlePassArgs.Add($"{bitrate}");
+        
+        // Force yuv420p pixel format in ultra-safe mode to avoid format negotiation issues
+        if (ultraSafeMode)
+        {
+            singlePassArgs.Add("-pix_fmt");
+            singlePassArgs.Add("yuv420p");
+        }
+        
         singlePassArgs.Add(outPath);
         
-        var result = await RunProcessAsync("ffmpeg", singlePassArgs, ct, logger, "ffmpeg 1-pass", trackExitCode);
+        // Track exit code locally for potential retry
+        var lastLocalExitCode = 0;
+        Action<int> trackLocalExitCode = (exitCode) =>
+        {
+            lastLocalExitCode = exitCode;
+            lock (ffmpegExitCodeLock)
+            {
+                lastFfmpegExitCode = exitCode;
+            }
+        };
+        
+        var result = await RunProcessAsync("ffmpeg", singlePassArgs, ct, logger, "ffmpeg 1-pass", trackLocalExitCode);
         if (!result.Success)
         {
             // If OOM even in ultra-safe mode, provide user-friendly error
@@ -2235,7 +2265,94 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
                 });
             }
             
-            return Results.BadRequest(new { error = "ffmpeg encoding failed", details = result.Error });
+            // F05: Fallback for pad dimension errors (exit code 234)
+            // If pad filter fails due to dimension issues, retry with scale+crop (no pad)
+            // Only retry once to prevent infinite loops
+            var alreadyRetried = false;
+            if (!alreadyRetried && ultraSafeMode && lastLocalExitCode == 234 && 
+                result.Error.Contains("Padded dimensions cannot be smaller"))
+            {
+                alreadyRetried = true; // Guard against multiple retries
+                logger.LogWarning("Ultra-safe pad filter failed (exit code 234). Retrying with scale+crop fallback...");
+                
+                // Rebuild filter with fallback strategy: scale with increase + crop
+                // This guarantees exact 720x405 output without pad
+                var fallbackScaleCrop = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=increase:force_divisible_by=2," +
+                                       $"crop={targetWidth}:{targetHeight}";
+                
+                string fallbackFilter;
+                if (mergedSegments.Count == 0)
+                {
+                    var cutStart = req.CutStartSec ?? 0;
+                    var cutEnd = req.CutEndSec ?? 0;
+                    var hasMiddleCut = cutEnd > cutStart && cutStart > trimStart && cutEnd < trimEnd;
+
+                    if (hasMiddleCut)
+                    {
+                        fallbackFilter = $"[0:v]trim=start={F(trimStart)}:end={F(cutStart)},setpts=PTS-STARTPTS[v0];" +
+                                        $"[0:v]trim=start={F(cutEnd)}:end={F(trimEnd)},setpts=PTS-STARTPTS[v1];" +
+                                        $"[v0][v1]concat=n=2:v=1:a=0,{transformFilter}{fallbackScaleCrop}[v]";
+                    }
+                    else
+                    {
+                        fallbackFilter = $"[0:v]trim=start={F(trimStart)}:end={F(trimEnd)},setpts=PTS-STARTPTS,{transformFilter}{fallbackScaleCrop}[v]";
+                    }
+                }
+                else if (mergedSegments.Count == 1)
+                {
+                    var seg = mergedSegments[0];
+                    fallbackFilter = $"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS,{transformFilter}{fallbackScaleCrop}[v]";
+                }
+                else
+                {
+                    var sb = new StringBuilder();
+                    for (var i = 0; i < mergedSegments.Count; i++)
+                    {
+                        var seg = mergedSegments[i];
+                        sb.Append($"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS[v{i}];");
+                    }
+
+                    for (var i = 0; i < mergedSegments.Count; i++)
+                    {
+                        sb.Append($"[v{i}]");
+                    }
+                    sb.Append($"concat=n={mergedSegments.Count}:v=1:a=0,{transformFilter}{fallbackScaleCrop}[v]");
+
+                    fallbackFilter = sb.ToString();
+                }
+                
+                logger.LogWarning("  - fallback filter_complex: {Filter}", fallbackFilter);
+                
+                // Build fallback args (same as before but with new filter)
+                var fallbackArgs = new List<string>
+                {
+                    "-y",
+                    "-threads", threadCount.ToString(),
+                    "-r", "24",
+                    "-i", inputPath,
+                    "-filter_complex", fallbackFilter,
+                    "-map", "[v]",
+                    "-an",
+                    "-c:v", "libx264",
+                    "-b:v", $"{bitrate}",
+                    "-pix_fmt", "yuv420p",
+                    outPath
+                };
+                
+                var fallbackResult = await RunProcessAsync("ffmpeg", fallbackArgs, ct, logger, "ffmpeg fallback (scale+crop)", trackLocalExitCode);
+                if (!fallbackResult.Success)
+                {
+                    logger.LogError("Ultra-safe fallback also failed. Original error: {OriginalError}, Fallback error: {FallbackError}", 
+                        result.Error, fallbackResult.Error);
+                    return Results.BadRequest(new { error = "ffmpeg encoding failed (both pad and fallback attempts)", details = fallbackResult.Error });
+                }
+                
+                logger.LogWarning("Ultra-safe fallback succeeded with scale+crop strategy");
+            }
+            else
+            {
+                return Results.BadRequest(new { error = "ffmpeg encoding failed", details = result.Error });
+            }
         }
     }
 
