@@ -300,29 +300,295 @@
         <div class="modal-title-wrap">
           <div class="modal-title">Image Edit</div>
           <div class="modal-sub">
-            <span class="modal-subtext">Правки применяются на сервере и сохраняются как новый файл.</span>
+            <span class="modal-subtext">Правки применяются в реальном времени, сохранение — на сервере.</span>
           </div>
         </div>
         <button id="imageEditClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
       </div>
       <div class="modal-body edit-body">
-        <div class="edit-preview">
-          <img id="imageEditPreview" class="edit-preview-img" alt="" />
+        <div class="edit-main">
+          <div class="edit-source-picker" aria-label="Выбор изображения для редактирования">
+            <div class="edit-source-header">
+              <span>Choose image</span>
+              <button id="imageEditRefreshTop" class="btn small" type="button">Refresh</button>
+            </div>
+            <div id="imageEditTopList" class="edit-source-list"></div>
+          </div>
+          <div class="edit-preview">
+            <canvas id="imageEditCanvas" class="edit-preview-canvas" aria-label="Image preview"></canvas>
+            <img id="imageEditOriginal" class="edit-preview-img" alt="" hidden />
+            <div class="edit-preview-overlay">
+              <button id="imageEditCompare" class="btn compare-btn" type="button">Hold to Compare</button>
+            </div>
+          </div>
         </div>
-        <div class="edit-controls">
-          <label class="edit-row">Brightness <input id="editBrightness" type="range" min="-1" max="1" step="0.01" value="0" /></label>
-          <label class="edit-row">Contrast <input id="editContrast" type="range" min="-1" max="1" step="0.01" value="0" /></label>
-          <label class="edit-row">Saturation <input id="editSaturation" type="range" min="-1" max="1" step="0.01" value="0" /></label>
-          <label class="edit-row">Hue <input id="editHue" type="range" min="-180" max="180" step="1" value="0" /></label>
-          <label class="edit-row">Exposure <input id="editExposure" type="range" min="-1" max="1" step="0.01" value="0" /></label>
-          <label class="edit-row">Vibrance <input id="editVibrance" type="range" min="-1" max="1" step="0.01" value="0" /></label>
-        </div>
+        <aside class="edit-sidebar">
+          <div class="edit-controls-column">
+            <div class="edit-section edit-presets">
+            <div class="edit-section-title">Presets</div>
+            <div class="preset-buttons">
+              <button class="btn preset-btn" type="button" data-preset="Auto">Auto</button>
+              <button class="btn preset-btn" type="button" data-preset="BW">B&W</button>
+              <button class="btn preset-btn" type="button" data-preset="Pop">Pop</button>
+            </div>
+          </div>
+
+          <div class="edit-section edit-panels">
+            <div class="edit-panel" data-panel="color">
+              <button class="edit-panel-header" type="button">
+                <span>Color</span>
+                <span class="edit-panel-icon">⎈</span>
+              </button>
+              <div class="edit-panel-body">
+                <div class="slider-row" data-param="color.vibrance" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Vibrance</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="color.saturation" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Saturation</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="color.temperature" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Temperature</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="color.tint" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Tint</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="color.hue" data-min="-180" data-max="180">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Hue</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="edit-panel" data-panel="light">
+              <button class="edit-panel-header" type="button">
+                <span>Light</span>
+                <span class="edit-panel-icon">◐</span>
+              </button>
+              <div class="edit-panel-body">
+                <div class="slider-row" data-param="light.brightness" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Brightness</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="light.exposure" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Exposure</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="light.contrast" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Contrast</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="light.black" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Black</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="light.white" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">White</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="light.highlights" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Highlights</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="light.shadows" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Shadows</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="edit-panel" data-panel="details">
+              <button class="edit-panel-header" type="button">
+                <span>Details</span>
+                <span class="edit-panel-icon">✦</span>
+              </button>
+              <div class="edit-panel-body">
+                <div class="slider-row" data-param="details.sharpen" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Sharpen</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="details.clarity" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Clarity</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="details.smooth" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Smooth</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="details.blur" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Blur</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="details.grain" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Grain</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="edit-panel" data-panel="scene">
+              <button class="edit-panel-header" type="button">
+                <span>Scene</span>
+                <span class="edit-panel-icon">▢</span>
+              </button>
+              <div class="edit-panel-body">
+                <div class="slider-row" data-param="scene.vignette" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Vignette</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="scene.glamour" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Glamour</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="scene.bloom" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Bloom</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+                <div class="slider-row" data-param="scene.dehaze" data-min="-100" data-max="100">
+                  <div class="slider-header">
+                    <button class="slider-label" type="button">Dehaze</button>
+                    <button class="slider-value" type="button">0</button>
+                  </div>
+                  <div class="slider-track">
+                    <input type="range" value="0" />
+                    <span class="slider-zero"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
+
+        </aside>
       </div>
       <div class="modal-footer">
-        <div id="imageEditHint" class="modal-hint">Выберите изображение из таблицы.</div>
+        <div id="imageEditHint" class="modal-hint">Выберите изображение из верхнего списка.</div>
         <div class="modal-actions">
           <button id="imageEditCancel" class="btn" type="button">Закрыть</button>
-          <button id="imageEditApply" class="btn primary" type="button" disabled>Сохранить</button>
+          <button id="imageEditApply" class="btn primary" type="button" disabled>Save</button>
         </div>
       </div>
     </div>
