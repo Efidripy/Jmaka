@@ -1313,6 +1313,45 @@ html, body {
 
 .slider-track input[type="range"] {
   width: 100%;
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.slider-track input[type="range"]::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.slider-track input[type="range"]::-moz-range-track {
+  background: transparent;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.slider-track input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  cursor: pointer;
+  margin-top: -5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.slider-track input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .slider-zero {
@@ -1325,6 +1364,174 @@ html, body {
   transform: translate(-50%, -50%);
   border-radius: 2px;
   pointer-events: none;
+}
+
+/* Slider label icons */
+.slider-label::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: middle;
+  opacity: 0.8;
+}
+
+/* Color sliders with icons */
+[data-param="color.vibrance"] .slider-label::before {
+  content: '✦';
+  width: auto;
+}
+
+[data-param="color.saturation"] .slider-label::before {
+  content: '◐';
+  width: auto;
+}
+
+[data-param="color.temperature"] .slider-label::before {
+  content: '☀';
+  width: auto;
+}
+
+[data-param="color.tint"] .slider-label::before {
+  content: '⊕';
+  width: auto;
+}
+
+[data-param="color.hue"] .slider-label::before {
+  content: '◎';
+  width: auto;
+}
+
+/* Light sliders with icons */
+[data-param="light.brightness"] .slider-label::before {
+  content: '☀';
+  width: auto;
+}
+
+[data-param="light.exposure"] .slider-label::before {
+  content: '◐';
+  width: auto;
+}
+
+[data-param="light.contrast"] .slider-label::before {
+  content: '◑';
+  width: auto;
+}
+
+/* Details sliders with icons */
+[data-param="details.sharpen"] .slider-label::before {
+  content: '◈';
+  width: auto;
+}
+
+[data-param="details.clarity"] .slider-label::before {
+  content: '◇';
+  width: auto;
+}
+
+[data-param="details.blur"] .slider-label::before {
+  content: '○';
+  width: auto;
+}
+
+[data-param="details.grain"] .slider-label::before {
+  content: '·';
+  width: auto;
+}
+
+/* Colored gradient backgrounds for sliders */
+.slider-track::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.slider-track input[type="range"] {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+
+/* Saturation gradient: grayscale to vibrant */
+[data-param="color.saturation"] .slider-track::before {
+  background: linear-gradient(to right, 
+    hsl(0, 0%, 50%),
+    hsl(0, 100%, 50%)
+  );
+}
+
+/* Vibrance gradient: muted to vibrant */
+[data-param="color.vibrance"] .slider-track::before {
+  background: linear-gradient(to right, 
+    hsl(200, 30%, 50%),
+    hsl(200, 100%, 50%)
+  );
+}
+
+/* Temperature gradient: cool blue to warm orange */
+[data-param="color.temperature"] .slider-track::before {
+  background: linear-gradient(to right, 
+    #4a90e2,
+    #ffffff,
+    #ffa500
+  );
+}
+
+/* Tint gradient: green to magenta */
+[data-param="color.tint"] .slider-track::before {
+  background: linear-gradient(to right, 
+    #00ff00,
+    #ffffff,
+    #ff00ff
+  );
+}
+
+/* Hue gradient: full color spectrum */
+[data-param="color.hue"] .slider-track::before {
+  background: linear-gradient(to right,
+    hsl(0, 100%, 50%),
+    hsl(60, 100%, 50%),
+    hsl(120, 100%, 50%),
+    hsl(180, 100%, 50%),
+    hsl(240, 100%, 50%),
+    hsl(300, 100%, 50%),
+    hsl(360, 100%, 50%)
+  );
+}
+
+/* Brightness gradient: dark to bright */
+[data-param="light.brightness"] .slider-track::before {
+  background: linear-gradient(to right, 
+    #000000,
+    #808080,
+    #ffffff
+  );
+}
+
+/* Exposure gradient: underexposed to overexposed */
+[data-param="light.exposure"] .slider-track::before {
+  background: linear-gradient(to right, 
+    #1a1a1a,
+    #808080,
+    #f0f0f0
+  );
+}
+
+/* Contrast gradient: low to high */
+[data-param="light.contrast"] .slider-track::before {
+  background: linear-gradient(to right, 
+    #666666,
+    #808080,
+    #cccccc
+  );
 }
 
 
