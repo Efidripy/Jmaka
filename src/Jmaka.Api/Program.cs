@@ -2081,9 +2081,10 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         // We use ±200px as a very safe bound that prevents edge cases
         var ultraSafeVerticalOffset = Math.Clamp(verticalOffset, -UltraSafeOffsetLimit, UltraSafeOffsetLimit);
         
-        // Ultra-safe filter chain: force_divisible_by=2 for yuv420p, max() prevents negative pad coords
+        // Ultra-safe filter chain: force_divisible_by=2 for yuv420p, max() prevents negative pad coords, format=yuv420p for pixel format consistency
         scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
-                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{ultraSafeVerticalOffset}\\,0):color=black";
+                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{ultraSafeVerticalOffset}\\,0):color=black," +
+                   $"format=yuv420p";
         
         // Rebuild filter with new scale/pad
         transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
@@ -2297,10 +2298,11 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
                 alreadyRetried = true; // Guard against multiple retries
                 logger.LogWarning("Ultra-safe pad filter failed (exit code 234). Retrying with scale+crop fallback...");
                 
-                // Rebuild filter with fallback strategy: scale with increase + crop
+                // Rebuild filter with fallback strategy: scale with increase + crop + format
                 // This guarantees exact even dimensions output without pad
                 var fallbackScaleCrop = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=increase:force_divisible_by=2," +
-                                       $"crop={targetWidth}:{targetHeight}";
+                                       $"crop={targetWidth}:{targetHeight}," +
+                                       $"format=yuv420p";
                 
                 string fallbackFilter;
                 if (mergedSegments.Count == 0)
