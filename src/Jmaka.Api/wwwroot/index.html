@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jmaka 0.2.0-rc7</title>
-  <link rel="stylesheet" href="app.css?v=0.2.0-rc7" />
-  <link rel="stylesheet" href="video-edit.css?v=0.2.0-rc7" />
+  <title>Jmaka 0.3.2</title>
+  <link rel="stylesheet" href="app.css?v=0.3.2" />
+  <link rel="stylesheet" href="video-edit.css?v=0.3.2" />
 </head>
 <body>
   <main class="page">
@@ -27,7 +27,7 @@
       </button>
 
       <div class="preview-wrap">
-        <div class="preview-title">Jmaka 0.2.0-rc7</div>
+        <div class="preview-title">Jmaka 0.3.2</div>
 
         <div class="main-controls" aria-label="Панель управления">
           <div class="tool-buttons" aria-label="Инструменты">
@@ -94,6 +94,10 @@
     </div>
 
     <pre id="result" class="result" aria-label="Результат" hidden></pre>
+    
+    <footer style="text-align: center; padding: 10px; font-size: 11px; color: #64748b; opacity: 0.7;">
+      Jmaka v0.3.2
+    </footer>
   </main>
 
   <!-- Модалка подтверждения удаления -->
@@ -944,6 +948,18 @@
             </ul>
           </li>
           <li><strong>OknoScale</strong> — экспериментальный режим той же карточки с изменяемой шириной окна.</li>
+          <li><strong>Edit</strong> — редактирование изображений с настройкой яркости, контраста, насыщенности, оттенка, экспозиции и вибрации.</li>
+          <li><strong>Video Edit</strong> — редактирование видео с инструментами:
+            <ul>
+              <li><strong>Trim</strong> — обрезка начала/конца и вырезание сегментов из середины;</li>
+              <li><strong>Crop</strong> — кадрирование видео;</li>
+              <li><strong>Rotate</strong> — поворот на 90°, 180° или 270°;</li>
+              <li><strong>Flip</strong> — отражение по горизонтали или вертикали;</li>
+              <li><strong>Speed</strong> — изменение скорости (0.25x - 2.0x);</li>
+              <li><strong>Mute</strong> — отключение звука;</li>
+              <li><strong>Reset</strong> — сброс всех изменений.</li>
+            </ul>
+          </li>
         </ul>
         <h3>Прочее</h3>
         <ul>
@@ -955,7 +971,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=0.2.0-rc7"></script>
-  <script src="video-edit.js?v=0.2.0-rc7"></script>
+  <script src="app.js?v=0.3.2"></script>
+  <script src="video-edit.js?v=0.3.2"></script>
 </body>
 </html>
