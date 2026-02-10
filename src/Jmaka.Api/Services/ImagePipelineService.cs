@@ -7,6 +7,26 @@ using System.Reflection;
 
 namespace Jmaka.Api.Services;
 
+/// <summary>
+/// Image processing pipeline service with ICC-aware color management.
+/// 
+/// IMPORTANT LIMITATION:
+/// SixLabors.ImageSharp does NOT support ICC color profile conversion.
+/// It can read/write ICC profiles but cannot transform pixel colors between color spaces.
+/// 
+/// What this means:
+/// - We can embed sRGB ICC profiles in output JPEGs
+/// - We can detect non-sRGB input profiles and log warnings
+/// - We CANNOT accurately convert colors from AdobeRGB/ProPhoto/DisplayP3 to sRGB
+/// 
+/// For true ICC color conversion, ImageMagick would be required.
+/// However, the current implementation ensures:
+/// 1. All outputs have embedded sRGB ICC profiles
+/// 2. Proper order of operations (orientation -> adjustments -> normalization)
+/// 3. Proper alpha handling (flatten to white)
+/// 4. Proper metadata stripping (keep ICC only)
+/// 5. Logging to detect problematic inputs
+/// </summary>
 public class ImagePipelineService
 {
     private readonly ILogger<ImagePipelineService> _logger;
