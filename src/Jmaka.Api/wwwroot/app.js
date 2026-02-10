@@ -4807,21 +4807,11 @@ if (imageEditRefreshTop) imageEditRefreshTop.addEventListener('click', () => loa
 if (imageEditApplyBtn) {
   imageEditApplyBtn.addEventListener('click', async (e) => {
     e.preventDefault();
-    if (!imageEditState.open || !imageEditState.storedName) return;
-    const payload = getImageEditPayload();
-    if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+    if (!imageEditState.open) return;
     imageEditApplyBtn.disabled = true;
     try {
-      const res = await fetch(toAbsoluteUrl('image-edit-apply'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data && data.error ? data.error : 'apply failed');
-      if (imageEditHint) imageEditHint.textContent = 'Готово.';
+      await saveImageEdit();
       await loadComposites();
-      await loadImageEditList();
       imageEditApplyBtn.disabled = false;
     } catch (err) {
       if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
