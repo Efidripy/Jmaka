@@ -348,7 +348,7 @@
           return;
         }
         state.storedName = item.storedName;
-        setHint('Выберите отрезки и нажмите Save.');
+        setHint('Выберите отрезки на таймлайне и нажмите Сделать.');
         if (videoEditSave) videoEditSave.disabled = false;
         renderVideoLists();
       });
@@ -433,7 +433,7 @@
 
   function openModal() {
     videoEditModal.hidden = false;
-    setHint('Загрузите видео и выберите один или несколько отрезков.');
+    setHint('Загрузите видео и перетащите границы на таймлайне.');
     loadVideoHistory();
     renderAll();
   }
@@ -662,7 +662,7 @@
           videoEditPreview.src = url;
           timelinePreviewState.dirty = true;
         }
-        setHint('Видео загружено. Выберите отрезки и нажмите Save.');
+        setHint('Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.');
         await loadVideoHistory();
         renderOutputControls();
       } catch (err) {
