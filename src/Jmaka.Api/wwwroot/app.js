@@ -4602,8 +4602,18 @@ async function loadImageEditBase(url) {
     img.src = url;
   });
 
-  const maxWidth = 1280;
-  const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+  // Limit to reasonable size but consider both dimensions
+  const maxDimension = 1280;
+  let scale = 1;
+  
+  // Scale down if either dimension exceeds the maximum
+  if (img.width > maxDimension || img.height > maxDimension) {
+    const widthScale = maxDimension / img.width;
+    const heightScale = maxDimension / img.height;
+    // Use the smaller scale to ensure both dimensions fit
+    scale = Math.min(widthScale, heightScale);
+  }
+  
   const width = Math.round(img.width * scale);
   const height = Math.round(img.height * scale);
   imageEditCanvas.width = width;
@@ -4806,3 +4816,48 @@ if (imageEditApplyBtn) {
     }
   });
 }
+
+// Initialize preset buttons
+if (imageEditPresetBtns && imageEditPresetBtns.length > 0) {
+  for (const btn of imageEditPresetBtns) {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const preset = btn.dataset.preset;
+      if (preset) {
+        applyPreset(preset);
+      }
+    });
+  }
+}
+
+// Initialize compare button
+if (imageEditCompareBtn) {
+  imageEditCompareBtn.addEventListener('mousedown', () => {
+    imageEditState.compare = true;
+    scheduleImageEditRender();
+  });
+  imageEditCompareBtn.addEventListener('mouseup', () => {
+    imageEditState.compare = false;
+    scheduleImageEditRender();
+  });
+  imageEditCompareBtn.addEventListener('mouseleave', () => {
+    imageEditState.compare = false;
+    scheduleImageEditRender();
+  });
+  imageEditCompareBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    imageEditState.compare = true;
+    scheduleImageEditRender();
+  });
+  imageEditCompareBtn.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    imageEditState.compare = false;
+    scheduleImageEditRender();
+  });
+}
+
+// Initialize sliders
+initImageEditSliders();
+
+// Initialize panel collapsing
+updatePanelCollapsing();
