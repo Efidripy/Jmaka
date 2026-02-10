@@ -13,7 +13,7 @@
   const videoProcessedList = document.getElementById('videoProcessedList');
   const videoTimelineStrip = document.getElementById('videoTimelineStrip');
   const videoTimelineCanvas = document.getElementById('videoTimelineCanvas');
-  const videoTimelineSelection = document.getElementById('videoTimelineSelection');
+  const videoTimelineSegments = document.getElementById('videoTimelineSegments');
   const videoTimelinePlayhead = document.getElementById('videoTimelinePlayhead');
   const videoTrimStartLabel = document.getElementById('videoTrimStartLabel');
   const videoTrimEndLabel = document.getElementById('videoTrimEndLabel');
@@ -33,6 +33,9 @@
   const videoCropOverlay = document.getElementById('videoCropOverlay');
   const videoCropRect = document.getElementById('videoCropRect');
   const videoProcessingOverlay = document.getElementById('videoProcessingOverlay');
+  const videoAddSegment = document.getElementById('videoAddSegment');
+  const videoRemoveSegment = document.getElementById('videoRemoveSegment');
+  const videoSegmentsInfo = document.getElementById('videoSegmentsInfo');
 
   const toolButtons = Array.from(videoEditModal.querySelectorAll('[data-tool]'));
   const toolPanels = Array.from(videoEditModal.querySelectorAll('[data-tool-panel]'));
@@ -44,6 +47,7 @@
     duration: 0,
     trim: { start: 0, end: 0 },
     segments: [{ start: 0, end: 0 }],
+    activeSegmentIndex: 0,
     crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
     rotateDeg: 0,
     flipH: false,
@@ -58,9 +62,7 @@
   let processed = [];
   let timelineDrag = null;
 
-  function clamp(value, min, max) {
-    return Math.min(Math.max(value, min), max);
-  }
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
   function formatTime(seconds) {
     if (!Number.isFinite(seconds)) return '00:00';
@@ -71,29 +73,50 @@
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${tenths}`;
   }
 
+  function normalizeSegments() {
+    const duration = state.duration || 0;
+    const minGap = 0.1;
+    const normalized = [];
+    for (const seg of state.segments) {
+      const start = clamp(Number(seg.start || 0), 0, duration);
+      const end = clamp(Number(seg.end || 0), 0, duration);
+      if (end - start >= minGap) normalized.push({ start, end });
+    }
+    normalized.sort((a, b) => a.start - b.start);
+    const merged = [];
+    for (const seg of normalized) {
+      if (merged.length === 0) {
+        merged.push(seg);
+        continue;
+      }
+      const prev = merged[merged.length - 1];
+      if (seg.start <= prev.end + 0.05) {
+        prev.end = Math.max(prev.end, seg.end);
+      } else {
+        merged.push(seg);
+      }
+    }
+    state.segments = merged.length > 0 ? merged : [{ start: 0, end: duration }];
+    state.activeSegmentIndex = clamp(state.activeSegmentIndex, 0, state.segments.length - 1);
+    state.trim = { ...state.segments[state.activeSegmentIndex] };
+  }
+
   function setHint(text) {
     if (videoEditHint) videoEditHint.textContent = text;
   }
 
   function setProcessing(isProcessing) {
-    if (videoProcessingOverlay) videoProcessingOverlay.hidden = !isProcessing;
+    if (videoProcessingOverlay) videoProcessingOverlay.classList.toggle('is-active', !!isProcessing);
     if (videoEditSave) videoEditSave.disabled = isProcessing || !state.storedName;
   }
 
-  function setTool(tool) {
-    state.tool = tool;
-    renderToolState();
-  }
-
   function renderToolState() {
-    toolButtons.forEach((btn) => {
-      btn.classList.toggle('is-active', btn.dataset.tool === state.tool);
-    });
-    toolPanels.forEach((panel) => {
-      panel.hidden = panel.dataset.toolPanel !== state.tool;
-    });
-    if (videoCropOverlay) {
-      videoCropOverlay.hidden = state.tool !== 'crop';
+    toolButtons.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.tool === state.tool));
+    toolPanels.forEach((panel) => { panel.hidden = panel.dataset.toolPanel !== state.tool; });
+    if (videoCropOverlay) videoCropOverlay.hidden = state.tool !== 'crop';
+    if (videoSegmentsInfo) {
+      const n = state.segments.length;
+      videoSegmentsInfo.textContent = `${n} segment${n === 1 ? '' : 's'}`;
     }
   }
 
@@ -103,9 +126,7 @@
     const flipY = state.flipV ? -1 : 1;
     videoEditPreview.style.transform = `rotate(${state.rotateDeg}deg) scale(${flipX}, ${flipY})`;
     videoEditPreview.playbackRate = state.speed;
-    if (videoSpeedValue) {
-      videoSpeedValue.textContent = `${state.speed.toFixed(1)}x`;
-    }
+    if (videoSpeedValue) videoSpeedValue.textContent = `${state.speed.toFixed(1)}x`;
   }
 
   function renderCropRect() {
@@ -113,64 +134,42 @@
     const bounds = videoEditPreview.getBoundingClientRect();
     const overlayBounds = videoCropOverlay.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return;
-    const offsetLeft = bounds.left - overlayBounds.left;
-    const offsetTop = bounds.top - overlayBounds.top;
-    const left = offsetLeft + state.crop.x * bounds.width;
-    const top = offsetTop + state.crop.y * bounds.height;
-    const width = state.crop.w * bounds.width;
-    const height = state.crop.h * bounds.height;
+    const left = (bounds.left - overlayBounds.left) + state.crop.x * bounds.width;
+    const top = (bounds.top - overlayBounds.top) + state.crop.y * bounds.height;
     videoCropRect.style.left = `${left}px`;
     videoCropRect.style.top = `${top}px`;
-    videoCropRect.style.width = `${width}px`;
-    videoCropRect.style.height = `${height}px`;
-  }
-
-  function updateTrim(start, end) {
-    const duration = state.duration || 0;
-    const safeStart = clamp(start, 0, duration);
-    const safeEnd = clamp(end, 0, duration);
-    const minGap = 0.1;
-    if (safeEnd - safeStart < minGap) {
-      if (timelineDrag && timelineDrag.type === 'start') {
-        state.trim.start = clamp(safeEnd - minGap, 0, duration);
-        state.trim.end = safeEnd;
-      } else {
-        state.trim.start = safeStart;
-        state.trim.end = clamp(safeStart + minGap, 0, duration);
-      }
-    } else {
-      state.trim.start = safeStart;
-      state.trim.end = safeEnd;
-    }
-    state.segments[0] = { start: state.trim.start, end: state.trim.end };
-    renderTimeline();
+    videoCropRect.style.width = `${state.crop.w * bounds.width}px`;
+    videoCropRect.style.height = `${state.crop.h * bounds.height}px`;
   }
 
   function renderTimeline() {
-    if (!videoTimelineStrip || !videoTimelineSelection) return;
+    if (!videoTimelineStrip || !videoTimelineSegments) return;
     const rect = videoTimelineStrip.getBoundingClientRect();
-    if (!rect.width) return;
     const duration = state.duration || 0;
-    const startPct = duration ? state.trim.start / duration : 0;
-    const endPct = duration ? state.trim.end / duration : 0;
-    const leftPx = startPct * rect.width;
-    const rightPx = endPct * rect.width;
-    videoTimelineSelection.style.left = `${leftPx}px`;
-    videoTimelineSelection.style.width = `${Math.max(0, rightPx - leftPx)}px`;
-    if (videoTrimStartLabel) videoTrimStartLabel.textContent = formatTime(state.trim.start);
-    if (videoTrimEndLabel) videoTrimEndLabel.textContent = formatTime(state.trim.end);
+    videoTimelineSegments.innerHTML = '';
+    if (rect.width > 0 && duration > 0) {
+      state.segments.forEach((seg, index) => {
+        const startPct = seg.start / duration;
+        const endPct = seg.end / duration;
+        const node = document.createElement('div');
+        node.className = 'timeline-selection';
+        if (index === state.activeSegmentIndex) node.classList.add('is-active');
+        node.dataset.index = String(index);
+        node.style.left = `${startPct * rect.width}px`;
+        node.style.width = `${Math.max(0, (endPct - startPct) * rect.width)}px`;
+        node.innerHTML = '<span class="timeline-handle start" data-handle="start"></span><span class="timeline-handle end" data-handle="end"></span>';
+        videoTimelineSegments.appendChild(node);
+      });
+    }
+
+    const active = state.segments[state.activeSegmentIndex] || { start: 0, end: 0 };
+    if (videoTrimStartLabel) videoTrimStartLabel.textContent = formatTime(active.start);
+    if (videoTrimEndLabel) videoTrimEndLabel.textContent = formatTime(active.end);
     if (videoDuration) videoDuration.textContent = formatTime(duration);
+
     drawFilmstrip();
     renderPlayhead();
-  }
-
-  function renderPlayhead() {
-    if (!videoTimelinePlayhead || !videoTimelineStrip || !videoEditPreview) return;
-    const rect = videoTimelineStrip.getBoundingClientRect();
-    if (!rect.width || !state.duration) return;
-    const pct = clamp(videoEditPreview.currentTime / state.duration, 0, 1);
-    videoTimelinePlayhead.style.left = `${pct * rect.width}px`;
-    if (videoCurrentTime) videoCurrentTime.textContent = formatTime(videoEditPreview.currentTime);
+    renderToolState();
   }
 
   function drawFilmstrip() {
@@ -198,16 +197,23 @@
     }
   }
 
+  function renderPlayhead() {
+    if (!videoTimelinePlayhead || !videoTimelineStrip || !videoEditPreview || !state.duration) return;
+    const rect = videoTimelineStrip.getBoundingClientRect();
+    const pct = clamp(videoEditPreview.currentTime / state.duration, 0, 1);
+    videoTimelinePlayhead.style.left = `${pct * rect.width}px`;
+    if (videoCurrentTime) videoCurrentTime.textContent = formatTime(videoEditPreview.currentTime);
+  }
+
   function renderOutputControls() {
-    outputWidthInputs.forEach((input) => {
-      input.checked = Number(input.value) === state.outputWidth;
-    });
+    outputWidthInputs.forEach((input) => { input.checked = Number(input.value) === state.outputWidth; });
     if (videoTargetSize) videoTargetSize.value = String(state.targetSizeMb);
     if (videoVerticalOffset) videoVerticalOffset.value = String(state.verticalOffsetPx);
     if (videoEditSave) videoEditSave.disabled = !state.storedName;
   }
 
   function renderAll() {
+    normalizeSegments();
     renderToolState();
     renderPlaybackState();
     renderCropRect();
@@ -240,38 +246,39 @@
     if (!videoOriginalsList || !videoProcessedList) return;
     videoOriginalsList.textContent = '';
     videoProcessedList.textContent = '';
+
     const renderItem = (item, listEl, isProcessed) => {
       const row = document.createElement('div');
       row.className = 'video-list-item';
-      if (!isProcessed && item.storedName === state.storedName) {
-        row.classList.add('is-active');
-      }
+      if (!isProcessed && item.storedName === state.storedName) row.classList.add('is-active');
       row.addEventListener('click', () => {
         if (!item.relativePath) return;
         const url = withCacheBust ? withCacheBust(item.relativePath, item.storedName) : item.relativePath;
-        if (videoEditPreview) {
-          videoEditPreview.src = url;
-        }
+        if (videoEditPreview) videoEditPreview.src = url;
         if (isProcessed) {
           setHint('Просмотр результата. Для обработки выберите оригинал.');
           return;
         }
         state.storedName = item.storedName;
-        setHint('Выберите отрезок и нажмите Save.');
+        setHint('Выберите отрезки и нажмите Save.');
         if (videoEditSave) videoEditSave.disabled = false;
+        renderVideoLists();
       });
+
       const thumb = document.createElement('div');
       thumb.className = 'video-thumb';
       thumb.textContent = 'MP4';
+
       const meta = document.createElement('div');
       meta.className = 'video-list-meta';
       const name = document.createElement('div');
       name.textContent = item.originalName || item.storedName || 'video';
-      const details = document.createElement('div');
       const duration = Number(item.durationSeconds || 0);
+      const details = document.createElement('div');
       details.textContent = `${formatTime(duration)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}`;
       meta.appendChild(name);
       meta.appendChild(details);
+
       const actions = document.createElement('div');
       actions.className = 'video-list-actions';
       if (item.relativePath) {
@@ -283,6 +290,7 @@
         dl.addEventListener('click', (event) => event.stopPropagation());
         actions.appendChild(dl);
       }
+
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'btn small';
@@ -309,37 +317,30 @@
         await loadVideoHistory();
       });
       actions.appendChild(del);
+
       row.appendChild(thumb);
       row.appendChild(meta);
       row.appendChild(actions);
       listEl.appendChild(row);
     };
 
-    if (originals.length === 0) {
-      videoOriginalsList.textContent = 'Нет загрузок.';
-    } else {
-      originals.forEach((item) => renderItem(item, videoOriginalsList, false));
-    }
+    if (originals.length === 0) videoOriginalsList.textContent = 'Нет загрузок.';
+    else originals.forEach((item) => renderItem(item, videoOriginalsList, false));
 
-    if (processed.length === 0) {
-      videoProcessedList.textContent = 'Пока нет результатов.';
-    } else {
-      processed.forEach((item) => renderItem(item, videoProcessedList, true));
-    }
+    if (processed.length === 0) videoProcessedList.textContent = 'Пока нет результатов.';
+    else processed.forEach((item) => renderItem(item, videoProcessedList, true));
   }
 
   function openModal() {
     videoEditModal.hidden = false;
-    setHint('Загрузите видео и выберите отрезок.');
+    setHint('Загрузите видео и выберите один или несколько отрезков.');
     loadVideoHistory();
     renderAll();
   }
 
   function closeModal() {
     videoEditModal.hidden = true;
-    if (videoEditPreview) {
-      videoEditPreview.pause();
-    }
+    if (videoEditPreview) videoEditPreview.pause();
   }
 
   function timelinePointerToTime(clientX) {
@@ -350,20 +351,25 @@
   }
 
   function handleTimelinePointerDown(event) {
-    if (!videoTimelineStrip) return;
-    const target = event.target;
-    if (target && target.dataset && target.dataset.handle) {
-      timelineDrag = { type: target.dataset.handle };
-    } else if (target === videoTimelineSelection) {
+    if (!videoTimelineStrip || !videoTimelineSegments) return;
+    const selection = event.target.closest('.timeline-selection');
+    const index = selection ? Number(selection.dataset.index) : -1;
+    if (index >= 0) state.activeSegmentIndex = index;
+
+    if (event.target.dataset && event.target.dataset.handle && index >= 0) {
+      timelineDrag = { type: event.target.dataset.handle, index };
+    } else if (selection && index >= 0) {
       const clickTime = timelinePointerToTime(event.clientX);
       timelineDrag = {
         type: 'range',
-        offset: clickTime - state.trim.start,
-        length: state.trim.end - state.trim.start
+        index,
+        offset: clickTime - state.segments[index].start,
+        length: state.segments[index].end - state.segments[index].start
       };
     } else {
       timelineDrag = { type: 'playhead' };
     }
+
     handleTimelinePointerMove(event);
     window.addEventListener('pointermove', handleTimelinePointerMove);
     window.addEventListener('pointerup', handleTimelinePointerUp);
@@ -372,17 +378,29 @@
   function handleTimelinePointerMove(event) {
     if (!timelineDrag) return;
     const time = timelinePointerToTime(event.clientX);
+    const minGap = 0.1;
+
+    if (timelineDrag.type === 'playhead') {
+      if (videoEditPreview) videoEditPreview.currentTime = time;
+      renderPlayhead();
+      return;
+    }
+
+    const seg = state.segments[timelineDrag.index];
+    if (!seg) return;
+
     if (timelineDrag.type === 'start') {
-      updateTrim(time, state.trim.end);
+      seg.start = clamp(time, 0, seg.end - minGap);
     } else if (timelineDrag.type === 'end') {
-      updateTrim(state.trim.start, time);
+      seg.end = clamp(time, seg.start + minGap, state.duration);
     } else if (timelineDrag.type === 'range') {
       const start = clamp(time - timelineDrag.offset, 0, state.duration - timelineDrag.length);
-      updateTrim(start, start + timelineDrag.length);
-    } else if (timelineDrag.type === 'playhead' && videoEditPreview) {
-      videoEditPreview.currentTime = time;
-      renderPlayhead();
+      seg.start = start;
+      seg.end = start + timelineDrag.length;
     }
+
+    normalizeSegments();
+    renderTimeline();
   }
 
   function handleTimelinePointerUp() {
@@ -391,38 +409,54 @@
     window.removeEventListener('pointerup', handleTimelinePointerUp);
   }
 
+  function addSegment() {
+    const duration = state.duration || 0;
+    if (!duration) return;
+    const maxSegments = 20;
+    if (state.segments.length >= maxSegments) return;
+    const active = state.segments[state.activeSegmentIndex] || { start: 0, end: duration };
+    const len = Math.max(0.5, Math.min(5, (active.end - active.start) / 2));
+    const start = clamp(active.end + 0.2, 0, Math.max(0, duration - len));
+    state.segments.push({ start, end: start + len });
+    state.activeSegmentIndex = state.segments.length - 1;
+    normalizeSegments();
+    renderTimeline();
+  }
+
+  function removeSegment() {
+    if (state.segments.length <= 1) return;
+    state.segments.splice(state.activeSegmentIndex, 1);
+    state.activeSegmentIndex = clamp(state.activeSegmentIndex, 0, state.segments.length - 1);
+    normalizeSegments();
+    renderTimeline();
+  }
+
   function handleCropPointerDown(event) {
     if (!videoCropRect || state.tool !== 'crop') return;
     const handle = event.target.dataset && event.target.dataset.handle;
-    const rect = videoCropRect.getBoundingClientRect();
     const startX = event.clientX;
     const startY = event.clientY;
     const startState = { ...state.crop };
     const bounds = videoEditPreview.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return;
+
     const move = (moveEvent) => {
       const dx = (moveEvent.clientX - startX) / bounds.width;
       const dy = (moveEvent.clientY - startY) / bounds.height;
       if (!handle) {
-        const nextX = clamp(startState.x + dx, 0, 1 - startState.w);
-        const nextY = clamp(startState.y + dy, 0, 1 - startState.h);
-        state.crop.x = nextX;
-        state.crop.y = nextY;
+        state.crop.x = clamp(startState.x + dx, 0, 1 - startState.w);
+        state.crop.y = clamp(startState.y + dy, 0, 1 - startState.h);
       } else {
         let nextX = startState.x;
         let nextY = startState.y;
         let nextW = startState.w;
         let nextH = startState.h;
-        if (handle.includes('r')) {
-          nextW = clamp(startState.w + dx, 0.1, 1 - startState.x);
-        }
+        if (handle.includes('r')) nextW = clamp(startState.w + dx, 0.1, 1 - startState.x);
         if (handle.includes('l')) {
           nextX = clamp(startState.x + dx, 0, startState.x + startState.w - 0.1);
           nextW = startState.w - (nextX - startState.x);
         }
-        if (handle.includes('b')) {
-          nextH = clamp(startState.h + dy, 0.1, 1 - startState.y);
-        }
+        if (handle.includes('b')) nextH = clamp(startState.h + dy, 0.1, 1 - startState.y);
         if (handle.includes('t')) {
           nextY = clamp(startState.y + dy, 0, startState.y + startState.h - 0.1);
           nextH = startState.h - (nextY - startState.y);
@@ -431,134 +465,78 @@
       }
       renderCropRect();
     };
+
     const stop = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', stop);
     };
+
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', stop);
   }
 
-  if (videoEditToolBtn) {
-    videoEditToolBtn.addEventListener('click', (event) => {
-      event.preventDefault();
-      openModal();
-    });
-  }
-
+  if (videoEditToolBtn) videoEditToolBtn.addEventListener('click', (e) => { e.preventDefault(); openModal(); });
   if (videoEditCloseBtn) videoEditCloseBtn.addEventListener('click', closeModal);
   if (videoEditCancelBtn) videoEditCancelBtn.addEventListener('click', closeModal);
-  if (videoEditModal) {
-    videoEditModal.addEventListener('click', (event) => {
-      const t = event.target;
-      if (t && t.dataset && t.dataset.close) closeModal();
-    });
-  }
-
-  toolButtons.forEach((btn) => {
-    btn.addEventListener('click', () => setTool(btn.dataset.tool));
+  if (videoEditModal) videoEditModal.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.close) closeModal();
   });
 
-  if (videoRotateCw) {
-    videoRotateCw.addEventListener('click', () => {
-      state.rotateDeg = (state.rotateDeg + 90) % 360;
-      renderPlaybackState();
-    });
-  }
-  if (videoRotateCcw) {
-    videoRotateCcw.addEventListener('click', () => {
-      state.rotateDeg = (state.rotateDeg - 90 + 360) % 360;
-      renderPlaybackState();
-    });
-  }
-  if (videoRotateReset) {
-    videoRotateReset.addEventListener('click', () => {
-      state.rotateDeg = 0;
-      renderPlaybackState();
-    });
-  }
-  if (videoFlipH) {
-    videoFlipH.addEventListener('click', () => {
-      state.flipH = !state.flipH;
-      renderPlaybackState();
-    });
-  }
-  if (videoFlipV) {
-    videoFlipV.addEventListener('click', () => {
-      state.flipV = !state.flipV;
-      renderPlaybackState();
-    });
-  }
+  toolButtons.forEach((btn) => btn.addEventListener('click', () => { state.tool = btn.dataset.tool; renderToolState(); }));
+  if (videoAddSegment) videoAddSegment.addEventListener('click', addSegment);
+  if (videoRemoveSegment) videoRemoveSegment.addEventListener('click', removeSegment);
 
-  if (videoSpeedRange) {
-    videoSpeedRange.addEventListener('input', () => {
-      state.speed = Number(videoSpeedRange.value);
-      renderPlaybackState();
-    });
-  }
+  if (videoRotateCw) videoRotateCw.addEventListener('click', () => { state.rotateDeg = (state.rotateDeg + 90) % 360; renderPlaybackState(); });
+  if (videoRotateCcw) videoRotateCcw.addEventListener('click', () => { state.rotateDeg = (state.rotateDeg - 90 + 360) % 360; renderPlaybackState(); });
+  if (videoRotateReset) videoRotateReset.addEventListener('click', () => { state.rotateDeg = 0; renderPlaybackState(); });
+  if (videoFlipH) videoFlipH.addEventListener('click', () => { state.flipH = !state.flipH; renderPlaybackState(); });
+  if (videoFlipV) videoFlipV.addEventListener('click', () => { state.flipV = !state.flipV; renderPlaybackState(); });
 
-  outputWidthInputs.forEach((input) => {
-    input.addEventListener('change', () => {
-      state.outputWidth = Number(input.value);
-      renderOutputControls();
-    });
+  if (videoSpeedRange) videoSpeedRange.addEventListener('input', () => {
+    state.speed = Number(videoSpeedRange.value);
+    renderPlaybackState();
   });
 
-  if (videoTargetSize) {
-    videoTargetSize.addEventListener('change', () => {
-      state.targetSizeMb = Number(videoTargetSize.value) || 5;
-      renderOutputControls();
-    });
-  }
+  outputWidthInputs.forEach((input) => input.addEventListener('change', () => {
+    state.outputWidth = Number(input.value);
+    renderOutputControls();
+  }));
 
-  if (videoVerticalOffset) {
-    videoVerticalOffset.addEventListener('change', () => {
-      state.verticalOffsetPx = Number(videoVerticalOffset.value) || 0;
-      renderOutputControls();
-    });
-  }
+  if (videoTargetSize) videoTargetSize.addEventListener('change', () => {
+    state.targetSizeMb = Number(videoTargetSize.value) || 5;
+    renderOutputControls();
+  });
+
+  if (videoVerticalOffset) videoVerticalOffset.addEventListener('change', () => {
+    state.verticalOffsetPx = Number(videoVerticalOffset.value) || 0;
+    renderOutputControls();
+  });
 
   if (videoPlayToggle && videoEditPreview) {
     videoPlayToggle.addEventListener('click', () => {
-      if (videoEditPreview.paused) {
-        videoEditPreview.play();
-      } else {
-        videoEditPreview.pause();
-      }
+      if (videoEditPreview.paused) videoEditPreview.play();
+      else videoEditPreview.pause();
     });
-    videoEditPreview.addEventListener('play', () => {
-      videoPlayToggle.textContent = '⏸';
-    });
-    videoEditPreview.addEventListener('pause', () => {
-      videoPlayToggle.textContent = '▶';
-    });
+    videoEditPreview.addEventListener('play', () => { videoPlayToggle.textContent = '⏸'; });
+    videoEditPreview.addEventListener('pause', () => { videoPlayToggle.textContent = '▶'; });
   }
 
   if (videoEditPreview) {
     videoEditPreview.addEventListener('loadedmetadata', () => {
       state.duration = Number(videoEditPreview.duration) || 0;
-      state.trim = { start: 0, end: state.duration };
-      state.segments = [{ ...state.trim }];
+      state.segments = [{ start: 0, end: state.duration }];
+      state.activeSegmentIndex = 0;
+      state.trim = { ...state.segments[0] };
       renderTimeline();
       renderCropRect();
     });
     videoEditPreview.addEventListener('timeupdate', renderPlayhead);
   }
 
-  if (videoTimelineStrip) {
-    videoTimelineStrip.addEventListener('pointerdown', handleTimelinePointerDown);
-  }
-
-  if (videoCropRect) {
-    videoCropRect.addEventListener('pointerdown', handleCropPointerDown);
-  }
-
-  if (videoHistoryRefresh) {
-    videoHistoryRefresh.addEventListener('click', (event) => {
-      event.preventDefault();
-      loadVideoHistory();
-    });
-  }
+  if (videoTimelineStrip) videoTimelineStrip.addEventListener('pointerdown', handleTimelinePointerDown);
+  if (videoCropRect) videoCropRect.addEventListener('pointerdown', handleCropPointerDown);
+  if (videoHistoryRefresh) videoHistoryRefresh.addEventListener('click', (e) => { e.preventDefault(); loadVideoHistory(); });
 
   if (videoUploadInput) {
     videoUploadInput.addEventListener('change', async () => {
@@ -570,18 +548,14 @@
       try {
         const res = await fetchWithFallback('upload-video', { method: 'POST', body: form });
         let data;
-        try {
-          data = await res.json();
-        } catch {
-          data = null;
-        }
+        try { data = await res.json(); } catch { data = null; }
         if (!res.ok) throw new Error(data && data.error ? data.error : 'upload failed');
         state.storedName = data.storedName;
         if (videoEditPreview && data.relativePath) {
           const url = withCacheBust ? withCacheBust(data.relativePath, data.storedName) : data.relativePath;
           videoEditPreview.src = url;
         }
-        setHint('Видео загружено. Отметьте отрезок и нажмите Save.');
+        setHint('Видео загружено. Выберите отрезки и нажмите Save.');
         await loadVideoHistory();
         renderOutputControls();
       } catch (err) {
@@ -593,16 +567,19 @@
   if (videoEditSave) {
     videoEditSave.addEventListener('click', async () => {
       if (!state.storedName) return;
+      normalizeSegments();
       const payload = {
         storedName: state.storedName,
-        trimStartSec: state.trim.start,
-        trimEndSec: state.trim.end,
+        trimStartSec: state.segments[0]?.start ?? 0,
+        trimEndSec: state.segments[state.segments.length - 1]?.end ?? 0,
         cutStartSec: null,
         cutEndSec: null,
         outputWidth: state.outputWidth,
         targetSizeMb: state.targetSizeMb,
-        verticalOffsetPx: state.verticalOffsetPx
+        verticalOffsetPx: state.verticalOffsetPx,
+        segments: state.segments.map((x) => ({ startSec: x.start, endSec: x.end }))
       };
+
       setProcessing(true);
       setHint('Обрабатываю видео...');
       try {
@@ -612,15 +589,14 @@
           body: JSON.stringify(payload)
         });
         let data;
-        try {
-          data = await res.json();
-        } catch {
-          data = null;
-        }
+        try { data = await res.json(); } catch { data = null; }
         if (!res.ok) throw new Error(data && data.error ? data.error : 'process failed');
+
         if (videoEditPreview && data.relativePath) {
-          videoEditPreview.src = withCacheBust ? withCacheBust(data.relativePath, state.storedName) : data.relativePath;
+          const cacheKey = data.storedName || state.storedName;
+          videoEditPreview.src = withCacheBust ? withCacheBust(data.relativePath, cacheKey) : data.relativePath;
         }
+
         setHint('Готово. Результат появился в Processed.');
         await loadVideoHistory();
       } catch (err) {
@@ -631,9 +607,10 @@
     });
   }
 
-  renderAll();
   window.addEventListener('resize', () => {
     renderCropRect();
     renderTimeline();
   });
+
+  renderAll();
 })();

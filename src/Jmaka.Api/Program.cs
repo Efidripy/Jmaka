@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.FileProviders;
 using SixLabors.ImageSharp;
@@ -1884,10 +1885,6 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         return Results.BadRequest(new { error = "invalid trim range" });
     }
 
-    var cutStart = req.CutStartSec ?? 0;
-    var cutEnd = req.CutEndSec ?? 0;
-    var hasMiddleCut = cutEnd > cutStart && cutStart > trimStart && cutEnd < trimEnd;
-
     var targetWidth = req.OutputWidth is 720 or 1280 ? req.OutputWidth : 1280;
     var targetHeight = (int)Math.Round(targetWidth * 9.0 / 16.0);
     var verticalOffset = Math.Clamp(req.VerticalOffsetPx, -targetHeight, targetHeight);
@@ -1897,17 +1894,78 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
 
     string filter;
     double outputDuration;
-    if (hasMiddleCut)
+
+    static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    var requestedSegments = (req.Segments ?? Array.Empty<VideoProcessSegment>())
+        .Select(x => new { Start = Math.Max(0, x.StartSec), End = Math.Min(duration, x.EndSec) })
+        .Where(x => x.End - x.Start >= 0.1)
+        .OrderBy(x => x.Start)
+        .ToList();
+
+    var mergedSegments = new List<(double Start, double End)>();
+    foreach (var seg in requestedSegments)
     {
-        filter = $"[0:v]trim=start={trimStart}:end={cutStart},setpts=PTS-STARTPTS[v0];" +
-                 $"[0:v]trim=start={cutEnd}:end={trimEnd},setpts=PTS-STARTPTS[v1];" +
-                 $"[v0][v1]concat=n=2:v=1:a=0,{scalePad}[v]";
-        outputDuration = (cutStart - trimStart) + (trimEnd - cutEnd);
+        if (mergedSegments.Count == 0)
+        {
+            mergedSegments.Add((seg.Start, seg.End));
+            continue;
+        }
+
+        var last = mergedSegments[^1];
+        if (seg.Start <= last.End + 0.05)
+        {
+            mergedSegments[^1] = (last.Start, Math.Max(last.End, seg.End));
+        }
+        else
+        {
+            mergedSegments.Add((seg.Start, seg.End));
+        }
+    }
+
+    if (mergedSegments.Count == 0)
+    {
+        // Legacy single range/cut behavior fallback
+        var cutStart = req.CutStartSec ?? 0;
+        var cutEnd = req.CutEndSec ?? 0;
+        var hasMiddleCut = cutEnd > cutStart && cutStart > trimStart && cutEnd < trimEnd;
+
+        if (hasMiddleCut)
+        {
+            filter = $"[0:v]trim=start={F(trimStart)}:end={F(cutStart)},setpts=PTS-STARTPTS[v0];" +
+                     $"[0:v]trim=start={F(cutEnd)}:end={F(trimEnd)},setpts=PTS-STARTPTS[v1];" +
+                     $"[v0][v1]concat=n=2:v=1:a=0,{scalePad}[v]";
+            outputDuration = (cutStart - trimStart) + (trimEnd - cutEnd);
+        }
+        else
+        {
+            filter = $"[0:v]trim=start={F(trimStart)}:end={F(trimEnd)},setpts=PTS-STARTPTS,{scalePad}[v]";
+            outputDuration = trimEnd - trimStart;
+        }
+    }
+    else if (mergedSegments.Count == 1)
+    {
+        var seg = mergedSegments[0];
+        filter = $"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS,{scalePad}[v]";
+        outputDuration = seg.End - seg.Start;
     }
     else
     {
-        filter = $"[0:v]trim=start={trimStart}:end={trimEnd},setpts=PTS-STARTPTS,{scalePad}[v]";
-        outputDuration = trimEnd - trimStart;
+        var sb = new StringBuilder();
+        for (var i = 0; i < mergedSegments.Count; i++)
+        {
+            var seg = mergedSegments[i];
+            sb.Append($"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS[v{i}];");
+        }
+
+        for (var i = 0; i < mergedSegments.Count; i++)
+        {
+            sb.Append($"[v{i}]");
+        }
+        sb.Append($"concat=n={mergedSegments.Count}:v=1:a=0,{scalePad}[v]");
+
+        filter = sb.ToString();
+        outputDuration = mergedSegments.Sum(x => x.End - x.Start);
     }
 
     if (outputDuration <= 0.5)
@@ -2670,7 +2728,13 @@ record VideoProcessRequest(
     double? CutEndSec,
     int OutputWidth,
     double TargetSizeMb,
-    double VerticalOffsetPx
+    double VerticalOffsetPx,
+    VideoProcessSegment[]? Segments
+);
+
+record VideoProcessSegment(
+    double StartSec,
+    double EndSec
 );
 
 record ProcessResult(bool Success, string Output, string Error);
