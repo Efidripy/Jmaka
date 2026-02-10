@@ -419,9 +419,8 @@ const imageEditCanvas = document.getElementById('imageEditCanvas');
 const imageEditOriginal = document.getElementById('imageEditOriginal');
 const imageEditCompareBtn = document.getElementById('imageEditCompare');
 const imageEditHint = document.getElementById('imageEditHint');
-const imageEditRefreshBtn = document.getElementById('imageEditRefresh');
-const imageEditOriginalsList = document.getElementById('imageEditOriginals');
-const imageEditSavedList = document.getElementById('imageEditSaved');
+const imageEditRefreshTopBtn = document.getElementById('imageEditRefreshTop');
+const imageEditTopList = document.getElementById('imageEditTopList');
 const imageEditPresetBtns = document.querySelectorAll('.preset-btn');
 const imageEditPanelHeaders = document.querySelectorAll('.edit-panel-header');
 const imageEditSliderRows = document.querySelectorAll('.slider-row');
@@ -4622,7 +4621,7 @@ async function loadImageEditBase(url) {
 
 function selectImageEditItem(item) {
   imageEditState.selected = item;
-  imageEditState.baseUrl = item.previewUrl || item.url;
+  imageEditState.baseUrl = item.url || item.previewUrl;
   if (imageEditHint) imageEditHint.textContent = 'Настройте параметры и сохраните.';
   if (item.type === 'saved' && item.editParams) {
     imageEditState.params = cloneParams(item.editParams);
@@ -4640,10 +4639,10 @@ function selectImageEditItem(item) {
 }
 
 function updateImageListActiveState() {
-  const lists = [imageEditOriginalsList, imageEditSavedList];
+  const lists = [imageEditTopList];
   for (const list of lists) {
     if (!list) continue;
-    const items = list.querySelectorAll('.edit-image-item');
+    const items = list.querySelectorAll('[data-id]');
     items.forEach((el) => {
       const id = el.dataset.id;
       el.classList.toggle('is-active', imageEditState.selected && imageEditState.selected.id === id);
@@ -4651,46 +4650,18 @@ function updateImageListActiveState() {
   }
 }
 
-function buildImageItemElement(item) {
-  const el = document.createElement('div');
-  el.className = 'edit-image-item';
+function buildImagePickerElement(item) {
+  const el = document.createElement('button');
+  el.className = 'edit-pick-item';
+  el.type = 'button';
   el.dataset.id = item.id;
-  el.dataset.type = item.type;
 
   const thumb = document.createElement('img');
-  thumb.className = 'edit-image-thumb';
+  thumb.className = 'edit-pick-thumb';
   thumb.src = withCacheBust(item.thumbnailUrl || item.previewUrl || item.url || '', item.storedName || '');
-  thumb.alt = '';
+  thumb.alt = item.name || item.id || '';
 
-  const meta = document.createElement('div');
-  meta.className = 'edit-image-meta';
-  const name = document.createElement('span');
-  name.textContent = item.name || item.id;
-  const time = document.createElement('span');
-  time.textContent = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
-  meta.append(name, time);
-
-  const actions = document.createElement('div');
-  actions.className = 'edit-image-actions';
-  const saveBtn = document.createElement('button');
-  saveBtn.className = 'btn small';
-  saveBtn.type = 'button';
-  saveBtn.textContent = 'Save';
-  saveBtn.addEventListener('click', (event) => {
-    event.stopPropagation();
-    saveImageEdit(item);
-  });
-  const deleteBtn = document.createElement('button');
-  deleteBtn.className = 'btn small';
-  deleteBtn.type = 'button';
-  deleteBtn.textContent = 'Delete';
-  deleteBtn.addEventListener('click', (event) => {
-    event.stopPropagation();
-    deleteImageEditItem(item);
-  });
-  actions.append(saveBtn, deleteBtn);
-
-  el.append(thumb, meta, actions);
+  el.append(thumb);
   el.addEventListener('click', () => selectImageEditItem(item));
   return el;
 }
@@ -4702,16 +4673,10 @@ async function loadImageEditList() {
     if (!res.ok) throw new Error(data && data.error ? data.error : 'failed');
     imageEditState.items = Array.isArray(data) ? data : data.items || [];
 
-    if (imageEditOriginalsList) {
-      imageEditOriginalsList.innerHTML = '';
-      imageEditState.items.filter(x => x.type === 'original').forEach((item) => {
-        imageEditOriginalsList.append(buildImageItemElement(item));
-      });
-    }
-    if (imageEditSavedList) {
-      imageEditSavedList.innerHTML = '';
-      imageEditState.items.filter(x => x.type === 'saved').forEach((item) => {
-        imageEditSavedList.append(buildImageItemElement(item));
+    if (imageEditTopList) {
+      imageEditTopList.innerHTML = '';
+      imageEditState.items.forEach((item) => {
+        imageEditTopList.append(buildImagePickerElement(item));
       });
     }
     updateImageListActiveState();
@@ -4771,7 +4736,7 @@ function openImageEdit() {
   imageEditModal.hidden = false;
   imageEditState.open = true;
   resetImageEditParams();
-  if (imageEditHint) imageEditHint.textContent = 'Выберите изображение из списка справа.';
+  if (imageEditHint) imageEditHint.textContent = 'Выберите изображение из верхнего списка.';
   if (imageEditApplyBtn) imageEditApplyBtn.disabled = true;
   loadImageEditList();
 }
@@ -4798,8 +4763,8 @@ if (imageEditApplyBtn) {
   });
 }
 
-if (imageEditRefreshBtn) {
-  imageEditRefreshBtn.addEventListener('click', (e) => {
+if (imageEditRefreshTopBtn) {
+  imageEditRefreshTopBtn.addEventListener('click', (e) => {
     e.preventDefault();
     loadImageEditList();
   });
