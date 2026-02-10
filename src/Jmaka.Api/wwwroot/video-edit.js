@@ -122,7 +122,8 @@
     if (videoCropOverlay) videoCropOverlay.hidden = state.tool !== 'crop';
     if (videoSegmentsInfo) {
       const n = state.segments.length;
-      videoSegmentsInfo.textContent = `${n} ${n === 1 ? 'сегмент' : n < 5 ? 'сегмента' : 'сегментов'}`;
+      const form = (n % 10 === 1 && n % 100 !== 11) ? 'сегмент' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? 'сегмента' : 'сегментов';
+      videoSegmentsInfo.textContent = `${n} ${form}`;
     }
   }
 
