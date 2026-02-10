@@ -1918,7 +1918,7 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
     else if (req.FlipV == true) filterParts.Add("vflip");
     
     // 4. Speed
-    var speed = req.Speed.HasValue ? Math.Clamp(req.Speed.Value, 0.25, 4.0) : 1.0;
+    var speed = req.Speed.HasValue ? Math.Clamp(req.Speed.Value, 0.25, 2.0) : 1.0;
     if (Math.Abs(speed - 1.0) > 0.01)
     {
         filterParts.Add($"setpts={F(1.0 / speed)}*PTS");

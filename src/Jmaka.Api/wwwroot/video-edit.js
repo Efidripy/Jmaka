@@ -57,7 +57,7 @@
     trim: { start: 0, end: 0 },
     segments: [{ start: 0, end: 0 }],
     activeSegmentIndex: 0,
-    crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+    crop: { x: 0, y: 0, w: 1, h: 1 },
     rotateDeg: 0,
     flipH: false,
     flipV: false,
@@ -545,7 +545,7 @@
     state.segments = [{ start: 0, end: duration }];
     state.activeSegmentIndex = 0;
     state.trim = { start: 0, end: duration };
-    state.crop = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+    state.crop = { x: 0, y: 0, w: 1, h: 1 };
     state.rotateDeg = 0;
     state.flipH = false;
     state.flipV = false;
