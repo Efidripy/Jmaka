@@ -122,7 +122,7 @@
     if (videoCropOverlay) videoCropOverlay.hidden = state.tool !== 'crop';
     if (videoSegmentsInfo) {
       const n = state.segments.length;
-      videoSegmentsInfo.textContent = `${n} segment${n === 1 ? '' : 's'}`;
+      videoSegmentsInfo.textContent = `${n} ${n === 1 ? 'сегмент' : n < 5 ? 'сегмента' : 'сегментов'}`;
     }
   }
 
