@@ -1,6 +1,6 @@
 # Jmaka
 
-Версия: 0.3.0
+Версия: 0.3.2
 
 Небольшое веб-приложение на ASP.NET Core (Minimal API) для загрузки и обработки изображений/видео через простой веб-интерфейс.
 
@@ -16,7 +16,15 @@
 - OknoFix: генерация вертикальной карточки по PNG-шаблону (портретная «карточка» с рамкой/тенями).
 - OknoScale: экспериментальный режим той же карточки с изменяемой шириной окна.
 - Image Edit: серверный редактор с параметрами Brightness/Contrast/Saturation/Hue/Exposure/Vibrance (результат сохраняется как новый файл).
-- Video Edit: загрузка видео, тримминг/вырезание середины, 2‑pass сжатие в целевой размер, 16:9 кадр, H.264 без аудио.
+- Video Edit: загрузка видео с полным набором инструментов редактирования:
+  - **Trim** — тримминг и вырезание сегментов из середины видео
+  - **Crop** — кадрирование видео (нормализованные координаты 0-1)
+  - **Rotate** — поворот на 90°/180°/270°
+  - **Flip** — отражение по горизонтали и вертикали
+  - **Speed** — изменение скорости воспроизведения (0.25x - 2.0x)
+  - **Mute Audio** — отключение звуковой дорожки
+  - **Reset** — сброс всех изменений
+  - 2-pass сжатие в целевой размер, выход 16:9 H.264 с AAC аудио (или без звука)
 - Удаление записи из истории и всех связанных файлов (`/delete`).
 - Авто-очистка старых файлов по времени хранения (retention, по умолчанию 48 часов).
 
@@ -59,7 +67,7 @@
 ## API (кратко)
 - `POST /upload` (multipart/form-data поле `files`, можно несколько)
 - `POST /upload-video` (multipart/form-data поле `file`, один файл)
-- `POST /video-process` (JSON `{ storedName, trimStartSec, trimEndSec, cutStartSec, cutEndSec, outputWidth, targetSizeMb, verticalOffsetPx }`)
+- `POST /video-process` (JSON `{ storedName, trimStartSec, trimEndSec, cutStartSec, cutEndSec, outputWidth, targetSizeMb, verticalOffsetPx, segments, cropX, cropY, cropW, cropH, rotateDeg, flipH, flipV, speed, muteAudio }`)
 - `POST /resize` (JSON `{ storedName, width }`)
 - `POST /crop` (JSON `{ storedName, x, y, width, height }`)
 - `POST /split` (JSON `{ storedNameA, storedNameB, a, b }`, результат 1280×720)

@@ -4,7 +4,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Current state (2025-12-17)
 - Приложение: Jmaka
-- Версия: 0.3.0
+- Версия: 0.3.2
 - ASP.NET Core Minimal API находится в `src/Jmaka.Api/`.
 
 ## Repository structure
