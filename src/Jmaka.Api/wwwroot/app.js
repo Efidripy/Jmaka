@@ -4801,23 +4801,40 @@ if (imageEditApplyBtn) {
     e.preventDefault();
     if (!imageEditState.open || !imageEditState.storedName) return;
     const payload = getImageEditPayload();
-    if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
-    imageEditApplyBtn.disabled = true;
+    
     try {
+      if (imageEditApplyBtn) imageEditApplyBtn.disabled = true;
+      setBusy(true);
+      if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+
       const res = await fetch(toAbsoluteUrl('image-edit-apply'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data && data.error ? data.error : 'apply failed');
-      if (imageEditHint) imageEditHint.textContent = 'Готово.';
+
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = text; }
+
+      if (!res.ok) {
+        if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+        showResult(data);
+        return;
+      }
+
+      showResult(data);
       await loadComposites();
       await loadImageEditList();
-      imageEditApplyBtn.disabled = false;
-    } catch (err) {
+
+      hint.textContent = 'Edit создан.';
+      closeImageEdit();
+    } catch (e) {
       if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
-      imageEditApplyBtn.disabled = false;
+      showResult(String(e));
+    } finally {
+      setBusy(false);
+      if (imageEditApplyBtn) imageEditApplyBtn.disabled = false;
     }
   });
 }
