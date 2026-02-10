@@ -4629,6 +4629,7 @@ async function loadImageEditBase(url) {
 
 function selectImageEditItem(item) {
   imageEditState.selected = item;
+  imageEditState.storedName = item.storedName;
   imageEditState.baseUrl = item.url || item.previewUrl;
   if (imageEditHint) imageEditHint.textContent = 'Настройте параметры и сохраните.';
   if (item.type === 'saved' && item.editParams) {
