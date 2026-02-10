@@ -1,6 +1,6 @@
 # Jmaka — consolidated reference (latest)
 
-Version: **0.2.0-rc3**
+Version: **0.3.0**
 
 This document consolidates the current product, API, storage, and deployment details for Jmaka.
 
