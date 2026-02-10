@@ -419,11 +419,12 @@ const imageEditCanvas = document.getElementById('imageEditCanvas');
 const imageEditOriginal = document.getElementById('imageEditOriginal');
 const imageEditCompareBtn = document.getElementById('imageEditCompare');
 const imageEditHint = document.getElementById('imageEditHint');
-const imageEditRefreshTopBtn = document.getElementById('imageEditRefreshTop');
-const imageEditTopList = document.getElementById('imageEditTopList');
-const imageEditPresetBtns = document.querySelectorAll('.preset-btn');
-const imageEditPanelHeaders = document.querySelectorAll('.edit-panel-header');
-const imageEditSliderRows = document.querySelectorAll('.slider-row');
+const editBrightness = document.getElementById('editBrightness');
+const editContrast = document.getElementById('editContrast');
+const editSaturation = document.getElementById('editSaturation');
+const editHue = document.getElementById('editHue');
+const editExposure = document.getElementById('editExposure');
+const editVibrance = document.getElementById('editVibrance');
 
 
 function syncCropAspectButtons() {
@@ -1220,17 +1221,9 @@ const oknoScaleState = {
 
 const imageEditState = {
   open: false,
-  items: [],
-  selected: null,
-  params: null,
-  selectedPreset: 'None',
-  baseUrl: null,
-  baseImage: null,
-  originalImageData: null,
-  pending: null,
-  renderQueued: false,
-  compare: false,
-  offscreen: null
+  storedName: null,
+  previewUrl: null,
+  pending: null
 };
 
 function split3ShowItem(which) {
@@ -4759,37 +4752,21 @@ if (imageEditModal) {
 if (imageEditApplyBtn) {
   imageEditApplyBtn.addEventListener('click', async (e) => {
     e.preventDefault();
-    await saveImageEdit();
+    if (!imageEditState.open || !imageEditState.storedName) return;
+    const payload = getImageEditPayload();
+    if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+    try {
+      const res = await fetch(toAbsoluteUrl('image-edit-apply'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data && data.error ? data.error : 'apply failed');
+      if (imageEditHint) imageEditHint.textContent = 'Готово.';
+      await loadComposites();
+    } catch (err) {
+      if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+    }
   });
 }
-
-if (imageEditRefreshTopBtn) {
-  imageEditRefreshTopBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    loadImageEditList();
-  });
-}
-
-if (imageEditPresetBtns) {
-  for (const btn of imageEditPresetBtns) {
-    btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
-  }
-}
-
-if (imageEditCompareBtn) {
-  imageEditCompareBtn.addEventListener('pointerdown', () => {
-    imageEditState.compare = true;
-    renderImageEditPreview();
-  });
-  const endCompare = () => {
-    imageEditState.compare = false;
-    scheduleImageEditRender();
-  };
-  imageEditCompareBtn.addEventListener('pointerup', endCompare);
-  imageEditCompareBtn.addEventListener('pointerleave', endCompare);
-  imageEditCompareBtn.addEventListener('pointercancel', endCompare);
-}
-
-initImageEditSliders();
-updatePanelCollapsing();
-resetImageEditParams();

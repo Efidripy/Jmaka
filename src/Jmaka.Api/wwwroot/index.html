@@ -616,8 +616,13 @@
             <button class="btn tool-btn" type="button" data-tool="flip">Flip</button>
             <button class="btn tool-btn" type="button" data-tool="speed">Speed</button>
           </div>
-          <div class="video-tool-panels">
-            <div class="video-tool-panel" data-tool-panel="trim">Выделите отрезок на таймлайне.</div>
+            <div class="video-tool-panels">
+            <div class="video-tool-panel" data-tool-panel="trim">
+              <span>Выделите один или несколько отрезков на таймлайне.</span>
+              <button id="videoAddSegment" class="btn small" type="button">+ Segment</button>
+              <button id="videoRemoveSegment" class="btn small" type="button">− Segment</button>
+              <span id="videoSegmentsInfo">1 segment</span>
+            </div>
             <div class="video-tool-panel" data-tool-panel="crop" hidden>Перетащите рамку кадрирования.</div>
             <div class="video-tool-panel" data-tool-panel="rotate" hidden>
               <button id="videoRotateCw" class="btn small" type="button">↻ 90°</button>
@@ -654,10 +659,7 @@
             <div class="video-timeline">
               <div class="timeline-strip" id="videoTimelineStrip">
                 <canvas id="videoTimelineCanvas"></canvas>
-                <div id="videoTimelineSelection" class="timeline-selection">
-                  <span class="timeline-handle start" data-handle="start"></span>
-                  <span class="timeline-handle end" data-handle="end"></span>
-                </div>
+                <div id="videoTimelineSegments" class="timeline-segments"></div>
                 <div id="videoTimelinePlayhead" class="timeline-playhead"></div>
               </div>
               <div class="timeline-meta">
