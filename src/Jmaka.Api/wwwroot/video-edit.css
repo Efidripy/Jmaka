@@ -85,6 +85,10 @@
   gap: 12px;
 }
 
+.video-tool-panel[hidden] {
+  display: none;
+}
+
 .video-tool-panel .panel-hint {
   color: #94a3b8;
   font-size: 13px;
