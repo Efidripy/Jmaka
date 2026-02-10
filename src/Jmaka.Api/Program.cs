@@ -1851,8 +1851,9 @@ app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, ImagePipel
 .Produces(StatusCodes.Status404NotFound);
 
 // --- Video processing endpoint ---
-app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, CancellationToken ct) =>
+app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, CancellationToken ct, ILoggerFactory loggerFactory) =>
 {
+    var logger = loggerFactory.CreateLogger("Jmaka.FFmpeg");
     await PruneExpiredAsync(ct);
 
     var storedName = Path.GetFileName(req.StoredName ?? string.Empty);
@@ -1872,7 +1873,7 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         return Results.BadRequest(new { error = "ffmpeg not found" });
     }
 
-    var duration = await TryGetVideoDurationSecondsAsync(inputPath, ct);
+    var duration = await TryGetVideoDurationSecondsAsync(inputPath, ct, logger);
     if (duration <= 0)
     {
         return Results.BadRequest(new { error = "unable to detect duration" });
@@ -2065,14 +2066,14 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         outPath
     });
 
-    var pass1 = await RunProcessAsync("ffmpeg", pass1Args, ct);
+    var pass1 = await RunProcessAsync("ffmpeg", pass1Args, ct, logger, "ffmpeg pass 1");
     if (!pass1.Success)
     {
         CleanupPassLogs(passLog);
         return Results.BadRequest(new { error = "ffmpeg pass 1 failed", details = pass1.Error });
     }
 
-    var pass2 = await RunProcessAsync("ffmpeg", pass2Args, ct);
+    var pass2 = await RunProcessAsync("ffmpeg", pass2Args, ct, logger, "ffmpeg pass 2");
     CleanupPassLogs(passLog);
     if (!pass2.Success)
     {
@@ -2167,7 +2168,7 @@ static bool HasCommand(string name)
     }
 }
 
-static async Task<double> TryGetVideoDurationSecondsAsync(string absolutePath, CancellationToken ct)
+static async Task<double> TryGetVideoDurationSecondsAsync(string absolutePath, CancellationToken ct, Microsoft.Extensions.Logging.ILogger? logger = null)
 {
     if (!HasCommand("ffprobe"))
     {
@@ -2182,7 +2183,7 @@ static async Task<double> TryGetVideoDurationSecondsAsync(string absolutePath, C
         absolutePath
     };
 
-    var result = await RunProcessAsync("ffprobe", args, ct);
+    var result = await RunProcessAsync("ffprobe", args, ct, logger, "ffprobe duration");
     if (!result.Success || string.IsNullOrWhiteSpace(result.Output))
     {
         return 0;
@@ -2202,14 +2203,15 @@ static void CleanupPassLogs(string passLogBase)
     TryDeleteFile($"{passLogBase}-0.log.mbtree");
 }
 
-static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> args, CancellationToken ct)
+static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> args, CancellationToken ct, Microsoft.Extensions.Logging.ILogger? logger = null, string? context = null)
 {
     var psi = new System.Diagnostics.ProcessStartInfo
     {
         FileName = fileName,
         RedirectStandardOutput = true,
         RedirectStandardError = true,
-        UseShellExecute = false
+        UseShellExecute = false,
+        CreateNoWindow = true
     };
 
     foreach (var arg in args)
@@ -2217,10 +2219,17 @@ static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> a
         psi.ArgumentList.Add(arg);
     }
 
+    // Build command string for logging (safely)
+    var argsStr = string.Join(" ", args.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
+    var contextPrefix = !string.IsNullOrEmpty(context) ? $"{context}: " : "";
+    
+    logger?.LogInformation("{Context}FFMPEG START: {FileName} {Arguments}", contextPrefix, fileName, argsStr);
+
     using var process = new System.Diagnostics.Process { StartInfo = psi };
     var started = process.Start();
     if (!started)
     {
+        logger?.LogError("{Context}FFMPEG FAILED: process failed to start", contextPrefix);
         return new ProcessResult(false, string.Empty, "failed to start process");
     }
 
@@ -2230,7 +2239,20 @@ static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> a
     var output = await outputTask;
     var error = await errorTask;
 
-    return new ProcessResult(process.ExitCode == 0, output, error);
+    var success = process.ExitCode == 0;
+    
+    if (success)
+    {
+        logger?.LogDebug("{Context}FFMPEG SUCCESS (exit code 0)\nFFMPEG STDOUT:\n{Stdout}", contextPrefix, output);
+    }
+    else
+    {
+        logger?.LogError("{Context}FFMPEG FAILED with exit code {ExitCode}", contextPrefix, process.ExitCode);
+        logger?.LogError("{Context}FFMPEG STDERR:\n{Stderr}", contextPrefix, error);
+        logger?.LogError("{Context}FFMPEG STDOUT:\n{Stdout}", contextPrefix, output);
+    }
+
+    return new ProcessResult(success, output, error);
 }
 
 static async Task<ImageInfo> TryGetImageInfoAsync(string absolutePath, CancellationToken ct)
