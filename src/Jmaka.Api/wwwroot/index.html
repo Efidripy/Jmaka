@@ -307,6 +307,13 @@
       </div>
       <div class="modal-body edit-body">
         <div class="edit-main">
+          <div class="edit-source-picker" aria-label="Выбор изображения для редактирования">
+            <div class="edit-source-header">
+              <span>Choose image</span>
+              <button id="imageEditRefreshTop" class="btn small" type="button">Refresh</button>
+            </div>
+            <div id="imageEditTopList" class="edit-source-list"></div>
+          </div>
           <div class="edit-preview">
             <canvas id="imageEditCanvas" class="edit-preview-canvas" aria-label="Image preview"></canvas>
             <img id="imageEditOriginal" class="edit-preview-img" alt="" hidden />
@@ -316,7 +323,8 @@
           </div>
         </div>
         <aside class="edit-sidebar">
-          <div class="edit-section edit-presets">
+          <div class="edit-controls-column">
+            <div class="edit-section edit-presets">
             <div class="edit-section-title">Presets</div>
             <div class="preset-buttons">
               <button class="btn preset-btn" type="button" data-preset="Auto">Auto</button>
@@ -572,21 +580,24 @@
               </div>
             </div>
           </div>
+          </div>
 
-          <div class="edit-section edit-images">
-            <div class="edit-section-title">Images</div>
-            <div class="edit-images-group">
-              <div class="edit-images-header">
-                <span>Originals</span>
-                <button id="imageEditRefresh" class="btn small" type="button">Refresh</button>
+          <div class="edit-images-column">
+            <div class="edit-section edit-images">
+              <div class="edit-section-title">Images</div>
+              <div class="edit-images-group">
+                <div class="edit-images-header">
+                  <span>Originals</span>
+                  <button id="imageEditRefresh" class="btn small" type="button">Refresh</button>
+                </div>
+                <div id="imageEditOriginals" class="edit-images-list"></div>
               </div>
-              <div id="imageEditOriginals" class="edit-images-list"></div>
-            </div>
-            <div class="edit-images-group">
-              <div class="edit-images-header">
-                <span>Saved</span>
+              <div class="edit-images-group">
+                <div class="edit-images-header">
+                  <span>Saved</span>
+                </div>
+                <div id="imageEditSaved" class="edit-images-list"></div>
               </div>
-              <div id="imageEditSaved" class="edit-images-list"></div>
             </div>
           </div>
         </aside>
