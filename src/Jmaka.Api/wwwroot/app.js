@@ -420,6 +420,8 @@ const imageEditOriginal = document.getElementById('imageEditOriginal');
 const imageEditCompareBtn = document.getElementById('imageEditCompare');
 const imageEditHint = document.getElementById('imageEditHint');
 const imageEditRefreshBtn = document.getElementById('imageEditRefresh');
+const imageEditRefreshTopBtn = document.getElementById('imageEditRefreshTop');
+const imageEditTopList = document.getElementById('imageEditTopList');
 const imageEditOriginalsList = document.getElementById('imageEditOriginals');
 const imageEditSavedList = document.getElementById('imageEditSaved');
 const imageEditPresetBtns = document.querySelectorAll('.preset-btn');
@@ -4640,7 +4642,7 @@ function selectImageEditItem(item) {
 }
 
 function updateImageListActiveState() {
-  const lists = [imageEditOriginalsList, imageEditSavedList];
+  const lists = [imageEditTopList, imageEditOriginalsList, imageEditSavedList];
   for (const list of lists) {
     if (!list) continue;
     const items = list.querySelectorAll('.edit-image-item');
@@ -4701,6 +4703,13 @@ async function loadImageEditList() {
     const data = await res.json();
     if (!res.ok) throw new Error(data && data.error ? data.error : 'failed');
     imageEditState.items = Array.isArray(data) ? data : data.items || [];
+
+    if (imageEditTopList) {
+      imageEditTopList.innerHTML = '';
+      imageEditState.items.forEach((item) => {
+        imageEditTopList.append(buildImageItemElement(item));
+      });
+    }
 
     if (imageEditOriginalsList) {
       imageEditOriginalsList.innerHTML = '';
@@ -4800,6 +4809,13 @@ if (imageEditApplyBtn) {
 
 if (imageEditRefreshBtn) {
   imageEditRefreshBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    loadImageEditList();
+  });
+}
+
+if (imageEditRefreshTopBtn) {
+  imageEditRefreshTopBtn.addEventListener('click', (e) => {
     e.preventDefault();
     loadImageEditList();
   });

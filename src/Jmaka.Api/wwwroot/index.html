@@ -307,6 +307,13 @@
       </div>
       <div class="modal-body edit-body">
         <div class="edit-main">
+          <div class="edit-source-picker" aria-label="Выбор изображения для редактирования">
+            <div class="edit-source-header">
+              <span>Choose image</span>
+              <button id="imageEditRefreshTop" class="btn small" type="button">Refresh</button>
+            </div>
+            <div id="imageEditTopList" class="edit-source-list"></div>
+          </div>
           <div class="edit-preview">
             <canvas id="imageEditCanvas" class="edit-preview-canvas" aria-label="Image preview"></canvas>
             <img id="imageEditOriginal" class="edit-preview-img" alt="" hidden />
