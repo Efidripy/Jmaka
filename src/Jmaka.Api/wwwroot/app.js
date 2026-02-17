@@ -566,8 +566,8 @@ function translateText(sourceText, lang = currentLanguage) {
     const translatedTrimmed = dict[ruBaseTrimmed] || dict[trimmed];
     if (translatedTrimmed) {
       // Preserve leading/trailing whitespace from the original source
-      const leadingSpace = source.match(LEADING_WHITESPACE_REGEX)[0];
-      const trailingSpace = source.match(TRAILING_WHITESPACE_REGEX)[0];
+      const leadingSpace = source.match(LEADING_WHITESPACE_REGEX)?.[0] || '';
+      const trailingSpace = source.match(TRAILING_WHITESPACE_REGEX)?.[0] || '';
       return leadingSpace + translatedTrimmed + trailingSpace;
     }
   }
