@@ -32,6 +32,389 @@ const compositesTbody = document.getElementById('compositesTbody');
 const sizeButtons = document.getElementById('sizeButtons');
 const sizeBtns = sizeButtons ? Array.from(sizeButtons.querySelectorAll('button.size-btn')) : [];
 
+const LANGUAGE_KEY = 'jmaka_language';
+const UI_TEXTS = {
+  ru: {
+    loading: 'Загрузка...',
+    loadError: 'Ошибка загрузки.',
+    videoUploadHint: 'Загрузите видео и перетащите границы на таймлайне.',
+    videoUploading: 'Загружаю видео...',
+    videoUploaded: 'Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.',
+    videoProcessing: 'Обрабатываю видео...',
+    videoDone: 'Готово. Результат появился в Processed.',
+    deleteConfirm: 'Удалить запись и все связанные файлы безвозвратно?',
+    splitCreated: 'Split создан.',
+    splitChooseTwo: 'Выберите две картинки.',
+    splitError: 'Ошибка split.',
+    splitWorking: 'Склеиваю...',
+    splitChooseFrom1280: 'Выберите две картинки из готового размера 1280.',
+    oknoFixCreated: 'OknoFix создан.',
+    oknoFixError: 'Ошибка OknoFix.',
+    oknoScaleCreated: 'OknoScale создан.',
+    oknoScaleError: 'Ошибка OknoScale.',
+    editCreated: 'Edit создан.',
+    saving: 'Сохраняю...',
+    saveError: 'Ошибка сохранения.',
+    saveDone: 'Готово.',
+    languageLabel: 'Выбор языка'
+  },
+  'en-US': {
+    loading: 'Loading...',
+    loadError: 'Loading error.',
+    videoUploadHint: 'Upload a video and drag the segment boundaries on the timeline.',
+    videoUploading: 'Uploading video...',
+    videoUploaded: 'Video uploaded. Select segments on the timeline and click Process.',
+    videoProcessing: 'Processing video...',
+    videoDone: 'Done. The result appeared in Processed.',
+    deleteConfirm: 'Delete this entry and all related files permanently?',
+    splitCreated: 'Split created.',
+    splitChooseTwo: 'Choose two images.',
+    splitError: 'Split error.',
+    splitWorking: 'Merging...',
+    splitChooseFrom1280: 'Choose two images from ready 1280 size.',
+    oknoFixCreated: 'OknoFix created.',
+    oknoFixError: 'OknoFix error.',
+    oknoScaleCreated: 'OknoScale created.',
+    oknoScaleError: 'OknoScale error.',
+    editCreated: 'Edit created.',
+    saving: 'Saving...',
+    saveError: 'Save error.',
+    saveDone: 'Done.',
+    languageLabel: 'Language selector'
+  },
+  'es-ES': {
+    loading: 'Cargando...',
+    loadError: 'Error de carga.',
+    videoUploadHint: 'Sube un vídeo y arrastra los límites de los segmentos en la línea de tiempo.',
+    videoUploading: 'Subiendo vídeo...',
+    videoUploaded: 'Vídeo subido. Selecciona segmentos en la línea de tiempo y pulsa Procesar.',
+    videoProcessing: 'Procesando vídeo...',
+    videoDone: 'Listo. El resultado apareció en Processed.',
+    deleteConfirm: '¿Eliminar este registro y todos los archivos relacionados de forma permanente?',
+    splitCreated: 'Split creado.',
+    splitChooseTwo: 'Elige dos imágenes.',
+    splitError: 'Error de Split.',
+    splitWorking: 'Combinando...',
+    splitChooseFrom1280: 'Elige dos imágenes del tamaño 1280.',
+    oknoFixCreated: 'OknoFix creado.',
+    oknoFixError: 'Error de OknoFix.',
+    oknoScaleCreated: 'OknoScale creado.',
+    oknoScaleError: 'Error de OknoScale.',
+    editCreated: 'Edición creada.',
+    saving: 'Guardando...',
+    saveError: 'Error al guardar.',
+    saveDone: 'Listo.',
+    languageLabel: 'Selector de idioma'
+  }
+};
+
+const PHRASE_TRANSLATIONS = {
+  'en-US': {
+    'Загрузить изображение': 'Upload image',
+    'Нажмите на дискету, перетащите файлы или вставьте из буфера обмена — и они загрузятся.': 'Click the disk icon, drag files, or paste from clipboard — they will upload automatically.',
+    'Справка': 'Help',
+    'Удаление': 'Delete',
+    'Удалить': 'Delete',
+    'Отмена': 'Cancel',
+    'Закрыть': 'Close',
+    'Сделать': 'Process',
+    'Склеить': 'Merge',
+    'Обрезать': 'Crop',
+    'Открыть в новой вкладке': 'Open in new tab',
+    'Открыть оригинал': 'Open original',
+    'Просмотр': 'Viewer',
+    'Кадрирование': 'Crop',
+    'Выберите две картинки из готового размера 1280.': 'Choose two images from ready 1280 size.',
+    'Выберите три картинки.': 'Choose three images.',
+    'Выберите строку в таблице файлов, затем откройте OknoFix.': 'Select a row in the files table, then open OknoFix.',
+    'Выберите строку в таблице файлов, затем откройте OknoScale.': 'Select a row in the files table, then open OknoScale.',
+    'Двигайте и масштабируйте картинку под окном. Ширину окна можно менять ручками слева/справа.': 'Move and scale the image under the window. You can resize the window width with side handles.',
+    'Справка по Jmaka': 'Jmaka Help',
+    'Краткое описание всех функций и горячих действий.': 'Short description of all features and quick actions.',
+    'Загрузка файлов': 'File upload',
+    'Таблица файлов': 'Files table',
+    'Инструменты': 'Tools',
+    'Прочее': 'Other',
+    'Дата - время': 'Date - time',
+    'Оригинал': 'Original',
+    'Тип': 'Type',
+    'Результат': 'Result',
+    'Таблицы файлов': 'Files tables',
+    'Таблица файлов': 'Files table',
+    'Таблица Split': 'Split table',
+    'Готовые файлы': 'Ready files',
+    'Размеры': 'Sizes',
+    'Панель управления': 'Control panel',
+    'Загрузка файла': 'File upload',
+    'Можно включить обратно, очистив настройку в LocalStorage.': 'You can enable this again by clearing the LocalStorage setting.',
+    'Больше не спрашивать (удалять сразу)': 'Do not ask again (delete immediately)',
+    'Удалить запись и все связанные файлы безвозвратно?': 'Delete this entry and all related files permanently?',
+    'Выберите слот, затем кликните по превью из списка загруженных изображений:': 'Select a slot, then click a preview from uploaded images:',
+    'Выбор для картинки 1': 'Select for image 1',
+    'Выбор для картинки 2': 'Select for image 2',
+    'Выбор для картинки 3': 'Select for image 3',
+    'Левая половина': 'Left half',
+    'Правая половина': 'Right half',
+    'Треть 1': 'Third 1',
+    'Треть 2': 'Third 2',
+    'Треть 3': 'Third 3',
+    'Поле 16:9': '16:9 stage',
+    'Поле 1280×720. Перетаскивайте и масштабируйте изображения, пропорции сохраняются.': '1280×720 stage. Drag and scale images while aspect ratio is preserved.',
+    'Пропорции кадрирования': 'Crop ratio',
+    'Перетаскивайте рамку и её углы. Выберите пропорции:': 'Drag the frame and its corners. Choose ratio:',
+    'Результат': 'Result',
+    'Выбор языка': 'Language selector',
+    'Русский': 'Русский',
+    'Обрабатываю видео...': 'Processing video...'
+  },
+  'es-ES': {
+    'Загрузить изображение': 'Subir imagen',
+    'Нажмите на дискету, перетащите файлы или вставьте из буфера обмена — и они загрузятся.': 'Haz clic en el icono de disco, arrastra archivos o pega desde el portapapeles: se cargarán automáticamente.',
+    'Справка': 'Ayuda',
+    'Удаление': 'Eliminar',
+    'Удалить': 'Eliminar',
+    'Отмена': 'Cancelar',
+    'Закрыть': 'Cerrar',
+    'Сделать': 'Procesar',
+    'Склеить': 'Combinar',
+    'Обрезать': 'Recortar',
+    'Открыть в новой вкладке': 'Abrir en pestaña nueva',
+    'Открыть оригинал': 'Abrir original',
+    'Просмотр': 'Vista previa',
+    'Кадрирование': 'Recorte',
+    'Выберите две картинки из готового размера 1280.': 'Elige dos imágenes del tamaño 1280.',
+    'Выберите три картинки.': 'Elige tres imágenes.',
+    'Выберите строку в таблице файлов, затем откройте OknoFix.': 'Selecciona una fila en la tabla y luego abre OknoFix.',
+    'Выберите строку в таблице файлов, затем откройте OknoScale.': 'Selecciona una fila en la tabla y luego abre OknoScale.',
+    'Двигайте и масштабируйте картинку под окном. Ширину окна можно менять ручками слева/справа.': 'Mueve y escala la imagen bajo la ventana. Puedes cambiar el ancho con las asas laterales.',
+    'Справка по Jmaka': 'Ayuda de Jmaka',
+    'Краткое описание всех функций и горячих действий.': 'Descripción breve de todas las funciones y acciones rápidas.',
+    'Загрузка файлов': 'Carga de archivos',
+    'Таблица файлов': 'Tabla de archivos',
+    'Инструменты': 'Herramientas',
+    'Прочее': 'Otros',
+    'Дата - время': 'Fecha - hora',
+    'Оригинал': 'Original',
+    'Тип': 'Tipo',
+    'Результат': 'Resultado',
+    'Таблицы файлов': 'Tablas de archivos',
+    'Готовые файлы': 'Archivos listos',
+    'Размеры': 'Tamaños',
+    'Панель управления': 'Panel de control',
+    'Загрузка файла': 'Carga de archivo',
+    'Можно включить обратно, очистив настройку в LocalStorage.': 'Puedes volver a activarlo limpiando la configuración en LocalStorage.',
+    'Больше не спрашивать (удалять сразу)': 'No volver a preguntar (eliminar inmediatamente)',
+    'Удалить запись и все связанные файлы безвозвратно?': '¿Eliminar este registro y todos los archivos relacionados de forma permanente?',
+    'Выберите слот, затем кликните по превью из списка загруженных изображений:': 'Selecciona una ranura y luego haz clic en una vista previa de las imágenes subidas:',
+    'Выбор для картинки 1': 'Seleccionar para imagen 1',
+    'Выбор для картинки 2': 'Seleccionar para imagen 2',
+    'Выбор для картинки 3': 'Seleccionar para imagen 3',
+    'Левая половина': 'Mitad izquierda',
+    'Правая половина': 'Mitad derecha',
+    'Треть 1': 'Tercio 1',
+    'Треть 2': 'Tercio 2',
+    'Треть 3': 'Tercio 3',
+    'Поле 16:9': 'Área 16:9',
+    'Поле 1280×720. Перетаскивайте и масштабируйте изображения, пропорции сохраняются.': 'Área 1280×720. Arrastra y escala las imágenes manteniendo la proporción.',
+    'Пропорции кадрирования': 'Relación de recorte',
+    'Перетаскивайте рамку и её углы. Выберите пропорции:': 'Arrastra el marco y sus esquinas. Elige la proporción:',
+    'Выбор языка': 'Selector de idioma',
+    'Обрабатываю видео...': 'Procesando vídeo...'
+  }
+};
+
+function normalizeLang(lang) {
+  if (!lang) return 'ru';
+  if (lang === 'en' || lang === 'en-US') return 'en-US';
+  if (lang === 'es' || lang === 'es-ES') return 'es-ES';
+  return 'ru';
+}
+
+function getCurrentLanguage() {
+  try {
+    const stored = localStorage.getItem(LANGUAGE_KEY);
+    if (stored) return normalizeLang(stored);
+  } catch {}
+  return 'ru';
+}
+
+let currentLanguage = getCurrentLanguage();
+
+function translateText(sourceText, lang = currentLanguage) {
+  const source = String(sourceText || '');
+  if (!source || lang === 'ru') return source;
+  const dict = PHRASE_TRANSLATIONS[lang] || {};
+  return dict[source] || source;
+}
+
+function t(keyOrText) {
+  const key = String(keyOrText || '');
+  return (UI_TEXTS[currentLanguage] && UI_TEXTS[currentLanguage][key])
+    || (UI_TEXTS.ru && UI_TEXTS.ru[key])
+    || translateText(key);
+}
+
+const I18N_ATTRS = ['aria-label', 'title', 'placeholder'];
+const i18nTextSource = new WeakMap();
+const i18nAttrSource = new WeakMap();
+let i18nIsApplying = false;
+let i18nObserverStarted = false;
+
+function translateTextNode(node) {
+  if (!node) return;
+  const original = i18nTextSource.has(node) ? i18nTextSource.get(node) : node.textContent;
+  if (!i18nTextSource.has(node)) i18nTextSource.set(node, original);
+  const translated = translateText(original);
+  if (node.textContent !== translated) node.textContent = translated;
+}
+
+function translateElementAttributes(el) {
+  if (!el || !el.getAttribute) return;
+  let src = i18nAttrSource.get(el);
+  if (!src) {
+    src = {};
+    i18nAttrSource.set(el, src);
+  }
+  for (const attr of I18N_ATTRS) {
+    const current = el.getAttribute(attr);
+    if (current == null) continue;
+    if (!(attr in src)) src[attr] = current;
+    const translated = translateText(src[attr]);
+    if (current !== translated) el.setAttribute(attr, translated);
+  }
+}
+
+function translateDomSubtree(root) {
+  if (!root) return;
+  i18nIsApplying = true;
+  try {
+    if (root.nodeType === Node.TEXT_NODE) {
+      translateTextNode(root);
+      return;
+    }
+
+    if (root.nodeType === Node.ELEMENT_NODE) {
+      const element = root;
+      if (element.tagName !== 'SCRIPT' && element.tagName !== 'STYLE') {
+        translateElementAttributes(element);
+      }
+    }
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+      acceptNode(node) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const tag = node.tagName;
+          if (tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+        if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_SKIP;
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_SKIP;
+        const pTag = parent.tagName;
+        if (pTag === 'SCRIPT' || pTag === 'STYLE') return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+
+    let node = walker.nextNode();
+    while (node) {
+      if (node.nodeType === Node.TEXT_NODE) translateTextNode(node);
+      else if (node.nodeType === Node.ELEMENT_NODE) translateElementAttributes(node);
+      node = walker.nextNode();
+    }
+  } finally {
+    i18nIsApplying = false;
+  }
+}
+
+function ensureI18nObserver() {
+  if (i18nObserverStarted || !document.body || typeof MutationObserver === 'undefined') return;
+  i18nObserverStarted = true;
+  const observer = new MutationObserver((mutations) => {
+    if (i18nIsApplying) return;
+    for (const mutation of mutations) {
+      if (mutation.type === 'characterData') {
+        const node = mutation.target;
+        i18nTextSource.set(node, node.data);
+        if (currentLanguage !== 'ru') {
+          const translated = translateText(node.data);
+          if (translated !== node.data) {
+            i18nIsApplying = true;
+            try { node.data = translated; } finally { i18nIsApplying = false; }
+          }
+        }
+      }
+      if (mutation.type === 'attributes' && mutation.target && mutation.target.nodeType === Node.ELEMENT_NODE) {
+        const el = mutation.target;
+        const attr = mutation.attributeName;
+        if (attr && I18N_ATTRS.includes(attr)) {
+          let src = i18nAttrSource.get(el);
+          if (!src) { src = {}; i18nAttrSource.set(el, src); }
+          src[attr] = el.getAttribute(attr) || '';
+          if (currentLanguage !== 'ru') {
+            const translated = translateText(src[attr]);
+            if (translated !== src[attr]) {
+              i18nIsApplying = true;
+              try { el.setAttribute(attr, translated); } finally { i18nIsApplying = false; }
+            }
+          }
+        }
+      }
+      if (mutation.type === 'childList') {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE) {
+            translateDomSubtree(node);
+          }
+        });
+      }
+    }
+  });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: I18N_ATTRS
+  });
+}
+
+window.JMAKA_I18N = {
+  t,
+  getLanguage: () => currentLanguage,
+  translateText,
+  setLanguage: (lang) => {
+    currentLanguage = normalizeLang(lang);
+    try { localStorage.setItem(LANGUAGE_KEY, currentLanguage); } catch {}
+    applyLanguage();
+    try { window.dispatchEvent(new CustomEvent('jmaka:language-changed', { detail: { language: currentLanguage } })); } catch {}
+  }
+};
+
+function applyLanguage() {
+  ensureI18nObserver();
+  const switcher = document.getElementById('languageSwitcher');
+  if (switcher) switcher.setAttribute('aria-label', t('languageLabel'));
+  document.querySelectorAll('#languageSwitcher .lang-btn').forEach((btn) => {
+    const isActive = btn.dataset.lang === currentLanguage;
+    btn.classList.toggle('is-active', isActive);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+  document.documentElement.lang = currentLanguage === 'ru' ? 'ru' : (currentLanguage === 'es-ES' ? 'es' : 'en');
+  translateDomSubtree(document.body);
+}
+
+function initLanguageButtons() {
+  const switcher = document.getElementById('languageSwitcher');
+  if (!switcher) return;
+  switcher.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('.lang-btn') : null;
+    if (!btn) return;
+    const lang = btn.dataset.lang;
+    if (!lang || lang === currentLanguage) return;
+    window.JMAKA_I18N.setLanguage(lang);
+  });
+}
+
 // viewer modal elements
 // RU: Элементы модального окна просмотра полноразмерной картинки.
 // EN: DOM elements for the image viewer modal used when clicking previews.
@@ -253,7 +636,7 @@ function confirmDeleteAsync(storedName) {
 
   if (!deleteModal) {
     // fallback
-    return Promise.resolve(confirm('Удалить запись и все связанные файлы безвозвратно?'));
+    return Promise.resolve(confirm(t('deleteConfirm')));
   }
 
   deleteModal.hidden = false;
@@ -275,6 +658,8 @@ if (deleteModal) {
 if (deleteCloseBtn) deleteCloseBtn.addEventListener('click', () => closeDeleteModal(false));
 if (deleteCancelBtn) deleteCancelBtn.addEventListener('click', () => closeDeleteModal(false));
 if (deleteConfirmBtn) deleteConfirmBtn.addEventListener('click', () => closeDeleteModal(true));
+initLanguageButtons();
+applyLanguage();
 
 // help modal wiring
 if (helpBtn && helpModal) {
@@ -836,7 +1221,7 @@ async function applySplit() {
   const b = splitState.b;
 
   if (!a || !a.storedName || !b || !b.storedName) {
-    if (splitHint) splitHint.textContent = 'Выберите две картинки.';
+    if (splitHint) splitHint.textContent = t('splitChooseTwo');
     return;
   }
 
@@ -858,7 +1243,7 @@ async function applySplit() {
   try {
     if (splitApplyBtn) splitApplyBtn.disabled = true;
     setBusy(true);
-    if (splitHint) splitHint.textContent = 'Склеиваю...';
+    if (splitHint) splitHint.textContent = t('splitWorking');
 
     const res = await fetch(toAbsoluteUrl('split'), {
       method: 'POST',
@@ -871,7 +1256,7 @@ async function applySplit() {
     try { data = JSON.parse(text); } catch { data = text; }
 
     if (!res.ok) {
-      if (splitHint) splitHint.textContent = 'Ошибка split.';
+      if (splitHint) splitHint.textContent = t('splitError');
       showResult(data);
       return;
     }
@@ -884,10 +1269,10 @@ async function applySplit() {
 
     await loadComposites();
 
-    hint.textContent = 'Split создан.';
+    hint.textContent = t('splitCreated');
     closeSplitModal();
   } catch (e) {
-    if (splitHint) splitHint.textContent = 'Ошибка split.';
+    if (splitHint) splitHint.textContent = t('splitError');
     showResult(String(e));
   } finally {
     setBusy(false);
@@ -3783,17 +4168,17 @@ function wireOknoScaleUI() {
         try { data = JSON.parse(text); } catch { data = text; }
 
         if (!res.ok) {
-          if (oknoScaleHint) oknoScaleHint.textContent = 'Ошибка OknoScale.';
+          if (oknoScaleHint) oknoScaleHint.textContent = t('oknoScaleError');
           showResult(data);
           return;
         }
 
         showResult(data);
         await loadComposites();
-        if (oknoScaleHint) oknoScaleHint.textContent = 'OknoScale создан.';
+        if (oknoScaleHint) oknoScaleHint.textContent = t('oknoScaleCreated');
         closeOknoScaleModal();
       } catch (err) {
-        if (oknoScaleHint) oknoScaleHint.textContent = 'Ошибка OknoScale.';
+        if (oknoScaleHint) oknoScaleHint.textContent = t('oknoScaleError');
         showResult(String(err));
       } finally {
         setBusy(false);
@@ -4248,17 +4633,17 @@ function wireTrashUI() {
         try { data = JSON.parse(text); } catch { data = text; }
 
         if (!res.ok) {
-          if (trashHint) trashHint.textContent = 'Ошибка OknoFix.';
+          if (trashHint) trashHint.textContent = t('oknoFixError');
           showResult(data);
           return;
         }
 
         showResult(data);
         await loadComposites();
-        if (trashHint) trashHint.textContent = 'OknoFix создан.';
+        if (trashHint) trashHint.textContent = t('oknoFixCreated');
         closeTrashModal();
       } catch (err) {
-        if (trashHint) trashHint.textContent = 'Ошибка OknoFix.';
+        if (trashHint) trashHint.textContent = t('oknoFixError');
         showResult(String(err));
       } finally {
         setBusy(false);
@@ -4727,7 +5112,7 @@ async function loadImageEditList() {
 async function saveImageEdit(itemOverride) {
   const item = itemOverride || imageEditState.selected;
   if (!item) return;
-  if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+  if (imageEditHint) imageEditHint.textContent = t('saving');
   const payload = {
     imageId: item.id,
     preset: imageEditState.params?.preset || 'None',
@@ -4744,10 +5129,10 @@ async function saveImageEdit(itemOverride) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data && data.error ? data.error : 'save failed');
-    if (imageEditHint) imageEditHint.textContent = 'Готово.';
+    if (imageEditHint) imageEditHint.textContent = t('saveDone');
     await loadImageEditList();
   } catch (err) {
-    if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+    if (imageEditHint) imageEditHint.textContent = t('saveError');
   }
 }
 
@@ -4818,7 +5203,7 @@ if (imageEditApplyBtn) {
     try {
       if (imageEditApplyBtn) imageEditApplyBtn.disabled = true;
       setBusy(true);
-      if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+      if (imageEditHint) imageEditHint.textContent = t('saving');
 
       const res = await fetch(toAbsoluteUrl(`images/${imageEditState.storedName}/save-edit`), {
         method: 'POST',
@@ -4831,7 +5216,7 @@ if (imageEditApplyBtn) {
       try { data = JSON.parse(text); } catch { data = text; }
 
       if (!res.ok) {
-        if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+        if (imageEditHint) imageEditHint.textContent = t('saveError');
         showResult(data);
         return;
       }
@@ -4840,10 +5225,10 @@ if (imageEditApplyBtn) {
       await loadComposites();
       await loadImageEditList();
 
-      hint.textContent = 'Edit создан.';
+      hint.textContent = t('editCreated');
       closeImageEdit();
     } catch (e) {
-      if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+      if (imageEditHint) imageEditHint.textContent = t('saveError');
       showResult(String(e));
     } finally {
       setBusy(false);
