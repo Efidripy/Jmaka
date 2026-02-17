@@ -352,6 +352,15 @@
     }
   }
 
+  function normalizeJobStatus(rawStatus) {
+    if (typeof rawStatus === 'string') return rawStatus.toUpperCase();
+    const enumMap = ['QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED', 'EXPIRED'];
+    if (Number.isInteger(rawStatus) && rawStatus >= 0 && rawStatus < enumMap.length) {
+      return enumMap[rawStatus];
+    }
+    return String(rawStatus || '').toUpperCase();
+  }
+
   async function waitForJobCompletion(jobId, timeoutMs = 180000) {
     const started = Date.now();
     const terminal = new Set(['SUCCEEDED', 'FAILED', 'CANCELED', 'EXPIRED']);
@@ -364,8 +373,9 @@
         throw new Error(data && data.error ? data.error : 'Не удалось получить статус задачи');
       }
 
-      if (terminal.has(data.status)) {
-        return data;
+      const status = normalizeJobStatus(data && data.status);
+      if (terminal.has(status)) {
+        return { ...data, status };
       }
 
       await new Promise((resolve) => setTimeout(resolve, 1200));
