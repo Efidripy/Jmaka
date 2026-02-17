@@ -173,7 +173,7 @@ const PHRASE_TRANSLATIONS = {
     'OknoScale (1 изображение → вертикальная карточка)': 'OknoScale (1 image → vertical card)',
     'Загрузка файлов': 'File upload',
     'Кнопка-дискета — выбор до 15 файлов за раз.': 'Disk button: choose up to 15 files at once.',
-    'Поддержка drag &amp; drop: просто перетащите файлы на окно.': 'Drag & drop supported: just drop files into the window.',
+    'Поддержка drag & drop: просто перетащите файлы на окно.': 'Drag & drop supported: just drop files into the window.',
     'Вставка из буфера обмена (Ctrl+V) для картинок.': 'Clipboard paste (Ctrl+V) for images.',
     'Таблица файлов': 'Files table',
     'Каждая строка — загруженное изображение (новые сверху).': 'Each row is an uploaded image (newest first).',
@@ -366,7 +366,7 @@ const PHRASE_TRANSLATIONS = {
     'OknoScale (1 изображение → вертикальная карточка)': 'OknoScale (1 imagen → tarjeta vertical)',
     'Загрузка файлов': 'Carga de archivos',
     'Кнопка-дискета — выбор до 15 файлов за раз.': 'Botón de disco: selecciona hasta 15 archivos a la vez.',
-    'Поддержка drag &amp; drop: просто перетащите файлы на окно.': 'Soporta arrastrar y soltar: arrastra archivos a la ventana.',
+    'Поддержка drag & drop: просто перетащите файлы на окно.': 'Soporta arrastrar y soltar: arrastra archivos a la ventana.',
     'Вставка из буфера обмена (Ctrl+V) для картинок.': 'Pegado desde portapapeles (Ctrl+V) para imágenes.',
     'Таблица файлов': 'Tabla de archivos',
     'Каждая строка — загруженное изображение (новые сверху).': 'Cada fila es una imagen subida (las nuevas arriba).',
@@ -549,7 +549,25 @@ function translateText(sourceText, lang = currentLanguage) {
   const ruBase = toRussianBaseText(source);
   if (lang === 'ru') return ruBase;
   const dict = PHRASE_TRANSLATIONS[lang] || {};
-  return dict[ruBase] || dict[source] || source;
+  
+  // Try exact match first
+  let result = dict[ruBase] || dict[source];
+  if (result) return result;
+  
+  // If no match and source has leading/trailing whitespace, try trimmed version
+  const trimmed = source.trim();
+  if (trimmed !== source) {
+    const ruBaseTrimmed = toRussianBaseText(trimmed);
+    const translatedTrimmed = dict[ruBaseTrimmed] || dict[trimmed];
+    if (translatedTrimmed) {
+      // Preserve leading/trailing whitespace
+      const leadingSpace = source.match(/^\s*/)[0];
+      const trailingSpace = source.match(/\s*$/)[0];
+      return leadingSpace + translatedTrimmed + trailingSpace;
+    }
+  }
+  
+  return source;
 }
 
 function t(keyOrText) {
