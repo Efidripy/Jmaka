@@ -42,6 +42,10 @@ builder.Services.Configure<IISServerOptions>(options =>
 builder.Services.AddOpenApi();
 builder.Services.AddAntiforgery();
 builder.Services.AddSingleton<ImagePipelineService>();
+builder.Services.Configure<FfmpegQueueOptions>(builder.Configuration.GetSection("Ffmpeg"));
+builder.Services.AddSingleton<FfmpegJobQueueService>();
+builder.Services.AddSingleton<IFfmpegJobQueue>(sp => sp.GetRequiredService<FfmpegJobQueueService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<FfmpegJobQueueService>());
 
 var app = builder.Build();
 
@@ -1858,11 +1862,8 @@ app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, ImagePipel
 .Produces(StatusCodes.Status404NotFound);
 
 // --- Video processing endpoint ---
-app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, CancellationToken ct, ILoggerFactory loggerFactory) =>
+app.MapPost("/video-process", (VideoProcessRequest req, HttpContext http, IFfmpegJobQueue queue) =>
 {
-    var logger = loggerFactory.CreateLogger("Jmaka.FFmpeg");
-    await PruneExpiredAsync(ct);
-
     var storedName = Path.GetFileName(req.StoredName ?? string.Empty);
     if (string.IsNullOrWhiteSpace(storedName) || !string.Equals(storedName, req.StoredName, StringComparison.Ordinal))
     {
@@ -1875,536 +1876,70 @@ app.MapPost("/video-process", async Task<IResult> (VideoProcessRequest req, Canc
         return Results.NotFound(new { error = "video not found" });
     }
 
-    if (!HasCommand("ffmpeg"))
-    {
-        return Results.BadRequest(new { error = "ffmpeg not found" });
-    }
-
-    var duration = await TryGetVideoDurationSecondsAsync(inputPath, ct, logger);
-    if (duration <= 0)
-    {
-        return Results.BadRequest(new { error = "unable to detect duration" });
-    }
-
-    var trimStart = Math.Max(0, req.TrimStartSec ?? 0);
-    var trimEnd = req.TrimEndSec.HasValue ? Math.Min(duration, req.TrimEndSec.Value) : duration;
-    if (trimEnd <= trimStart)
-    {
-        return Results.BadRequest(new { error = "invalid trim range" });
-    }
-
-    // Calculate target dimensions and normalize to even values for libx264/yuv420p compatibility
-    var requestedWidth = req.OutputWidth is 720 or 1280 ? req.OutputWidth : 1280;
-    var requestedHeight = (int)Math.Round(requestedWidth * 9.0 / 16.0);
-    
-    // Auto-even-resize: ensure dimensions are always even
-    var targetWidth = NormalizeToEven(requestedWidth);
-    var targetHeight = NormalizeToEven(requestedHeight);
-    
-    if (targetWidth != requestedWidth || targetHeight != requestedHeight)
-    {
-        logger.LogInformation("Auto-even resize applied: {OriginalW}x{OriginalH} -> {EvenW}x{EvenH}", 
-            requestedWidth, requestedHeight, targetWidth, targetHeight);
-    }
-    
-    var verticalOffset = Math.Clamp(req.VerticalOffsetPx, -targetHeight, targetHeight);
-
-    // Build video filter components
-    var filterParts = new List<string>();
-    
-    // 1. Crop (if specified)
-    if (req.CropX.HasValue && req.CropY.HasValue && req.CropW.HasValue && req.CropH.HasValue)
-    {
-        var cx = Math.Clamp(req.CropX.Value, 0, 1);
-        var cy = Math.Clamp(req.CropY.Value, 0, 1);
-        var cw = Math.Clamp(req.CropW.Value, 0, 1 - cx);
-        var ch = Math.Clamp(req.CropH.Value, 0, 1 - cy);
-        if (cw > 0.01 && ch > 0.01 && (cx > 0.001 || cy > 0.001 || cw < 0.999 || ch < 0.999))
-        {
-            filterParts.Add($"crop=iw*{F(cw)}:ih*{F(ch)}:iw*{F(cx)}:ih*{F(cy)}");
-        }
-    }
-    
-    // 2. Rotation (90° increments)
-    var rotateDeg = (req.RotateDeg ?? 0) % 360;
-    if (rotateDeg < 0) rotateDeg += 360;
-    if (rotateDeg == 90) filterParts.Add("transpose=1");
-    else if (rotateDeg == 180) filterParts.Add("transpose=1,transpose=1");
-    else if (rotateDeg == 270) filterParts.Add("transpose=2");
-    
-    // 3. Flip
-    if (req.FlipH == true && req.FlipV == true) filterParts.Add("hflip,vflip");
-    else if (req.FlipH == true) filterParts.Add("hflip");
-    else if (req.FlipV == true) filterParts.Add("vflip");
-    
-    // 4. Speed
-    var speed = req.Speed.HasValue ? Math.Clamp(req.Speed.Value, 0.25, 2.0) : 1.0;
-    if (Math.Abs(speed - 1.0) > 0.01)
-    {
-        filterParts.Add($"setpts={F(1.0 / speed)}*PTS");
-    }
-
-    // Safe scale+pad: always use fixed dimensions to avoid dynamic size issues
-    // Clamp vertical offset to ensure pad stays within canvas bounds
-    var safeVerticalOffset = Math.Clamp(verticalOffset, -(targetHeight / 2), targetHeight / 2);
-    // Use force_divisible_by=2 for yuv420p compatibility and max() to prevent negative pad coordinates
-    var scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
-                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{safeVerticalOffset}\\,0):color=black," +
-                   $"format=yuv420p";
-    
-    // Append transform filters to the base scale/pad
-    var transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
-
-    string filter;
-    double outputDuration;
-
-    static string F(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
-
-    var requestedSegments = (req.Segments ?? Array.Empty<VideoProcessSegment>())
-        .Select(x => new { Start = Math.Max(0, x.StartSec), End = Math.Min(duration, x.EndSec) })
-        .Where(x => x.End - x.Start >= 0.1)
-        .OrderBy(x => x.Start)
-        .ToList();
-
-    var mergedSegments = new List<(double Start, double End)>();
-    foreach (var seg in requestedSegments)
-    {
-        if (mergedSegments.Count == 0)
-        {
-            mergedSegments.Add((seg.Start, seg.End));
-            continue;
-        }
-
-        var last = mergedSegments[^1];
-        if (seg.Start <= last.End + 0.05)
-        {
-            mergedSegments[^1] = (last.Start, Math.Max(last.End, seg.End));
-        }
-        else
-        {
-            mergedSegments.Add((seg.Start, seg.End));
-        }
-    }
-
-    if (mergedSegments.Count == 0)
-    {
-        // Legacy single range/cut behavior fallback
-        var cutStart = req.CutStartSec ?? 0;
-        var cutEnd = req.CutEndSec ?? 0;
-        var hasMiddleCut = cutEnd > cutStart && cutStart > trimStart && cutEnd < trimEnd;
-
-        if (hasMiddleCut)
-        {
-            filter = $"[0:v]trim=start={F(trimStart)}:end={F(cutStart)},setpts=PTS-STARTPTS[v0];" +
-                     $"[0:v]trim=start={F(cutEnd)}:end={F(trimEnd)},setpts=PTS-STARTPTS[v1];" +
-                     $"[v0][v1]concat=n=2:v=1:a=0,{transformFilter}{scalePad}[v]";
-            outputDuration = (cutStart - trimStart) + (trimEnd - cutEnd);
-        }
-        else
-        {
-            filter = $"[0:v]trim=start={F(trimStart)}:end={F(trimEnd)},setpts=PTS-STARTPTS,{transformFilter}{scalePad}[v]";
-            outputDuration = trimEnd - trimStart;
-        }
-    }
-    else if (mergedSegments.Count == 1)
-    {
-        var seg = mergedSegments[0];
-        filter = $"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS,{transformFilter}{scalePad}[v]";
-        outputDuration = seg.End - seg.Start;
-    }
-    else
-    {
-        var sb = new StringBuilder();
-        for (var i = 0; i < mergedSegments.Count; i++)
-        {
-            var seg = mergedSegments[i];
-            sb.Append($"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS[v{i}];");
-        }
-
-        for (var i = 0; i < mergedSegments.Count; i++)
-        {
-            sb.Append($"[v{i}]");
-        }
-        sb.Append($"concat=n={mergedSegments.Count}:v=1:a=0,{transformFilter}{scalePad}[v]");
-
-        filter = sb.ToString();
-        outputDuration = mergedSegments.Sum(x => x.End - x.Start);
-    }
-    
-    // Adjust output duration for speed changes
-    if (Math.Abs(speed - 1.0) > 0.01)
-    {
-        outputDuration = outputDuration / speed;
-    }
-
-    if (outputDuration <= 0.5)
-    {
-        return Results.BadRequest(new { error = "resulting duration too short" });
-    }
-
-    var targetSizeMb = Math.Clamp(req.TargetSizeMb, 0.5, 2048);
-    var targetBits = targetSizeMb * 1024L * 1024L * 8L;
-    var bitrate = (long)Math.Max(250_000, targetBits / outputDuration);
-
     var createdAt = DateTimeOffset.UtcNow;
     var outName = $"{createdAt:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.mp4";
     var outPath = Path.Combine(videoOutDir, outName);
-    var relPath = $"video-out/{outName}";
-    
-    // Determine if ultra-safe mode should be enabled
-    var ultraSafeMode = ShouldUseUltraSafeMode();
-    
-    if (ultraSafeMode)
+
+    var correlationId = http.TraceIdentifier;
+    var enqueue = queue.Enqueue(req, inputPath, outPath, correlationId);
+    if (!enqueue.Accepted && enqueue.QueueFull)
     {
-        logger.LogWarning("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        logger.LogWarning("⚠️  ULTRA-SAFE FFMPEG PROFILE ENABLED");
-        logger.LogWarning("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        
-        // Override parameters for ultra-safe mode
-        // Resolution: 720x404 chosen to minimize memory usage while maintaining 16:9 aspect ratio
-        // (404 = even height closest to 405 for libx264/yuv420p compatibility)
-        var requestedUltraWidth = 720;
-        var requestedUltraHeight = 404;
-        
-        // Auto-even-resize: ensure dimensions are always even (defensive check)
-        targetWidth = NormalizeToEven(requestedUltraWidth);
-        targetHeight = NormalizeToEven(requestedUltraHeight);
-        
-        if (targetWidth != requestedUltraWidth || targetHeight != requestedUltraHeight)
-        {
-            logger.LogWarning("Auto-even resize applied in ultra-safe mode: {OriginalW}x{OriginalH} -> {EvenW}x{EvenH}", 
-                requestedUltraWidth, requestedUltraHeight, targetWidth, targetHeight);
-        }
-        
-        // Ultra-safe mode: Conservative offset clamping to prevent pad errors
-        // After scaling with decrease, the video will be <= 720x404. Worst case: scaled to 720x1 (or 1x404)
-        // For 404p output, max safe offset range when scaled height could be as small as ~100px is [-150, 150]
-        // We use ±200px as a very safe bound that prevents edge cases
-        var ultraSafeVerticalOffset = Math.Clamp(verticalOffset, -UltraSafeOffsetLimit, UltraSafeOffsetLimit);
-        
-        // Ultra-safe filter chain: force_divisible_by=2 for yuv420p, max() prevents negative pad coords, format=yuv420p for pixel format consistency
-        scalePad = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
-                   $"pad={targetWidth}:{targetHeight}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2+{ultraSafeVerticalOffset}\\,0):color=black," +
-                   $"format=yuv420p";
-        
-        // Rebuild filter with new scale/pad
-        transformFilter = filterParts.Count > 0 ? string.Join(",", filterParts) + "," : "";
-        
-        if (mergedSegments.Count == 0)
-        {
-            var cutStart = req.CutStartSec ?? 0;
-            var cutEnd = req.CutEndSec ?? 0;
-            var hasMiddleCut = cutEnd > cutStart && cutStart > trimStart && cutEnd < trimEnd;
-
-            if (hasMiddleCut)
-            {
-                filter = $"[0:v]trim=start={F(trimStart)}:end={F(cutStart)},setpts=PTS-STARTPTS[v0];" +
-                         $"[0:v]trim=start={F(cutEnd)}:end={F(trimEnd)},setpts=PTS-STARTPTS[v1];" +
-                         $"[v0][v1]concat=n=2:v=1:a=0,{transformFilter}{scalePad}[v]";
-            }
-            else
-            {
-                filter = $"[0:v]trim=start={F(trimStart)}:end={F(trimEnd)},setpts=PTS-STARTPTS,{transformFilter}{scalePad}[v]";
-            }
-        }
-        else if (mergedSegments.Count == 1)
-        {
-            var seg = mergedSegments[0];
-            filter = $"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS,{transformFilter}{scalePad}[v]";
-        }
-        else
-        {
-            var sb = new StringBuilder();
-            for (var i = 0; i < mergedSegments.Count; i++)
-            {
-                var seg = mergedSegments[i];
-                sb.Append($"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS[v{i}];");
-            }
-
-            for (var i = 0; i < mergedSegments.Count; i++)
-            {
-                sb.Append($"[v{i}]");
-            }
-            sb.Append($"concat=n={mergedSegments.Count}:v=1:a=0,{transformFilter}{scalePad}[v]");
-
-            filter = sb.ToString();
-        }
-        
-        // Ultra-safe bitrate: 180kbps default, max 250kbps
-        bitrate = Math.Min(250_000, Math.Max(180_000, bitrate));
-        
-        logger.LogWarning("Ultra-safe parameters:");
-        logger.LogWarning("  - threads: 1");
-        logger.LogWarning("  - mode: 1-pass only");
-        logger.LogWarning("  - resolution: {Width}x{Height}", targetWidth, targetHeight);
-        logger.LogWarning("  - fps: 24");
-        logger.LogWarning("  - bitrate: {Bitrate} bps", bitrate);
-        logger.LogWarning("  - audio: disabled");
-        logger.LogWarning("  - pix_fmt: yuv420p (forced)");
-        logger.LogWarning("  - filter_complex: {Filter}", filter);
-        logger.LogWarning("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    }
-    
-    // Determine audio handling (force disabled in ultra-safe mode)
-    var muteAudio = ultraSafeMode || (req.MuteAudio ?? false);
-    var audioMap = muteAudio ? new[] { "-an" } : new[] { "-map", "0:a?", "-c:a", "aac", "-b:a", "128k" };
-
-    // Detect low-memory server for regular safe profile (backwards compatibility)
-    var isLowMemory = IsLowMemoryServer();
-    if (isLowMemory && !ultraSafeMode)
-    {
-        logger.LogWarning("Low memory server detected (<= 2GB RAM), forcing safe ffmpeg profile: threads=1, 1-pass encoding");
-    }
-    
-    // Decide on encoding mode: ultra-safe always uses 1-pass; safe profile uses 2-pass only for short videos
-    var use2Pass = !ultraSafeMode && !isLowMemory && outputDuration < 60.0 && req.TargetSizeMb > 0;
-    var threadCount = 1; // Always use 1 thread for stability (prevents OOM on VPS)
-    
-    if (!ultraSafeMode)
-    {
-        logger.LogInformation("FFmpeg config: threads={Threads}, mode={Mode}, resolution={Width}x{Height}, duration={Duration}s, bitrate={Bitrate}",
-            threadCount, use2Pass ? "2-pass" : "1-pass", targetWidth, targetHeight, outputDuration, bitrate);
-    }
-    
-    // Track FFmpeg exit code for OOM detection (used for both 2-pass and 1-pass)
-    Action<int> trackExitCode = (exitCode) =>
-    {
-        lock (ffmpegExitCodeLock)
-        {
-            lastFfmpegExitCode = exitCode;
-        }
-    };
-    
-    if (use2Pass)
-    {
-        // 2-pass encoding for short videos
-        var passLog = Path.Combine(videoOutDir, $"pass-{Guid.NewGuid():N}");
-        var nullOutput = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
-        
-        var pass1Args = new List<string>
-        {
-            "-y",
-            "-threads", threadCount.ToString(),
-            "-i", inputPath,
-            "-filter_complex", filter,
-            "-map", "[v]",
-            "-an",  // Always no audio in pass 1
-            "-c:v", "libx264",
-            "-b:v", $"{bitrate}",
-            "-pass", "1",
-            "-passlogfile", passLog,
-            "-f", "mp4",
-            nullOutput
-        };
-
-        var pass2Args = new List<string>
-        {
-            "-y",
-            "-threads", threadCount.ToString(),
-            "-i", inputPath,
-            "-filter_complex", filter,
-            "-map", "[v]"
-        };
-        pass2Args.AddRange(audioMap);
-        pass2Args.AddRange(new[]
-        {
-            "-c:v", "libx264",
-            "-b:v", $"{bitrate}",
-            "-pass", "2",
-            "-passlogfile", passLog,
-            outPath
-        });
-
-        var pass1 = await RunProcessAsync("ffmpeg", pass1Args, ct, logger, "ffmpeg pass 1", trackExitCode);
-        if (!pass1.Success)
-        {
-            CleanupPassLogs(passLog);
-            return Results.BadRequest(new { error = "ffmpeg pass 1 failed", details = pass1.Error });
-        }
-
-        var pass2 = await RunProcessAsync("ffmpeg", pass2Args, ct, logger, "ffmpeg pass 2", trackExitCode);
-        CleanupPassLogs(passLog);
-        if (!pass2.Success)
-        {
-            return Results.BadRequest(new { error = "ffmpeg pass 2 failed", details = pass2.Error });
-        }
-    }
-    else
-    {
-        // 1-pass encoding (default, safer for memory)
-        var singlePassArgs = new List<string>
-        {
-            "-y",
-            "-threads", threadCount.ToString()
-        };
-        
-        // Add FPS limit in ultra-safe mode (before input file)
-        if (ultraSafeMode)
-        {
-            singlePassArgs.Add("-r");
-            singlePassArgs.Add("24");
-        }
-        
-        singlePassArgs.Add("-i");
-        singlePassArgs.Add(inputPath);
-        singlePassArgs.Add("-filter_complex");
-        singlePassArgs.Add(filter);
-        singlePassArgs.Add("-map");
-        singlePassArgs.Add("[v]");
-        singlePassArgs.AddRange(audioMap);
-        singlePassArgs.Add("-c:v");
-        singlePassArgs.Add("libx264");
-        singlePassArgs.Add("-b:v");
-        singlePassArgs.Add($"{bitrate}");
-        
-        // Force yuv420p pixel format in ultra-safe mode to avoid format negotiation issues
-        if (ultraSafeMode)
-        {
-            singlePassArgs.Add("-pix_fmt");
-            singlePassArgs.Add("yuv420p");
-        }
-        
-        singlePassArgs.Add(outPath);
-        
-        // Track exit code locally for potential retry
-        var lastLocalExitCode = 0;
-        Action<int> trackLocalExitCode = (exitCode) =>
-        {
-            lastLocalExitCode = exitCode;
-            lock (ffmpegExitCodeLock)
-            {
-                lastFfmpegExitCode = exitCode;
-            }
-        };
-        
-        var result = await RunProcessAsync("ffmpeg", singlePassArgs, ct, logger, "ffmpeg 1-pass", trackLocalExitCode);
-        if (!result.Success)
-        {
-            // If OOM even in ultra-safe mode, provide user-friendly error
-            if (result.Error.Contains("OOM killer") || result.Error.Contains("exit code 137"))
-            {
-                return Results.BadRequest(new { 
-                    error = "Server out of memory", 
-                    details = "Video processing requires more memory than available. Please try with a shorter video or contact administrator to increase server resources." 
-                });
-            }
-            
-            // F05: Fallback for pad dimension errors (exit code 234)
-            // If pad filter fails due to dimension issues, retry with scale+crop (no pad)
-            // Only retry once to prevent infinite loops
-            var alreadyRetried = false;
-            if (!alreadyRetried && ultraSafeMode && lastLocalExitCode == 234 && 
-                result.Error.Contains("Padded dimensions cannot be smaller"))
-            {
-                alreadyRetried = true; // Guard against multiple retries
-                logger.LogWarning("Ultra-safe pad filter failed (exit code 234). Retrying with scale+crop fallback...");
-                
-                // Rebuild filter with fallback strategy: scale with increase + crop + format
-                // This guarantees exact even dimensions output without pad
-                var fallbackScaleCrop = $"setsar=1,scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=increase:force_divisible_by=2," +
-                                       $"crop={targetWidth}:{targetHeight}," +
-                                       $"format=yuv420p";
-                
-                string fallbackFilter;
-                if (mergedSegments.Count == 0)
-                {
-                    var cutStart = req.CutStartSec ?? 0;
-                    var cutEnd = req.CutEndSec ?? 0;
-                    var hasMiddleCut = cutEnd > cutStart && cutStart > trimStart && cutEnd < trimEnd;
-
-                    if (hasMiddleCut)
-                    {
-                        fallbackFilter = $"[0:v]trim=start={F(trimStart)}:end={F(cutStart)},setpts=PTS-STARTPTS[v0];" +
-                                        $"[0:v]trim=start={F(cutEnd)}:end={F(trimEnd)},setpts=PTS-STARTPTS[v1];" +
-                                        $"[v0][v1]concat=n=2:v=1:a=0,{transformFilter}{fallbackScaleCrop}[v]";
-                    }
-                    else
-                    {
-                        fallbackFilter = $"[0:v]trim=start={F(trimStart)}:end={F(trimEnd)},setpts=PTS-STARTPTS,{transformFilter}{fallbackScaleCrop}[v]";
-                    }
-                }
-                else if (mergedSegments.Count == 1)
-                {
-                    var seg = mergedSegments[0];
-                    fallbackFilter = $"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS,{transformFilter}{fallbackScaleCrop}[v]";
-                }
-                else
-                {
-                    var sb = new StringBuilder();
-                    for (var i = 0; i < mergedSegments.Count; i++)
-                    {
-                        var seg = mergedSegments[i];
-                        sb.Append($"[0:v]trim=start={F(seg.Start)}:end={F(seg.End)},setpts=PTS-STARTPTS[v{i}];");
-                    }
-
-                    for (var i = 0; i < mergedSegments.Count; i++)
-                    {
-                        sb.Append($"[v{i}]");
-                    }
-                    sb.Append($"concat=n={mergedSegments.Count}:v=1:a=0,{transformFilter}{fallbackScaleCrop}[v]");
-
-                    fallbackFilter = sb.ToString();
-                }
-                
-                logger.LogWarning("  - fallback filter_complex: {Filter}", fallbackFilter);
-                
-                // Build fallback args (same as before but with new filter)
-                var fallbackArgs = new List<string>
-                {
-                    "-y",
-                    "-threads", threadCount.ToString(),
-                    "-r", "24",
-                    "-i", inputPath,
-                    "-filter_complex", fallbackFilter,
-                    "-map", "[v]",
-                    "-an",
-                    "-c:v", "libx264",
-                    "-b:v", $"{bitrate}",
-                    "-pix_fmt", "yuv420p",
-                    outPath
-                };
-                
-                var fallbackResult = await RunProcessAsync("ffmpeg", fallbackArgs, ct, logger, "ffmpeg fallback (scale+crop)", trackLocalExitCode);
-                if (!fallbackResult.Success)
-                {
-                    logger.LogError("Ultra-safe fallback also failed. Original error: {OriginalError}, Fallback error: {FallbackError}", 
-                        result.Error, fallbackResult.Error);
-                    return Results.BadRequest(new { error = "ffmpeg encoding failed (both pad and fallback attempts)", details = fallbackResult.Error });
-                }
-                
-                logger.LogWarning("Ultra-safe fallback succeeded with scale+crop strategy");
-            }
-            else
-            {
-                return Results.BadRequest(new { error = "ffmpeg encoding failed", details = result.Error });
-            }
-        }
+        return Results.Json(new { error = "Queue is full" }, statusCode: StatusCodes.Status429TooManyRequests);
     }
 
-    var entry = new VideoHistoryItem(
-        Kind: "processed",
-        StoredName: outName,
-        OriginalName: storedName,
-        CreatedAt: createdAt,
-        Size: new FileInfo(outPath).Length,
-        RelativePath: relPath,
-        DurationSeconds: outputDuration
-    );
-    await AppendVideoHistoryAsync(videoHistoryPath, videoHistoryLock, entry, ct);
-
-    return Results.Ok(new
+    return Results.Accepted($"/video/jobs/{enqueue.Job!.JobId}", new
     {
-        ok = true,
-        createdAt,
-        relativePath = relPath,
-        durationSeconds = outputDuration,
-        targetSizeMb
+        jobId = enqueue.Job!.JobId,
+        status = enqueue.Job.Status,
+        createdAt = enqueue.Job.CreatedAtUtc,
+        ttlAt = enqueue.Job.TtlAtUtc
     });
 })
 .DisableAntiforgery()
 .Accepts<VideoProcessRequest>("application/json")
-.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status202Accepted)
 .Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound)
+.Produces(StatusCodes.Status429TooManyRequests);
+
+app.MapGet("/video/jobs/{jobId:guid}", (Guid jobId, IFfmpegJobQueue queue) =>
+{
+    var job = queue.Get(jobId);
+    if (job is null)
+    {
+        return Results.NotFound(new { error = "job not found" });
+    }
+
+    return Results.Ok(new
+    {
+        job.JobId,
+        job.CreatedAtUtc,
+        job.TtlAtUtc,
+        job.RequestedMode,
+        job.ResolvedMode,
+        job.RamDecision,
+        job.DurationSeconds,
+        job.Status,
+        job.Progress,
+        job.Error,
+        job.RelativeOutputPath
+    });
+})
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+app.MapPost("/video/jobs/{jobId:guid}/cancel", (Guid jobId, IFfmpegJobQueue queue) =>
+{
+    var canceled = queue.Cancel(jobId);
+    if (!canceled)
+    {
+        return Results.NotFound(new { error = "job not found or cannot be canceled" });
+    }
+
+    return Results.Ok(new { ok = true, jobId });
+})
+.DisableAntiforgery()
+.Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);
 
 // --- Video history endpoints ---
@@ -3189,7 +2724,8 @@ record VideoProcessRequest(
     bool? FlipH,
     bool? FlipV,
     double? Speed,
-    bool? MuteAudio
+    bool? MuteAudio,
+    string? EncodingMode
 );
 
 record VideoProcessSegment(
