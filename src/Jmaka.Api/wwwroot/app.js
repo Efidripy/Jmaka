@@ -32,6 +32,200 @@ const compositesTbody = document.getElementById('compositesTbody');
 const sizeButtons = document.getElementById('sizeButtons');
 const sizeBtns = sizeButtons ? Array.from(sizeButtons.querySelectorAll('button.size-btn')) : [];
 
+const LANGUAGE_KEY = 'jmaka_language';
+const TRANSLATIONS = {
+  'ru': {
+    loading: 'Загрузка...',
+    loadError: 'Ошибка загрузки.',
+    videoUploadHint: 'Загрузите видео и перетащите границы на таймлайне.',
+    videoUploading: 'Загружаю видео...',
+    videoUploaded: 'Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.',
+    videoProcessing: 'Обрабатываю видео...',
+    videoDone: 'Готово. Результат появился в Processed.',
+    uploadImage: 'Upload image',
+    hintDefault: 'Нажмите на дискету, перетащите файлы или вставьте из буфера обмена — и они загрузятся.',
+    deleteConfirm: 'Удалить запись и все связанные файлы безвозвратно?',
+    deleteTitle: 'Удаление',
+    deleteCancel: 'Отмена',
+    deleteAction: 'Удалить',
+    splitCreated: 'Split создан.',
+    splitChooseTwo: 'Выберите две картинки.',
+    splitError: 'Ошибка split.',
+    splitWorking: 'Склеиваю...',
+    splitChooseFrom1280: 'Выберите две картинки из готового размера 1280.',
+    oknoFixCreated: 'OknoFix создан.',
+    oknoFixError: 'Ошибка OknoFix.',
+    oknoScaleCreated: 'OknoScale создан.',
+    oknoScaleError: 'Ошибка OknoScale.',
+    editCreated: 'Edit создан.',
+    saving: 'Сохраняю...',
+    saveError: 'Ошибка сохранения.',
+    saveDone: 'Готово.',
+    videoEdit: 'Video Edit',
+    split: 'Split',
+    split3: 'Split3',
+    crop: 'Crop',
+    edit: 'Edit',
+    oknoFix: 'OknoFix',
+    oknoScale: 'OknoScale',
+    languageLabel: 'Language selector'
+  },
+  'en-US': {
+    loading: 'Loading...',
+    loadError: 'Loading error.',
+    videoUploadHint: 'Upload a video and drag segment boundaries on the timeline.',
+    videoUploading: 'Uploading video...',
+    videoUploaded: 'Video uploaded. Select segments on the timeline and click Process.',
+    videoProcessing: 'Processing video...',
+    videoDone: 'Done. The result appeared in Processed.',
+    uploadImage: 'Upload image',
+    hintDefault: 'Click the disk icon, drag files, or paste from clipboard — they will upload automatically.',
+    deleteConfirm: 'Delete this entry and all related files permanently?',
+    deleteTitle: 'Delete',
+    deleteCancel: 'Cancel',
+    deleteAction: 'Delete',
+    splitCreated: 'Split created.',
+    splitChooseTwo: 'Choose two images.',
+    splitError: 'Split error.',
+    splitWorking: 'Merging...',
+    splitChooseFrom1280: 'Choose two images from ready 1280 size.',
+    oknoFixCreated: 'OknoFix created.',
+    oknoFixError: 'OknoFix error.',
+    oknoScaleCreated: 'OknoScale created.',
+    oknoScaleError: 'OknoScale error.',
+    editCreated: 'Edit created.',
+    saving: 'Saving...',
+    saveError: 'Save error.',
+    saveDone: 'Done.',
+    videoEdit: 'Video Edit',
+    split: 'Split',
+    split3: 'Split3',
+    crop: 'Crop',
+    edit: 'Edit',
+    oknoFix: 'OknoFix',
+    oknoScale: 'OknoScale',
+    languageLabel: 'Language selector'
+  },
+  'es-ES': {
+    loading: 'Cargando...',
+    loadError: 'Error de carga.',
+    videoUploadHint: 'Sube un vídeo y arrastra los límites en la línea de tiempo.',
+    videoUploading: 'Subiendo vídeo...',
+    videoUploaded: 'Vídeo subido. Selecciona segmentos y pulsa Procesar.',
+    videoProcessing: 'Procesando vídeo...',
+    videoDone: 'Listo. El resultado apareció en Processed.',
+    uploadImage: 'Subir imagen',
+    hintDefault: 'Haz clic en el icono de disco, arrastra archivos o pega desde el portapapeles: se cargarán automáticamente.',
+    deleteConfirm: '¿Eliminar esta entrada y todos los archivos relacionados de forma permanente?',
+    deleteTitle: 'Eliminar',
+    deleteCancel: 'Cancelar',
+    deleteAction: 'Eliminar',
+    splitCreated: 'Split creado.',
+    splitChooseTwo: 'Elige dos imágenes.',
+    splitError: 'Error de Split.',
+    splitWorking: 'Combinando...',
+    splitChooseFrom1280: 'Elige dos imágenes del tamaño 1280 listo.',
+    oknoFixCreated: 'OknoFix creado.',
+    oknoFixError: 'Error de OknoFix.',
+    oknoScaleCreated: 'OknoScale creado.',
+    oknoScaleError: 'Error de OknoScale.',
+    editCreated: 'Edición creada.',
+    saving: 'Guardando...',
+    saveError: 'Error al guardar.',
+    saveDone: 'Listo.',
+    videoEdit: 'Editar vídeo',
+    split: 'Split',
+    split3: 'Split3',
+    crop: 'Recortar',
+    edit: 'Editar',
+    oknoFix: 'OknoFix',
+    oknoScale: 'OknoScale',
+    languageLabel: 'Selector de idioma'
+  }
+};
+
+function normalizeLang(lang) {
+  if (!lang) return 'ru';
+  if (lang === 'en' || lang === 'en-US') return 'en-US';
+  if (lang === 'es' || lang === 'es-ES') return 'es-ES';
+  return 'ru';
+}
+
+function getCurrentLanguage() {
+  try {
+    const stored = localStorage.getItem(LANGUAGE_KEY);
+    if (stored) return normalizeLang(stored);
+  } catch {}
+  return normalizeLang((navigator && navigator.language) || 'ru');
+}
+
+let currentLanguage = getCurrentLanguage();
+function t(key) {
+  return (TRANSLATIONS[currentLanguage] && TRANSLATIONS[currentLanguage][key])
+    || (TRANSLATIONS.ru && TRANSLATIONS.ru[key])
+    || key;
+}
+
+window.JMAKA_I18N = {
+  t,
+  getLanguage: () => currentLanguage,
+  setLanguage: (lang) => {
+    currentLanguage = normalizeLang(lang);
+    try { localStorage.setItem(LANGUAGE_KEY, currentLanguage); } catch {}
+    applyLanguage();
+    try { window.dispatchEvent(new CustomEvent('jmaka:language-changed', { detail: { language: currentLanguage } })); } catch {}
+  }
+};
+
+function applyLanguage() {
+  const saveLabel = document.querySelector('.save-label');
+  if (saveLabel) saveLabel.textContent = t('uploadImage');
+  if (hint) hint.textContent = t('hintDefault');
+
+  const splitBtn = document.getElementById('splitToolBtn');
+  const split3Btn = document.getElementById('split3ToolBtn');
+  const cropBtn = document.getElementById('cropToolBtn');
+  const editBtn = document.getElementById('imageEditToolBtn');
+  const videoBtn = document.getElementById('videoEditToolBtn');
+  const trashFixBtn = document.getElementById('trashFixToolBtn');
+  const trashScaleBtn = document.getElementById('trashToolBtn');
+  if (splitBtn) splitBtn.textContent = t('split');
+  if (split3Btn) split3Btn.textContent = t('split3');
+  if (cropBtn) cropBtn.textContent = t('crop');
+  if (editBtn) editBtn.textContent = t('edit');
+  if (videoBtn) videoBtn.textContent = t('videoEdit');
+  if (trashFixBtn) trashFixBtn.textContent = t('oknoFix');
+  if (trashScaleBtn) trashScaleBtn.textContent = t('oknoScale');
+
+  const deleteTitle = document.querySelector('#deleteModal .modal-title');
+  if (deleteTitle) deleteTitle.textContent = t('deleteTitle');
+  if (deleteCancelBtn) deleteCancelBtn.textContent = t('deleteCancel');
+  if (deleteConfirmBtn) deleteConfirmBtn.textContent = t('deleteAction');
+
+  const switcher = document.getElementById('languageSwitcher');
+  if (switcher) switcher.setAttribute('aria-label', t('languageLabel'));
+  document.querySelectorAll('#languageSwitcher .lang-btn').forEach((btn) => {
+    const isActive = btn.dataset.lang === currentLanguage;
+    btn.classList.toggle('is-active', isActive);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+
+  document.documentElement.lang = currentLanguage === 'ru' ? 'ru' : (currentLanguage === 'es-ES' ? 'es' : 'en');
+}
+
+function initLanguageButtons() {
+  const switcher = document.getElementById('languageSwitcher');
+  if (!switcher) return;
+  switcher.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('.lang-btn') : null;
+    if (!btn) return;
+    const lang = btn.dataset.lang;
+    if (!lang || lang === currentLanguage) return;
+    window.JMAKA_I18N.setLanguage(lang);
+  });
+}
+
+
 // viewer modal elements
 // RU: Элементы модального окна просмотра полноразмерной картинки.
 // EN: DOM elements for the image viewer modal used when clicking previews.
@@ -253,7 +447,7 @@ function confirmDeleteAsync(storedName) {
 
   if (!deleteModal) {
     // fallback
-    return Promise.resolve(confirm('Удалить запись и все связанные файлы безвозвратно?'));
+    return Promise.resolve(confirm(t('deleteConfirm')));
   }
 
   deleteModal.hidden = false;
@@ -275,6 +469,8 @@ if (deleteModal) {
 if (deleteCloseBtn) deleteCloseBtn.addEventListener('click', () => closeDeleteModal(false));
 if (deleteCancelBtn) deleteCancelBtn.addEventListener('click', () => closeDeleteModal(false));
 if (deleteConfirmBtn) deleteConfirmBtn.addEventListener('click', () => closeDeleteModal(true));
+initLanguageButtons();
+applyLanguage();
 
 // help modal wiring
 if (helpBtn && helpModal) {
@@ -836,7 +1032,7 @@ async function applySplit() {
   const b = splitState.b;
 
   if (!a || !a.storedName || !b || !b.storedName) {
-    if (splitHint) splitHint.textContent = 'Выберите две картинки.';
+    if (splitHint) splitHint.textContent = t('splitChooseTwo');
     return;
   }
 
@@ -858,7 +1054,7 @@ async function applySplit() {
   try {
     if (splitApplyBtn) splitApplyBtn.disabled = true;
     setBusy(true);
-    if (splitHint) splitHint.textContent = 'Склеиваю...';
+    if (splitHint) splitHint.textContent = t('splitWorking');
 
     const res = await fetch(toAbsoluteUrl('split'), {
       method: 'POST',
@@ -871,7 +1067,7 @@ async function applySplit() {
     try { data = JSON.parse(text); } catch { data = text; }
 
     if (!res.ok) {
-      if (splitHint) splitHint.textContent = 'Ошибка split.';
+      if (splitHint) splitHint.textContent = t('splitError');
       showResult(data);
       return;
     }
@@ -884,10 +1080,10 @@ async function applySplit() {
 
     await loadComposites();
 
-    hint.textContent = 'Split создан.';
+    hint.textContent = t('splitCreated');
     closeSplitModal();
   } catch (e) {
-    if (splitHint) splitHint.textContent = 'Ошибка split.';
+    if (splitHint) splitHint.textContent = t('splitError');
     showResult(String(e));
   } finally {
     setBusy(false);
@@ -3783,17 +3979,17 @@ function wireOknoScaleUI() {
         try { data = JSON.parse(text); } catch { data = text; }
 
         if (!res.ok) {
-          if (oknoScaleHint) oknoScaleHint.textContent = 'Ошибка OknoScale.';
+          if (oknoScaleHint) oknoScaleHint.textContent = t('oknoScaleError');
           showResult(data);
           return;
         }
 
         showResult(data);
         await loadComposites();
-        if (oknoScaleHint) oknoScaleHint.textContent = 'OknoScale создан.';
+        if (oknoScaleHint) oknoScaleHint.textContent = t('oknoScaleCreated');
         closeOknoScaleModal();
       } catch (err) {
-        if (oknoScaleHint) oknoScaleHint.textContent = 'Ошибка OknoScale.';
+        if (oknoScaleHint) oknoScaleHint.textContent = t('oknoScaleError');
         showResult(String(err));
       } finally {
         setBusy(false);
@@ -4248,17 +4444,17 @@ function wireTrashUI() {
         try { data = JSON.parse(text); } catch { data = text; }
 
         if (!res.ok) {
-          if (trashHint) trashHint.textContent = 'Ошибка OknoFix.';
+          if (trashHint) trashHint.textContent = t('oknoFixError');
           showResult(data);
           return;
         }
 
         showResult(data);
         await loadComposites();
-        if (trashHint) trashHint.textContent = 'OknoFix создан.';
+        if (trashHint) trashHint.textContent = t('oknoFixCreated');
         closeTrashModal();
       } catch (err) {
-        if (trashHint) trashHint.textContent = 'Ошибка OknoFix.';
+        if (trashHint) trashHint.textContent = t('oknoFixError');
         showResult(String(err));
       } finally {
         setBusy(false);
@@ -4727,7 +4923,7 @@ async function loadImageEditList() {
 async function saveImageEdit(itemOverride) {
   const item = itemOverride || imageEditState.selected;
   if (!item) return;
-  if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+  if (imageEditHint) imageEditHint.textContent = t('saving');
   const payload = {
     imageId: item.id,
     preset: imageEditState.params?.preset || 'None',
@@ -4744,10 +4940,10 @@ async function saveImageEdit(itemOverride) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data && data.error ? data.error : 'save failed');
-    if (imageEditHint) imageEditHint.textContent = 'Готово.';
+    if (imageEditHint) imageEditHint.textContent = t('saveDone');
     await loadImageEditList();
   } catch (err) {
-    if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+    if (imageEditHint) imageEditHint.textContent = t('saveError');
   }
 }
 
@@ -4818,7 +5014,7 @@ if (imageEditApplyBtn) {
     try {
       if (imageEditApplyBtn) imageEditApplyBtn.disabled = true;
       setBusy(true);
-      if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+      if (imageEditHint) imageEditHint.textContent = t('saving');
 
       const res = await fetch(toAbsoluteUrl(`images/${imageEditState.storedName}/save-edit`), {
         method: 'POST',
@@ -4831,7 +5027,7 @@ if (imageEditApplyBtn) {
       try { data = JSON.parse(text); } catch { data = text; }
 
       if (!res.ok) {
-        if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+        if (imageEditHint) imageEditHint.textContent = t('saveError');
         showResult(data);
         return;
       }
@@ -4840,10 +5036,10 @@ if (imageEditApplyBtn) {
       await loadComposites();
       await loadImageEditList();
 
-      hint.textContent = 'Edit создан.';
+      hint.textContent = t('editCreated');
       closeImageEdit();
     } catch (e) {
-      if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+      if (imageEditHint) imageEditHint.textContent = t('saveError');
       showResult(String(e));
     } finally {
       setBusy(false);

@@ -72,6 +72,16 @@
 
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
+  function vt(key, fallback) {
+    try {
+      if (window.JMAKA_I18N && typeof window.JMAKA_I18N.t === 'function') {
+        const value = window.JMAKA_I18N.t(key);
+        if (value && value !== key) return value;
+      }
+    } catch {}
+    return fallback;
+  }
+
   function formatTime(seconds) {
     if (!Number.isFinite(seconds)) return '00:00';
     const total = Math.max(0, seconds);
@@ -324,14 +334,14 @@
 
   async function loadVideoHistory() {
     if (!videoOriginalsList || !videoProcessedList) return;
-    videoOriginalsList.textContent = 'Загрузка...';
-    videoProcessedList.textContent = 'Загрузка...';
+    videoOriginalsList.textContent = vt('loading', 'Загрузка...');
+    videoProcessedList.textContent = vt('loading', 'Загрузка...');
     try {
       const res = await fetch(toAbsoluteUrl('video-history'), { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok || !Array.isArray(data)) {
-        videoOriginalsList.textContent = 'Ошибка загрузки.';
-        videoProcessedList.textContent = 'Ошибка загрузки.';
+        videoOriginalsList.textContent = vt('loadError', 'Ошибка загрузки.');
+        videoProcessedList.textContent = vt('loadError', 'Ошибка загрузки.');
         return;
       }
       originals = data.filter((item) => item && item.kind !== 'processed');
@@ -341,8 +351,8 @@
         setHint('Results пуст. Нажмите Refresh, если обработка завершилась только что.');
       }
     } catch {
-      videoOriginalsList.textContent = 'Ошибка загрузки.';
-      videoProcessedList.textContent = 'Ошибка загрузки.';
+      videoOriginalsList.textContent = vt('loadError', 'Ошибка загрузки.');
+      videoProcessedList.textContent = vt('loadError', 'Ошибка загрузки.');
     }
   }
 
@@ -498,7 +508,7 @@
 
   function openModal() {
     videoEditModal.hidden = false;
-    setHint('Загрузите видео и перетащите границы на таймлайне.');
+    setHint(vt('videoUploadHint', 'Загрузите видео и перетащите границы на таймлайне.'));
     loadVideoHistory();
     renderAll();
   }
@@ -740,7 +750,7 @@
       if (!file) return;
       const form = new FormData();
       form.append('file', file);
-      setHint('Загружаю видео...');
+      setHint(vt('videoUploading', 'Загружаю видео...'));
       try {
         const res = await fetchWithFallback('upload-video', { method: 'POST', body: form });
         let data;
@@ -752,7 +762,7 @@
           videoEditPreview.src = url;
           timelinePreviewState.dirty = true;
         }
-        setHint('Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.');
+        setHint(vt('videoUploaded', 'Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.'));
         await loadVideoHistory();
         renderOutputControls();
       } catch (err) {
@@ -787,7 +797,7 @@
       };
 
       setProcessing(true);
-      setHint('Обрабатываю видео...');
+      setHint(vt('videoProcessing', 'Обрабатываю видео...'));
       try {
         const res = await fetch(toAbsoluteUrl('video-process'), {
           method: 'POST',
@@ -809,7 +819,7 @@
           timelinePreviewState.dirty = true;
         }
 
-        setHint('Готово. Результат появился в Processed.');
+        setHint(vt('videoDone', 'Готово. Результат появился в Processed.'));
         await loadVideoHistory();
         console.info(`Results refreshed (${processed.length})`);
       } catch (err) {
@@ -826,4 +836,10 @@
   });
 
   renderAll();
+
+  window.addEventListener('jmaka:language-changed', () => {
+    if (!videoEditModal.hidden) {
+      renderToolState();
+    }
+  });
 })();
