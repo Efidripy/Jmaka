@@ -492,15 +492,36 @@ html, body {
 }
 
 .composites-wrap .col-comp {
-  width: 80px;
+  width: 96px;
 }
 
 .composites-wrap .col-del {
-  width: 30px;
+  width: 36px;
 }
 
 .composites-wrap .table-wrap {
   overflow-x: hidden;
+}
+
+.composites-wrap .cell-with-download {
+  gap: 4px;
+}
+
+.composites-wrap .table-preview {
+  width: 52px;
+  height: 36px;
+}
+
+.composites-wrap .download-btn,
+.composites-wrap .del-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.composites-wrap .download-btn svg,
+.composites-wrap .del-btn svg {
+  width: 13px;
+  height: 13px;
 }
 
 .del-btn {
