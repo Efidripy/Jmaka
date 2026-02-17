@@ -214,22 +214,85 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         job.RamDecision = reason;
 
         var target = mode == EncodingMode.ULTRA_SAFE ? (720, 405) : (1280, 720);
-        var filter = $"[0:v]scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={target.Item1}:{target.Item2}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2\\,0):color=black,format=yuv420p[v]";
-        var bitrate = mode == EncodingMode.ULTRA_SAFE ? "350k" : "1200k";
+
+        var selectedSegments = (job.Request.Segments ?? Array.Empty<VideoProcessSegment>())
+            .Where(x => x is not null)
+            .Select(x =>
+            {
+                var start = Math.Clamp(x.StartSec, 0, duration);
+                var end = Math.Clamp(x.EndSec, 0, duration);
+                return (Start: start, End: end);
+            })
+            .Where(x => x.End - x.Start >= 0.05)
+            .OrderBy(x => x.Start)
+            .ToList();
+
+        var effectiveDuration = selectedSegments.Count > 0
+            ? selectedSegments.Sum(x => Math.Max(0, x.End - x.Start))
+            : duration;
+
+        var targetMb = Math.Clamp(job.Request.TargetSizeMb, 0.1, 2048);
+        var desiredKbps = (int)Math.Round((targetMb * 8192.0 / Math.Max(1, effectiveDuration)) * 0.9);
+        var minKbps = mode == EncodingMode.ULTRA_SAFE ? 120 : 180;
+        var maxKbps = mode == EncodingMode.ULTRA_SAFE ? 1200 : 3500;
+        var videoKbps = Math.Clamp(desiredKbps, minKbps, maxKbps);
+        var bitrate = $"{videoKbps}k";
+
+        string sourceLabel;
+        var filterParts = new List<string>();
+        if (selectedSegments.Count > 0)
+        {
+            for (var i = 0; i < selectedSegments.Count; i++)
+            {
+                var seg = selectedSegments[i];
+                filterParts.Add($"[0:v]trim=start={seg.Start.ToString(CultureInfo.InvariantCulture)}:end={seg.End.ToString(CultureInfo.InvariantCulture)},setpts=PTS-STARTPTS[v{i}]");
+            }
+
+            var concatInputs = string.Concat(Enumerable.Range(0, selectedSegments.Count).Select(i => $"[v{i}]"));
+            filterParts.Add($"{concatInputs}concat=n={selectedSegments.Count}:v=1:a=0[vsrc]");
+            sourceLabel = "[vsrc]";
+        }
+        else
+        {
+            sourceLabel = "[0:v]";
+        }
+
+        filterParts.Add($"{sourceLabel}scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={target.Item1}:{target.Item2}:x=max((ow-iw)/2\,0):y=max((oh-ih)/2\,0):color=black,format=yuv420p[v]");
+        var filter = string.Join(';', filterParts);
+
         var passlog = Path.Combine(Path.GetDirectoryName(job.OutputPath) ?? ".", $"pass-{job.JobId:N}");
+        var includeAudio = !(job.Request.MuteAudio ?? false) && selectedSegments.Count == 0;
 
         if (mode == EncodingMode.MAX_QUALITY)
         {
             var nullOutput = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
             var pass1 = new List<string>{"-y","-threads","1","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-an","-c:v","libx264","-b:v",bitrate,"-pass","1","-passlogfile",passlog,"-f","mp4",nullOutput};
-            var pass2 = new List<string>{"-y","-threads","1","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-map","0:a?","-c:v","libx264","-c:a","aac","-b:a","128k","-b:v",bitrate,"-pass","2","-passlogfile",passlog,job.OutputPath};
+            var pass2 = new List<string>{"-y","-threads","1","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-c:v","libx264","-b:v",bitrate,"-pass","2","-passlogfile",passlog};
+            if (includeAudio)
+            {
+                pass2.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a","128k"});
+            }
+            else
+            {
+                pass2.Add("-an");
+            }
+            pass2.Add(job.OutputPath);
             await RunProcessAsync(job, "ffmpeg", pass1, ct);
             await RunProcessAsync(job, "ffmpeg", pass2, ct);
             CleanupPassLogs(passlog);
         }
         else
         {
-            var args = new List<string>{"-y","-threads","1","-r","24","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-an","-c:v","libx264","-pix_fmt","yuv420p","-b:v",bitrate,job.OutputPath};
+            var args = new List<string>{"-y","-threads","1","-r","24","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-c:v","libx264","-pix_fmt","yuv420p","-b:v",bitrate};
+            if (includeAudio)
+            {
+                args.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a","96k"});
+            }
+            else
+            {
+                args.Add("-an");
+            }
+            args.Add(job.OutputPath);
             await RunProcessAsync(job, "ffmpeg", args, ct);
         }
 
