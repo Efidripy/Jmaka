@@ -483,20 +483,29 @@ html, body {
 }
 
 /* Уплотняем правую (composites) таблицу, чтобы не было горизонтальной прокрутки */
+.composites-wrap .files-table {
+  table-layout: fixed;
+}
+
+.composites-wrap .files-table th,
+.composites-wrap .files-table td {
+  padding: 7px 4px;
+}
+
 .composites-wrap .col-dt {
-  width: 130px;
+  width: 44%;
 }
 
 .composites-wrap .col-kind {
-  width: 60px;
+  width: 17%;
 }
 
 .composites-wrap .col-comp {
-  width: 96px;
+  width: 29%;
 }
 
 .composites-wrap .col-del {
-  width: 36px;
+  width: 10%;
 }
 
 .composites-wrap .table-wrap {
@@ -504,24 +513,24 @@ html, body {
 }
 
 .composites-wrap .cell-with-download {
-  gap: 4px;
+  gap: 3px;
 }
 
 .composites-wrap .table-preview {
-  width: 52px;
-  height: 36px;
+  width: 50px;
+  height: 34px;
 }
 
 .composites-wrap .download-btn,
 .composites-wrap .del-btn {
-  width: 22px;
-  height: 22px;
+  width: 21px;
+  height: 21px;
 }
 
 .composites-wrap .download-btn svg,
 .composites-wrap .del-btn svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
 }
 
 .del-btn {
