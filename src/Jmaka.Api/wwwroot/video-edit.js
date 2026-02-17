@@ -1,5 +1,5 @@
 (() => {
-  console.info('VideoEdit v0.3.2 loaded');
+  console.info('VideoEdit v0.4.0 loaded');
   
   const videoEditModal = document.getElementById('videoEditModal');
   if (!videoEditModal) return;
