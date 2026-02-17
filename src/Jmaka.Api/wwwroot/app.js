@@ -304,7 +304,6 @@ const PHRASE_TRANSLATIONS = {
     'Mute': 'Mute',
     'Muted': 'Muted',
     'Refresh': 'Refresh',
-    'Выбор изображений': 'Image selection',
   },
   'es-ES': {
     'Загрузить изображение': 'Subir imagen',
@@ -499,7 +498,6 @@ const PHRASE_TRANSLATIONS = {
     'Mute': 'Silenciar',
     'Muted': 'Silenciado',
     'Refresh': 'Actualizar',
-    'Выбор изображений': 'Selección de imágenes',
   }
 };
 
