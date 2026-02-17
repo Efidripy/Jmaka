@@ -1947,6 +1947,42 @@ app.MapGet("/video-history", async Task<IResult> (CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
     var items = await ReadVideoHistoryAsync(videoHistoryPath, videoHistoryLock, ct);
+
+    var knownProcessed = new HashSet<string>(
+        items.Where(x => string.Equals(x.Kind, "processed", StringComparison.OrdinalIgnoreCase))
+             .Select(x => x.StoredName),
+        StringComparer.OrdinalIgnoreCase);
+
+    var discoveredProcessed = new List<VideoHistoryItem>();
+    foreach (var filePath in Directory.EnumerateFiles(videoOutDir, "*.mp4", SearchOption.TopDirectoryOnly))
+    {
+        var fileName = Path.GetFileName(filePath);
+        if (knownProcessed.Contains(fileName))
+        {
+            continue;
+        }
+
+        var info = new FileInfo(filePath);
+        var createdAt = new DateTimeOffset(info.CreationTimeUtc, TimeSpan.Zero);
+        var duration = await TryGetVideoDurationSecondsAsync(filePath, ct);
+
+        discoveredProcessed.Add(new VideoHistoryItem(
+            Kind: "processed",
+            StoredName: fileName,
+            OriginalName: fileName,
+            CreatedAt: createdAt,
+            Size: info.Length,
+            RelativePath: $"video-out/{fileName}",
+            DurationSeconds: duration
+        ));
+    }
+
+    if (discoveredProcessed.Count > 0)
+    {
+        items.AddRange(discoveredProcessed);
+        await WriteVideoHistoryAsync(videoHistoryPath, videoHistoryLock, items, ct);
+    }
+
     return Results.Ok(items.OrderByDescending(x => x.CreatedAt));
 })
 .Produces(StatusCodes.Status200OK);
