@@ -1714,3 +1714,29 @@ html, body {
     padding: 6px 8px;
   }
 }
+
+.language-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lang-btn {
+  border: 1px solid var(--border);
+  background: rgba(17, 24, 39, 0.75);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.lang-btn:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+.lang-btn.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.45) inset;
+}
