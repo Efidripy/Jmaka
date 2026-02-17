@@ -173,7 +173,7 @@ const PHRASE_TRANSLATIONS = {
     'OknoScale (1 изображение → вертикальная карточка)': 'OknoScale (1 image → vertical card)',
     'Загрузка файлов': 'File upload',
     'Кнопка-дискета — выбор до 15 файлов за раз.': 'Disk button: choose up to 15 files at once.',
-    'Поддержка drag &amp; drop: просто перетащите файлы на окно.': 'Drag & drop supported: just drop files into the window.',
+    'Поддержка drag & drop: просто перетащите файлы на окно.': 'Drag & drop supported: just drop files into the window.',
     'Вставка из буфера обмена (Ctrl+V) для картинок.': 'Clipboard paste (Ctrl+V) for images.',
     'Таблица файлов': 'Files table',
     'Каждая строка — загруженное изображение (новые сверху).': 'Each row is an uploaded image (newest first).',
@@ -289,6 +289,21 @@ const PHRASE_TRANSLATIONS = {
     'сегмента': 'segments',
     'сегментов': 'segments',
     '— небольшое веб-приложение для загрузки и обработки изображений.': '— a small web app for uploading and processing images.',
+    'Просмотр изображения': 'Image viewer',
+    'Выбор изображений': 'Image selection',
+    'Превью (1280)': 'Preview (1280)',
+    'OknoFix шаблон': 'OknoFix template',
+    'OknoScale шаблон': 'OknoScale template',
+    'Масштаб картинки подложки': 'Background image zoom',
+    'Выбор изображения для редактирования': 'Select image for editing',
+    'Поле 1280×720 с тремя панелями...': '1280×720 stage with three panels...',
+    'Убрать аудио': 'Mute audio',
+    'Сбросить все изменения': 'Reset all changes',
+    'Добавить сегмент': 'Add segment',
+    'Удалить активный сегмент': 'Remove active segment',
+    'Без звука': 'Mute',
+    'Звук выключен': 'Muted',
+    'Обновить': 'Refresh',
   },
   'es-ES': {
     'Загрузить изображение': 'Subir imagen',
@@ -350,7 +365,7 @@ const PHRASE_TRANSLATIONS = {
     'OknoScale (1 изображение → вертикальная карточка)': 'OknoScale (1 imagen → tarjeta vertical)',
     'Загрузка файлов': 'Carga de archivos',
     'Кнопка-дискета — выбор до 15 файлов за раз.': 'Botón de disco: selecciona hasta 15 archivos a la vez.',
-    'Поддержка drag &amp; drop: просто перетащите файлы на окно.': 'Soporta arrastrar y soltar: arrastra archivos a la ventana.',
+    'Поддержка drag & drop: просто перетащите файлы на окно.': 'Soporta arrastrar y soltar: arrastra archivos a la ventana.',
     'Вставка из буфера обмена (Ctrl+V) для картинок.': 'Pegado desde portapapeles (Ctrl+V) para imágenes.',
     'Таблица файлов': 'Tabla de archivos',
     'Каждая строка — загруженное изображение (новые сверху).': 'Cada fila es una imagen subida (las nuevas arriba).',
@@ -468,6 +483,21 @@ const PHRASE_TRANSLATIONS = {
     'сегмента': 'segmentos',
     'сегментов': 'segmentos',
     '— небольшое веб-приложение для загрузки и обработки изображений.': '— una pequeña aplicación web para cargar y procesar imágenes.',
+    'Просмотр изображения': 'Visor de imagen',
+    'Выбор изображений': 'Selección de imágenes',
+    'Превью (1280)': 'Vista previa (1280)',
+    'OknoFix шаблон': 'Plantilla OknoFix',
+    'OknoScale шаблон': 'Plantilla OknoScale',
+    'Масштаб картинки подложки': 'Zoom de imagen de fondo',
+    'Выбор изображения для редактирования': 'Seleccionar imagen para editar',
+    'Поле 1280×720 с тремя панелями...': 'Área 1280×720 con tres paneles...',
+    'Убрать аудио': 'Silenciar audio',
+    'Сбросить все изменения': 'Restablecer todos los cambios',
+    'Добавить сегмент': 'Añadir segmento',
+    'Удалить активный сегмент': 'Eliminar segmento activo',
+    'Без звука': 'Silenciar',
+    'Звук выключен': 'Silenciado',
+    'Обновить': 'Actualizar',
   }
 };
 
@@ -511,13 +541,39 @@ function toRussianBaseText(source) {
   return source;
 }
 
+// Precompiled regex patterns for whitespace handling in translations
+const LEADING_WHITESPACE_REGEX = /^\s*/;
+const TRAILING_WHITESPACE_REGEX = /\s*$/;
+
 function translateText(sourceText, lang = currentLanguage) {
   const source = String(sourceText || '');
   if (!source) return source;
   const ruBase = toRussianBaseText(source);
   if (lang === 'ru') return ruBase;
   const dict = PHRASE_TRANSLATIONS[lang] || {};
-  return dict[ruBase] || dict[source] || source;
+  
+  // Try exact match first
+  let result = dict[ruBase] || dict[source];
+  if (result) return result;
+  
+  // If no match and source has leading/trailing whitespace, try trimmed version.
+  // This handles text nodes after HTML tags (e.g., "<strong>Crop</strong> — text")
+  // where the text node has a leading space. We preserve the original whitespace
+  // pattern in the translated output.
+  const trimmed = source.trim();
+  if (trimmed !== source) {
+    // Extract whitespace once before looking up translation
+    const leadingSpace = source.match(LEADING_WHITESPACE_REGEX)?.[0] || '';
+    const trailingSpace = source.match(TRAILING_WHITESPACE_REGEX)?.[0] || '';
+    const ruBaseTrimmed = toRussianBaseText(trimmed);
+    const translatedTrimmed = dict[ruBaseTrimmed] || dict[trimmed];
+    if (translatedTrimmed) {
+      // Preserve leading/trailing whitespace from the original source
+      return leadingSpace + translatedTrimmed + trailingSpace;
+    }
+  }
+  
+  return source;
 }
 
 function t(keyOrText) {

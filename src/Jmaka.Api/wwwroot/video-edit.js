@@ -499,7 +499,7 @@
       const refreshBtn = document.createElement('button');
       refreshBtn.type = 'button';
       refreshBtn.className = 'btn small';
-      refreshBtn.textContent = 'Refresh';
+      refreshBtn.textContent = vt('Обновить', 'Обновить');
       refreshBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -710,7 +710,7 @@
 
   if (videoMuteAudio) videoMuteAudio.addEventListener('change', () => {
     state.muteAudio = videoMuteAudio.checked;
-    if (videoMuteLabel) videoMuteLabel.textContent = state.muteAudio ? 'Muted' : 'Mute';
+    if (videoMuteLabel) videoMuteLabel.textContent = state.muteAudio ? vt('Звук выключен', 'Звук выключен') : vt('Без звука', 'Без звука');
   });
 
   if (videoResetBtn) videoResetBtn.addEventListener('click', resetAllEdits);
