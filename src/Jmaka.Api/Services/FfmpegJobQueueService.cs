@@ -257,7 +257,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             sourceLabel = "[0:v]";
         }
 
-        filterParts.Add($"{sourceLabel}scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={target.Item1}:{target.Item2}:x=max((ow-iw)/2\,0):y=max((oh-ih)/2\,0):color=black,format=yuv420p[v]");
+        filterParts.Add($"{sourceLabel}scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={target.Item1}:{target.Item2}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2\\,0):color=black,format=yuv420p[v]");
         var filter = string.Join(';', filterParts);
 
         var passlog = Path.Combine(Path.GetDirectoryName(job.OutputPath) ?? ".", $"pass-{job.JobId:N}");
