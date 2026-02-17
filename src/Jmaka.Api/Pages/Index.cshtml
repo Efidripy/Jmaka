@@ -7,7 +7,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jmaka 0.3.2</title>
+  <title>Jmaka</title>
   <link rel="stylesheet" href="~/app.css" asp-append-version="true" />
   <link rel="stylesheet" href="~/video-edit.css" asp-append-version="true" />
 </head>
@@ -37,7 +37,10 @@
       </div>
 
       <div class="preview-wrap">
-        <div class="preview-title">Jmaka 0.3.2</div>
+        <div class="ascii-logo-container">
+          <pre id="asciiArt" class="ascii-art"></pre>
+          <span class="version-badge" data-version>v0.4.0</span>
+        </div>
 
         <div class="main-controls" aria-label="Панель управления">
           <div class="tool-buttons" aria-label="Инструменты">
@@ -107,7 +110,7 @@
     <pre id="result" class="result" aria-label="Результат" hidden></pre>
     
     <footer style="text-align: center; padding: 10px; font-size: 11px; color: #64748b; opacity: 0.7;">
-      Jmaka v0.3.2
+      Jmaka v<span data-version>0.4.0</span>
     </footer>
   </main>
 
@@ -975,6 +978,8 @@
     </div>
   </div>
 
+  <!-- Load ascii-art.js before app.js since app.js depends on window.getRandomAsciiArt -->
+  <script src="~/ascii-art.js" asp-append-version="true"></script>
   <script src="~/app.js" asp-append-version="true"></script>
   <script src="~/video-edit.js" asp-append-version="true"></script>
 </body>
