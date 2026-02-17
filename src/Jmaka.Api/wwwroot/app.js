@@ -562,12 +562,13 @@ function translateText(sourceText, lang = currentLanguage) {
   // pattern in the translated output.
   const trimmed = source.trim();
   if (trimmed !== source) {
+    // Extract whitespace once before looking up translation
+    const leadingSpace = source.match(LEADING_WHITESPACE_REGEX)?.[0] || '';
+    const trailingSpace = source.match(TRAILING_WHITESPACE_REGEX)?.[0] || '';
     const ruBaseTrimmed = toRussianBaseText(trimmed);
     const translatedTrimmed = dict[ruBaseTrimmed] || dict[trimmed];
     if (translatedTrimmed) {
       // Preserve leading/trailing whitespace from the original source
-      const leadingSpace = source.match(LEADING_WHITESPACE_REGEX)?.[0] || '';
-      const trailingSpace = source.match(TRAILING_WHITESPACE_REGEX)?.[0] || '';
       return leadingSpace + translatedTrimmed + trailingSpace;
     }
   }
