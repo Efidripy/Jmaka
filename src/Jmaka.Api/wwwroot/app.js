@@ -301,9 +301,9 @@ const PHRASE_TRANSLATIONS = {
     'Сбросить все изменения': 'Reset all changes',
     'Добавить сегмент': 'Add segment',
     'Удалить активный сегмент': 'Remove active segment',
-    'Mute': 'Mute',
-    'Muted': 'Muted',
-    'Refresh': 'Refresh',
+    'Без звука': 'Mute',
+    'Звук выключен': 'Muted',
+    'Обновить': 'Refresh',
   },
   'es-ES': {
     'Загрузить изображение': 'Subir imagen',
@@ -495,9 +495,9 @@ const PHRASE_TRANSLATIONS = {
     'Сбросить все изменения': 'Restablecer todos los cambios',
     'Добавить сегмент': 'Añadir segmento',
     'Удалить активный сегмент': 'Eliminar segmento activo',
-    'Mute': 'Silenciar',
-    'Muted': 'Silenciado',
-    'Refresh': 'Actualizar',
+    'Без звука': 'Silenciar',
+    'Звук выключен': 'Silenciado',
+    'Обновить': 'Actualizar',
   }
 };
 
