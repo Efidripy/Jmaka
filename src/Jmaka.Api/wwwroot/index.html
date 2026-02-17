@@ -10,7 +10,7 @@
 <body>
   <main class="page">
     <section class="uploader" aria-label="Загрузка файла">
-      <button class="save-btn" id="saveBtn" type="button" aria-label="Upload image">
+      <button class="save-btn" id="saveBtn" type="button" aria-label="Загрузить изображение">
         <div class="save-icon" aria-hidden="true">
           <!-- Arrow pointing to the disk -->
           <svg class="save-arrow" viewBox="0 0 64 64" focusable="false">
@@ -23,8 +23,14 @@
             <path d="M10 8h34l10 10v38H10V8zm6 6v12h26V14H16zm0 20v16h32V34H16zm6-16h12v6H22v-6z" />
           </svg>
         </div>
-        <div class="save-label">Upload image</div>
+        <div class="save-label">Загрузить изображение</div>
       </button>
+
+      <div id="languageSwitcher" class="language-switcher" aria-label="Language selector">
+        <button id="langRuBtn" class="lang-btn" type="button" data-lang="ru" aria-pressed="false">🇷🇺 Русский</button>
+        <button id="langEnBtn" class="lang-btn" type="button" data-lang="en-US" aria-pressed="false">🇺🇸 English</button>
+        <button id="langEsBtn" class="lang-btn" type="button" data-lang="es-ES" aria-pressed="false">🇪🇸 Español</button>
+      </div>
 
       <div class="preview-wrap">
         <div class="preview-title">Jmaka 0.3.2</div>
