@@ -196,4 +196,4 @@ curl -L -o ~/jmaka.tar.gz \
 
 ## Contributors
 
-- [@Efidripy](https://github.com/Efidripy) — Efidripy Efi
+- [@Efidripy](https://github.com/Efidripy) — Efidripy
