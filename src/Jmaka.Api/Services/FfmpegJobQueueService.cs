@@ -32,7 +32,7 @@ public sealed class FfmpegQueueOptions
 
 public enum FfmpegJobStatus { QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELED, EXPIRED }
 
-public sealed class FfmpegJob
+internal sealed class FfmpegJob
 {
     public Guid JobId { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
@@ -51,16 +51,16 @@ public sealed class FfmpegJob
     public VideoProcessRequest Request { get; set; } = default!;
 }
 
-public record EnqueueResult(bool Accepted, bool QueueFull, FfmpegJob? Job);
+internal record EnqueueResult(bool Accepted, bool QueueFull, FfmpegJob? Job);
 
-public interface IFfmpegJobQueue
+internal interface IFfmpegJobQueue
 {
     EnqueueResult Enqueue(VideoProcessRequest request, string inputPath, string outputPath, string correlationId);
     FfmpegJob? Get(Guid jobId);
     bool Cancel(Guid jobId);
 }
 
-public sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
+internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
 {
     private readonly ILogger<FfmpegJobQueueService> _logger;
     private readonly FfmpegQueueOptions _opts;
