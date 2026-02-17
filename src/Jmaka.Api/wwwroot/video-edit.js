@@ -31,7 +31,6 @@
   const videoSpeedRange = document.getElementById('videoSpeedRange');
   const videoSpeedValue = document.getElementById('videoSpeedValue');
   const videoTargetSize = document.getElementById('videoTargetSize');
-  const videoVerticalOffset = document.getElementById('videoVerticalOffset');
   const videoCropOverlay = document.getElementById('videoCropOverlay');
   const videoCropRect = document.getElementById('videoCropRect');
   const videoProcessingOverlay = document.getElementById('videoProcessingOverlay');
@@ -50,7 +49,6 @@
 
   const toolButtons = Array.from(videoEditModal.querySelectorAll('[data-tool]'));
   const toolPanels = Array.from(videoEditModal.querySelectorAll('[data-tool-panel]'));
-  const outputWidthInputs = Array.from(videoEditModal.querySelectorAll('input[name="videoOutputWidth"]'));
 
   const state = {
     tool: 'trim',
@@ -65,9 +63,7 @@
     flipV: false,
     speed: 1,
     muteAudio: false,
-    outputWidth: 1280,
-    targetSizeMb: 5,
-    verticalOffsetPx: 0
+    targetSizeMb: 1,
   };
 
   let originals = [];
@@ -313,9 +309,7 @@
   }
 
   function renderOutputControls() {
-    outputWidthInputs.forEach((input) => { input.checked = Number(input.value) === state.outputWidth; });
     if (videoTargetSize) videoTargetSize.value = String(state.targetSizeMb);
-    if (videoVerticalOffset) videoVerticalOffset.value = String(state.verticalOffsetPx);
     if (videoEditSave) videoEditSave.disabled = !state.storedName;
   }
 
@@ -707,18 +701,9 @@
 
   if (videoResetBtn) videoResetBtn.addEventListener('click', resetAllEdits);
 
-  outputWidthInputs.forEach((input) => input.addEventListener('change', () => {
-    state.outputWidth = Number(input.value);
-    renderOutputControls();
-  }));
-
   if (videoTargetSize) videoTargetSize.addEventListener('change', () => {
-    state.targetSizeMb = Number(videoTargetSize.value) || 5;
-    renderOutputControls();
-  });
-
-  if (videoVerticalOffset) videoVerticalOffset.addEventListener('change', () => {
-    state.verticalOffsetPx = Number(videoVerticalOffset.value) || 0;
+    const next = Number(videoTargetSize.value);
+    state.targetSizeMb = Number.isFinite(next) ? clamp(next, 0.1, 2048) : 1;
     renderOutputControls();
   });
 
@@ -786,9 +771,9 @@
         trimEndSec: state.segments[state.segments.length - 1]?.end ?? 0,
         cutStartSec: null,
         cutEndSec: null,
-        outputWidth: state.outputWidth,
+        outputWidth: 1280,
         targetSizeMb: state.targetSizeMb,
-        verticalOffsetPx: state.verticalOffsetPx,
+        verticalOffsetPx: 0,
         segments: state.segments.map((x) => ({ startSec: x.start, endSec: x.end })),
         cropX: state.crop.x,
         cropY: state.crop.y,

@@ -792,3 +792,90 @@
   padding: 3px;
   border-radius: 8px;
 }
+
+
+@media (max-height: 760px) {
+  #videoEditModal .video-edit-card {
+    max-height: calc(100dvh - 8px);
+  }
+
+  .video-edit-body {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .video-edit-toolbar,
+  .video-tool-panels {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .video-preview-stage {
+    min-height: 160px;
+  }
+
+  .video-preview {
+    max-height: 30vh;
+  }
+
+  .video-edit-layout {
+    gap: 8px;
+  }
+
+  #videoEditModal .modal-footer {
+    padding: 8px 10px;
+  }
+
+  #videoEditModal .modal-actions {
+    gap: 8px;
+  }
+}
+
+@media (max-height: 620px) {
+  .video-tool-panel .panel-hint {
+    font-size: 12px;
+  }
+
+  .video-timeline {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .timeline-strip {
+    height: 56px;
+  }
+
+  #videoEditModal .modal-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+}
+
+/* Compact cards override */
+.video-list-item,
+.video-list-item.is-processed {
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 6px;
+  align-items: stretch;
+}
+
+.video-list-item .video-thumb,
+.video-list-item.is-processed .video-thumb {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.video-list-actions,
+.video-list-item.is-processed .video-list-actions {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  grid-auto-flow: column;
+  gap: 4px;
+  background: rgba(2, 6, 23, 0.82);
+  padding: 3px;
+  border-radius: 8px;
+}
