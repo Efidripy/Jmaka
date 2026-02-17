@@ -478,8 +478,8 @@ if (app.Environment.IsDevelopment())
 }
 
 // Web UI (static files)
-app.UseRouting();
 app.UseHttpsRedirection();
+app.UseRouting();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
