@@ -398,11 +398,36 @@ function getCurrentLanguage() {
 
 let currentLanguage = getCurrentLanguage();
 
+const REVERSE_PHRASE_TRANSLATIONS = (() => {
+  const out = {};
+  Object.entries(PHRASE_TRANSLATIONS).forEach(([lang, dict]) => {
+    const rev = {};
+    Object.entries(dict).forEach(([ru, translated]) => {
+      if (translated) rev[translated] = ru;
+    });
+    out[lang] = rev;
+  });
+  return out;
+})();
+
+function toRussianBaseText(source) {
+  if (!source) return source;
+  if (PHRASE_TRANSLATIONS['en-US'] && REVERSE_PHRASE_TRANSLATIONS['en-US'][source]) {
+    return REVERSE_PHRASE_TRANSLATIONS['en-US'][source];
+  }
+  if (PHRASE_TRANSLATIONS['es-ES'] && REVERSE_PHRASE_TRANSLATIONS['es-ES'][source]) {
+    return REVERSE_PHRASE_TRANSLATIONS['es-ES'][source];
+  }
+  return source;
+}
+
 function translateText(sourceText, lang = currentLanguage) {
   const source = String(sourceText || '');
-  if (!source || lang === 'ru') return source;
+  if (!source) return source;
+  const ruBase = toRussianBaseText(source);
+  if (lang === 'ru') return ruBase;
   const dict = PHRASE_TRANSLATIONS[lang] || {};
-  return dict[source] || source;
+  return dict[ruBase] || dict[source] || source;
 }
 
 function t(keyOrText) {
