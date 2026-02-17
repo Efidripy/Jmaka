@@ -2706,7 +2706,7 @@ record UploadHistoryItem(
 record CompositeDeleteRequest(string RelativePath);
 record VideoDeleteRequest(string StoredName);
 
-record VideoProcessRequest(
+public record VideoProcessRequest(
     string StoredName,
     double? TrimStartSec,
     double? TrimEndSec,
@@ -2728,7 +2728,7 @@ record VideoProcessRequest(
     string? EncodingMode
 );
 
-record VideoProcessSegment(
+public record VideoProcessSegment(
     double StartSec,
     double EndSec
 );
