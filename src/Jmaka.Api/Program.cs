@@ -41,6 +41,7 @@ builder.Services.Configure<IISServerOptions>(options =>
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddAntiforgery();
+builder.Services.AddRazorPages();
 builder.Services.AddSingleton<ImagePipelineService>();
 builder.Services.Configure<FfmpegQueueOptions>(builder.Configuration.GetSection("Ffmpeg"));
 builder.Services.AddSingleton<FfmpegJobQueueService>();
@@ -478,8 +479,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseRouting();
+
 // Web UI (static files)
-app.UseDefaultFiles();
 app.UseStaticFiles();
 
 // Serve runtime files (resized/original uploads)
@@ -618,6 +620,8 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseAntiforgery();
+
+app.MapRazorPages();
 
 // PNG-шаблон для TrashImg (готовая карточка с рамкой/тенью)
 var oknoFixOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "jmaka-template-oknofix-001.png");
