@@ -541,6 +541,10 @@ function toRussianBaseText(source) {
   return source;
 }
 
+// Precompiled regex patterns for whitespace handling in translations
+const LEADING_WHITESPACE_REGEX = /^\s*/;
+const TRAILING_WHITESPACE_REGEX = /\s*$/;
+
 function translateText(sourceText, lang = currentLanguage) {
   const source = String(sourceText || '');
   if (!source) return source;
@@ -552,15 +556,18 @@ function translateText(sourceText, lang = currentLanguage) {
   let result = dict[ruBase] || dict[source];
   if (result) return result;
   
-  // If no match and source has leading/trailing whitespace, try trimmed version
+  // If no match and source has leading/trailing whitespace, try trimmed version.
+  // This handles text nodes after HTML tags (e.g., "<strong>Crop</strong> — text")
+  // where the text node has a leading space. We preserve the original whitespace
+  // pattern in the translated output.
   const trimmed = source.trim();
   if (trimmed !== source) {
     const ruBaseTrimmed = toRussianBaseText(trimmed);
     const translatedTrimmed = dict[ruBaseTrimmed] || dict[trimmed];
     if (translatedTrimmed) {
-      // Preserve leading/trailing whitespace
-      const leadingSpace = source.match(/^\s*/)[0];
-      const trailingSpace = source.match(/\s*$/)[0];
+      // Preserve leading/trailing whitespace from the original source
+      const leadingSpace = source.match(LEADING_WHITESPACE_REGEX)[0];
+      const trailingSpace = source.match(TRAILING_WHITESPACE_REGEX)[0];
       return leadingSpace + translatedTrimmed + trailingSpace;
     }
   }
