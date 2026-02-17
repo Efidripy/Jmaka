@@ -31,7 +31,6 @@
   const videoSpeedRange = document.getElementById('videoSpeedRange');
   const videoSpeedValue = document.getElementById('videoSpeedValue');
   const videoTargetSize = document.getElementById('videoTargetSize');
-  const videoVerticalOffset = document.getElementById('videoVerticalOffset');
   const videoCropOverlay = document.getElementById('videoCropOverlay');
   const videoCropRect = document.getElementById('videoCropRect');
   const videoProcessingOverlay = document.getElementById('videoProcessingOverlay');
@@ -50,7 +49,6 @@
 
   const toolButtons = Array.from(videoEditModal.querySelectorAll('[data-tool]'));
   const toolPanels = Array.from(videoEditModal.querySelectorAll('[data-tool-panel]'));
-  const outputWidthInputs = Array.from(videoEditModal.querySelectorAll('input[name="videoOutputWidth"]'));
 
   const state = {
     tool: 'trim',
@@ -65,9 +63,7 @@
     flipV: false,
     speed: 1,
     muteAudio: false,
-    outputWidth: 1280,
-    targetSizeMb: 5,
-    verticalOffsetPx: 0
+    targetSizeMb: 1,
   };
 
   let originals = [];
@@ -83,6 +79,22 @@
     const s = Math.floor(total % 60);
     const tenths = Math.floor((total % 1) * 10);
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${tenths}`;
+  }
+
+  function formatDurationCompact(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+    const total = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function formatSizeMb(bytes) {
+    const value = Number(bytes || 0);
+    if (!Number.isFinite(value) || value <= 0) return '—';
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   function normalizeSegments() {
@@ -297,9 +309,7 @@
   }
 
   function renderOutputControls() {
-    outputWidthInputs.forEach((input) => { input.checked = Number(input.value) === state.outputWidth; });
     if (videoTargetSize) videoTargetSize.value = String(state.targetSizeMb);
-    if (videoVerticalOffset) videoVerticalOffset.value = String(state.verticalOffsetPx);
     if (videoEditSave) videoEditSave.disabled = !state.storedName;
   }
 
@@ -327,10 +337,45 @@
       originals = data.filter((item) => item && item.kind !== 'processed');
       processed = data.filter((item) => item && item.kind === 'processed');
       renderVideoLists();
+      if (processed.length === 0) {
+        setHint('Results пуст. Нажмите Refresh, если обработка завершилась только что.');
+      }
     } catch {
       videoOriginalsList.textContent = 'Ошибка загрузки.';
       videoProcessedList.textContent = 'Ошибка загрузки.';
     }
+  }
+
+  function normalizeJobStatus(rawStatus) {
+    if (typeof rawStatus === 'string') return rawStatus.toUpperCase();
+    const enumMap = ['QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED', 'EXPIRED'];
+    if (Number.isInteger(rawStatus) && rawStatus >= 0 && rawStatus < enumMap.length) {
+      return enumMap[rawStatus];
+    }
+    return String(rawStatus || '').toUpperCase();
+  }
+
+  async function waitForJobCompletion(jobId, timeoutMs = 180000) {
+    const started = Date.now();
+    const terminal = new Set(['SUCCEEDED', 'FAILED', 'CANCELED', 'EXPIRED']);
+
+    while (Date.now() - started < timeoutMs) {
+      const res = await fetch(toAbsoluteUrl(`video/jobs/${jobId}`), { cache: 'no-store' });
+      let data;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok) {
+        throw new Error(data && data.error ? data.error : 'Не удалось получить статус задачи');
+      }
+
+      const status = normalizeJobStatus(data && data.status);
+      if (terminal.has(status)) {
+        return { ...data, status };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+
+    throw new Error('Превышено время ожидания завершения задачи');
   }
 
   function renderVideoLists() {
@@ -378,13 +423,11 @@
       }
       const meta = document.createElement('div');
       meta.className = 'video-list-meta';
-      const name = document.createElement('div');
-      name.textContent = item.originalName || item.storedName || 'video';
-      const duration = Number(item.durationSeconds || 0);
-      const details = document.createElement('div');
-      details.textContent = `${formatTime(duration)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}`;
-      meta.appendChild(name);
-      meta.appendChild(details);
+      if (isProcessed) {
+        const details = document.createElement('div');
+        details.textContent = `${formatDurationCompact(item.durationSeconds)} · ${formatSizeMb(item.size)}`;
+        meta.appendChild(details);
+      }
 
       const actions = document.createElement('div');
       actions.className = 'video-list-actions';
@@ -426,7 +469,7 @@
       actions.appendChild(del);
 
       row.appendChild(thumb);
-      if (!isProcessed) row.appendChild(meta);
+      if (isProcessed) row.appendChild(meta);
       row.appendChild(actions);
       listEl.appendChild(row);
     };
@@ -434,7 +477,22 @@
     if (originals.length === 0) videoOriginalsList.textContent = 'Нет загрузок.';
     else originals.forEach((item) => renderItem(item, videoOriginalsList, false));
 
-    if (processed.length === 0) videoProcessedList.textContent = 'Пока нет результатов.';
+    if (processed.length === 0) {
+      const warn = document.createElement('div');
+      warn.className = 'video-list-empty-warning';
+      warn.textContent = 'Results пока пуст.';
+      const refreshBtn = document.createElement('button');
+      refreshBtn.type = 'button';
+      refreshBtn.className = 'btn small';
+      refreshBtn.textContent = 'Refresh';
+      refreshBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        loadVideoHistory();
+      });
+      warn.appendChild(refreshBtn);
+      videoProcessedList.appendChild(warn);
+    }
     else processed.forEach((item) => renderItem(item, videoProcessedList, true));
   }
 
@@ -643,18 +701,9 @@
 
   if (videoResetBtn) videoResetBtn.addEventListener('click', resetAllEdits);
 
-  outputWidthInputs.forEach((input) => input.addEventListener('change', () => {
-    state.outputWidth = Number(input.value);
-    renderOutputControls();
-  }));
-
   if (videoTargetSize) videoTargetSize.addEventListener('change', () => {
-    state.targetSizeMb = Number(videoTargetSize.value) || 5;
-    renderOutputControls();
-  });
-
-  if (videoVerticalOffset) videoVerticalOffset.addEventListener('change', () => {
-    state.verticalOffsetPx = Number(videoVerticalOffset.value) || 0;
+    const next = Number(videoTargetSize.value);
+    state.targetSizeMb = Number.isFinite(next) ? clamp(next, 0.1, 2048) : 1;
     renderOutputControls();
   });
 
@@ -722,9 +771,9 @@
         trimEndSec: state.segments[state.segments.length - 1]?.end ?? 0,
         cutStartSec: null,
         cutEndSec: null,
-        outputWidth: state.outputWidth,
+        outputWidth: 1280,
         targetSizeMb: state.targetSizeMb,
-        verticalOffsetPx: state.verticalOffsetPx,
+        verticalOffsetPx: 0,
         segments: state.segments.map((x) => ({ startSec: x.start, endSec: x.end })),
         cropX: state.crop.x,
         cropY: state.crop.y,
@@ -749,14 +798,20 @@
         try { data = await res.json(); } catch { data = null; }
         if (!res.ok) throw new Error(data && data.error ? data.error : 'process failed');
 
-        if (videoEditPreview && data.relativePath) {
-          const cacheKey = data.storedName || state.storedName;
-          videoEditPreview.src = withCacheBust ? withCacheBust(data.relativePath, cacheKey) : data.relativePath;
+        if (!data || !data.jobId) throw new Error('Сервер не вернул jobId');
+        const job = await waitForJobCompletion(data.jobId);
+        if (job.status !== 'SUCCEEDED') {
+          throw new Error(job.error || `Задача завершилась со статусом ${job.status}`);
+        }
+
+        if (videoEditPreview && job.relativeOutputPath) {
+          videoEditPreview.src = withCacheBust ? withCacheBust(job.relativeOutputPath, data.jobId) : job.relativeOutputPath;
           timelinePreviewState.dirty = true;
         }
 
         setHint('Готово. Результат появился в Processed.');
         await loadVideoHistory();
+        console.info(`Results refreshed (${processed.length})`);
       } catch (err) {
         setHint(`Ошибка обработки видео. ${String(err || '').trim()}`.trim());
       } finally {
