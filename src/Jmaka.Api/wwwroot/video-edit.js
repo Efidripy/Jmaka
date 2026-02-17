@@ -150,7 +150,12 @@
     if (videoCropOverlay) videoCropOverlay.hidden = state.tool !== 'crop';
     if (videoSegmentsInfo) {
       const n = state.segments.length;
-      const form = (n % 10 === 1 && n % 100 !== 11) ? 'сегмент' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? 'сегмента' : 'сегментов';
+      // Russian pluralization: 1 сегмент, 2-4 сегмента, 5+ сегментов
+      const form = (n % 10 === 1 && n % 100 !== 11) 
+        ? vt('сегмент', 'сегмент')
+        : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) 
+        ? vt('сегмента', 'сегмента')
+        : vt('сегментов', 'сегментов');
       videoSegmentsInfo.textContent = `${n} ${form}`;
     }
   }
@@ -348,7 +353,7 @@
       processed = data.filter((item) => item && item.kind === 'processed');
       renderVideoLists();
       if (processed.length === 0) {
-        setHint('Results пуст. Нажмите Refresh, если обработка завершилась только что.');
+        setHint(vt('Results пуст. Нажмите Refresh, если обработка завершилась только что.', 'Results пуст. Нажмите Refresh, если обработка завершилась только что.'));
       }
     } catch {
       videoOriginalsList.textContent = vt('loadError', 'Ошибка загрузки.');
@@ -374,7 +379,7 @@
       let data;
       try { data = await res.json(); } catch { data = null; }
       if (!res.ok) {
-        throw new Error(data && data.error ? data.error : 'Не удалось получить статус задачи');
+        throw new Error(data && data.error ? data.error : vt('Не удалось получить статус задачи', 'Не удалось получить статус задачи'));
       }
 
       const status = normalizeJobStatus(data && data.status);
@@ -385,7 +390,7 @@
       await new Promise((resolve) => setTimeout(resolve, 1200));
     }
 
-    throw new Error('Превышено время ожидания завершения задачи');
+    throw new Error(vt('Превышено время ожидания завершения задачи', 'Превышено время ожидания завершения задачи'));
   }
 
   function renderVideoLists() {
@@ -406,11 +411,11 @@
           timelinePreviewState.dirty = true;
         }
         if (isProcessed) {
-          setHint('Просмотр результата. Для обработки выберите оригинал.');
+          setHint(vt('Просмотр результата. Для обработки выберите оригинал.', 'Просмотр результата. Для обработки выберите оригинал.'));
           return;
         }
         state.storedName = item.storedName;
-        setHint('Выберите отрезки на таймлайне и нажмите Сделать.');
+        setHint(vt('Выберите отрезки на таймлайне и нажмите Сделать.', 'Выберите отрезки на таймлайне и нажмите Сделать.'));
         if (videoEditSave) videoEditSave.disabled = false;
         renderVideoLists();
       });
@@ -484,13 +489,13 @@
       listEl.appendChild(row);
     };
 
-    if (originals.length === 0) videoOriginalsList.textContent = 'Нет загрузок.';
+    if (originals.length === 0) videoOriginalsList.textContent = vt('Нет загрузок.', 'Нет загрузок.');
     else originals.forEach((item) => renderItem(item, videoOriginalsList, false));
 
     if (processed.length === 0) {
       const warn = document.createElement('div');
       warn.className = 'video-list-empty-warning';
-      warn.textContent = 'Results пока пуст.';
+      warn.textContent = vt('Results пока пуст.', 'Results пока пуст.');
       const refreshBtn = document.createElement('button');
       refreshBtn.type = 'button';
       refreshBtn.className = 'btn small';
@@ -626,7 +631,6 @@
     // Update UI elements
     if (videoSpeedRange) videoSpeedRange.value = '1';
     if (videoMuteAudio) videoMuteAudio.checked = false;
-    if (videoMuteLabel) videoMuteLabel.textContent = 'Mute';
     
     // Re-render everything
     renderToolState();
@@ -634,7 +638,7 @@
     renderCropRect();
     renderTimeline();
     
-    setHint('Все изменения сброшены. Начните заново.');
+    setHint(vt('Все изменения сброшены. Начните заново.', 'Все изменения сброшены. Начните заново.'));
   }
 
   function handleCropPointerDown(event) {
@@ -808,10 +812,11 @@
         try { data = await res.json(); } catch { data = null; }
         if (!res.ok) throw new Error(data && data.error ? data.error : 'process failed');
 
-        if (!data || !data.jobId) throw new Error('Сервер не вернул jobId');
+        if (!data || !data.jobId) throw new Error(vt('Сервер не вернул jobId', 'Сервер не вернул jobId'));
         const job = await waitForJobCompletion(data.jobId);
         if (job.status !== 'SUCCEEDED') {
-          throw new Error(job.error || `Задача завершилась со статусом ${job.status}`);
+          const statusMsg = vt('Задача завершилась со статусом', 'Задача завершилась со статусом');
+          throw new Error(job.error || `${statusMsg} ${job.status}`);
         }
 
         if (videoEditPreview && job.relativeOutputPath) {
