@@ -32,6 +32,662 @@ const compositesTbody = document.getElementById('compositesTbody');
 const sizeButtons = document.getElementById('sizeButtons');
 const sizeBtns = sizeButtons ? Array.from(sizeButtons.querySelectorAll('button.size-btn')) : [];
 
+const LANGUAGE_KEY = 'jmaka_language';
+const UI_TEXTS = {
+  ru: {
+    loading: 'Загрузка...',
+    loadError: 'Ошибка загрузки.',
+    videoUploadHint: 'Загрузите видео и перетащите границы на таймлайне.',
+    videoUploading: 'Загружаю видео...',
+    videoUploaded: 'Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.',
+    videoProcessing: 'Обрабатываю видео...',
+    videoDone: 'Готово. Результат появился в Processed.',
+    deleteConfirm: 'Удалить запись и все связанные файлы безвозвратно?',
+    splitCreated: 'Split создан.',
+    splitChooseTwo: 'Выберите две картинки.',
+    splitError: 'Ошибка split.',
+    splitWorking: 'Склеиваю...',
+    splitChooseFrom1280: 'Выберите две картинки из готового размера 1280.',
+    oknoFixCreated: 'OknoFix создан.',
+    oknoFixError: 'Ошибка OknoFix.',
+    oknoScaleCreated: 'OknoScale создан.',
+    oknoScaleError: 'Ошибка OknoScale.',
+    editCreated: 'Edit создан.',
+    saving: 'Сохраняю...',
+    saveError: 'Ошибка сохранения.',
+    saveDone: 'Готово.',
+    languageLabel: 'Выбор языка'
+  },
+  'en-US': {
+    loading: 'Loading...',
+    loadError: 'Loading error.',
+    videoUploadHint: 'Upload a video and drag the segment boundaries on the timeline.',
+    videoUploading: 'Uploading video...',
+    videoUploaded: 'Video uploaded. Select segments on the timeline and click Process.',
+    videoProcessing: 'Processing video...',
+    videoDone: 'Done. The result appeared in Processed.',
+    deleteConfirm: 'Delete this entry and all related files permanently?',
+    splitCreated: 'Split created.',
+    splitChooseTwo: 'Choose two images.',
+    splitError: 'Split error.',
+    splitWorking: 'Merging...',
+    splitChooseFrom1280: 'Choose two images from ready 1280 size.',
+    oknoFixCreated: 'OknoFix created.',
+    oknoFixError: 'OknoFix error.',
+    oknoScaleCreated: 'OknoScale created.',
+    oknoScaleError: 'OknoScale error.',
+    editCreated: 'Edit created.',
+    saving: 'Saving...',
+    saveError: 'Save error.',
+    saveDone: 'Done.',
+    languageLabel: 'Language selector'
+  },
+  'es-ES': {
+    loading: 'Cargando...',
+    loadError: 'Error de carga.',
+    videoUploadHint: 'Sube un vídeo y arrastra los límites de los segmentos en la línea de tiempo.',
+    videoUploading: 'Subiendo vídeo...',
+    videoUploaded: 'Vídeo subido. Selecciona segmentos en la línea de tiempo y pulsa Procesar.',
+    videoProcessing: 'Procesando vídeo...',
+    videoDone: 'Listo. El resultado apareció en Processed.',
+    deleteConfirm: '¿Eliminar este registro y todos los archivos relacionados de forma permanente?',
+    splitCreated: 'Split creado.',
+    splitChooseTwo: 'Elige dos imágenes.',
+    splitError: 'Error de Split.',
+    splitWorking: 'Combinando...',
+    splitChooseFrom1280: 'Elige dos imágenes del tamaño 1280.',
+    oknoFixCreated: 'OknoFix creado.',
+    oknoFixError: 'Error de OknoFix.',
+    oknoScaleCreated: 'OknoScale creado.',
+    oknoScaleError: 'Error de OknoScale.',
+    editCreated: 'Edición creada.',
+    saving: 'Guardando...',
+    saveError: 'Error al guardar.',
+    saveDone: 'Listo.',
+    languageLabel: 'Selector de idioma'
+  }
+};
+
+const PHRASE_TRANSLATIONS = {
+  'en-US': {
+    'Загрузить изображение': 'Upload image',
+    'Нажмите на дискету, перетащите файлы или вставьте из буфера обмена — и они загрузятся.': 'Click the disk icon, drag files, or paste from clipboard — they will upload automatically.',
+    'Справка': 'Help',
+    'Удаление': 'Delete',
+    'Удалить': 'Delete',
+    'Отмена': 'Cancel',
+    'Закрыть': 'Close',
+    'Сделать': 'Process',
+    'Склеить': 'Merge',
+    'Обрезать': 'Crop',
+    'Открыть в новой вкладке': 'Open in new tab',
+    'Открыть оригинал': 'Open original',
+    'Просмотр': 'Viewer',
+    'Кадрирование': 'Crop',
+    'Выберите две картинки из готового размера 1280.': 'Choose two images from ready 1280 size.',
+    'Выберите три картинки.': 'Choose three images.',
+    'Выберите строку в таблице файлов, затем откройте OknoFix.': 'Select a row in the files table, then open OknoFix.',
+    'Выберите строку в таблице файлов, затем откройте OknoScale.': 'Select a row in the files table, then open OknoScale.',
+    'Двигайте и масштабируйте картинку под окном. Ширину окна можно менять ручками слева/справа.': 'Move and scale the image under the window. You can resize the window width with side handles.',
+    'Справка по Jmaka': 'Jmaka Help',
+    'Краткое описание всех функций и горячих действий.': 'Short description of all features and quick actions.',
+    'Загрузка файлов': 'File upload',
+    'Таблица файлов': 'Files table',
+    'Инструменты': 'Tools',
+    'Прочее': 'Other',
+    'Дата - время': 'Date - time',
+    'Оригинал': 'Original',
+    'Тип': 'Type',
+    'Результат': 'Result',
+    'Таблицы файлов': 'Files tables',
+    'Таблица файлов': 'Files table',
+    'Таблица Split': 'Split table',
+    'Готовые файлы': 'Ready files',
+    'Размеры': 'Sizes',
+    'Панель управления': 'Control panel',
+    'Загрузка файла': 'File upload',
+    'Можно включить обратно, очистив настройку в LocalStorage.': 'You can enable this again by clearing the LocalStorage setting.',
+    'Больше не спрашивать (удалять сразу)': 'Do not ask again (delete immediately)',
+    'Удалить запись и все связанные файлы безвозвратно?': 'Delete this entry and all related files permanently?',
+    'Выберите слот, затем кликните по превью из списка загруженных изображений:': 'Select a slot, then click a preview from uploaded images:',
+    'Выбор для картинки 1': 'Select for image 1',
+    'Выбор для картинки 2': 'Select for image 2',
+    'Выбор для картинки 3': 'Select for image 3',
+    'Левая половина': 'Left half',
+    'Правая половина': 'Right half',
+    'Треть 1': 'Third 1',
+    'Треть 2': 'Third 2',
+    'Треть 3': 'Third 3',
+    'Поле 16:9': '16:9 stage',
+    'Поле 1280×720. Перетаскивайте и масштабируйте изображения, пропорции сохраняются.': '1280×720 stage. Drag and scale images while aspect ratio is preserved.',
+    'Пропорции кадрирования': 'Crop ratio',
+    'Перетаскивайте рамку и её углы. Выберите пропорции:': 'Drag the frame and its corners. Choose ratio:',
+    'Результат': 'Result',
+    'Выбор языка': 'Language selector',
+    'Русский': 'Русский',
+    'Обрабатываю видео...': 'Processing video...',
+
+    'Split (2 изображения → 16:9)': 'Split (2 images → 16:9)',
+    'Split3 (3 изображения → 16:9)': 'Split3 (3 images → 16:9)',
+    'OknoFix (1 изображение → вертикальная карточка)': 'OknoFix (1 image → vertical card)',
+    'OknoScale (1 изображение → вертикальная карточка)': 'OknoScale (1 image → vertical card)',
+    'Загрузка файлов': 'File upload',
+    'Кнопка-дискета — выбор до 15 файлов за раз.': 'Disk button: choose up to 15 files at once.',
+    'Поддержка drag &amp; drop: просто перетащите файлы на окно.': 'Drag & drop supported: just drop files into the window.',
+    'Вставка из буфера обмена (Ctrl+V) для картинок.': 'Clipboard paste (Ctrl+V) for images.',
+    'Таблица файлов': 'Files table',
+    'Каждая строка — загруженное изображение (новые сверху).': 'Each row is an uploaded image (newest first).',
+    'В ячейке «Оригинал» — мини-preview + маленькая кнопка-дискета для скачивания.': 'In “Original” cell: mini preview + small disk download button.',
+    'В ячейке «Оригинал» — миниатюра + маленькая кнопка-дискета для скачивания.': 'In “Original” cell: thumbnail + small disk download button.',
+    'Размеры 1280 / 1920 / 2440 создаются по клику по кнопкам сверху.': '1280 / 1920 / 2440 sizes are generated by clicking top buttons.',
+    'Крестик справа удаляет запись и все связанные файлы.': 'Cross button on the right deletes the record and all related files.',
+    'Инструменты': 'Tools',
+    '— кадрирование исходника с выбором пропорций (1:1, 2:3, 16:9).': '— crop source image with aspect ratio choice (1:1, 2:3, 16:9).',
+    '— две картинки → одна 1280×720, белая полоса 7px по центру.': '— two images → one 1280×720, white 7px center divider.',
+    '— три картинки → одна 1280×720, две белые полосы 7px.': '— three images → one 1280×720, two white 7px dividers.',
+    '— вертикальная карточка по строгому PNG-шаблону:': '— vertical card using strict PNG template:',
+    'режим фиксированного окна (как на исходном PNG);': 'fixed window mode (same as source PNG);',
+    'картинка подложки двигается мышью и масштабируется пропорционально;': 'background image can be moved and scaled proportionally;',
+    'масштаб — через колесо мыши или кнопки «−»/«+» внизу справа.': 'zoom via mouse wheel or “−”/“+” buttons at bottom-right.',
+    '— экспериментальный режим той же карточки с изменяемой шириной окна.': '— experimental mode of same card with resizable window width.',
+    '— редактирование изображений с настройкой яркости, контраста, насыщенности, оттенка, экспозиции и вибрации.': '— image editing with brightness, contrast, saturation, hue, exposure and vibrance.',
+    '— редактирование видео с инструментами:': '— video editing with tools:',
+    '— обрезка начала/конца и вырезание сегментов из середины;': '— trim start/end and cut segments from middle;',
+    '— кадрирование видео;': '— video crop;',
+    '— поворот на 90°, 180° или 270°;': '— rotate by 90°, 180° or 270°;',
+    '— отражение по горизонтали или вертикали;': '— flip horizontally or vertically;',
+    '— изменение скорости (0.25x - 2.0x);': '— speed change (0.25x - 2.0x);',
+    '— отключение звука;': '— mute audio;',
+    '— сброс всех изменений.': '— reset all changes.',
+    'Прочее': 'Other',
+    'История Split / Split3 / OknoFix / OknoScale / Edit / Video Edit — в правой таблице.': 'History of Split / Split3 / OknoFix / OknoScale / Edit / Video Edit is in the right table.',
+    'Каждый результат можно открыть, скачать или удалить.': 'Each result can be opened, downloaded or deleted.',
+    'Старые записи и файлы автоматически очищаются по времени хранения.': 'Old records and files are auto-cleaned by retention period.',
+    'Используйте таймлайн ниже для выбора сегментов видео': 'Use timeline below to select video segments',
+    'Перетащите границы, чтобы задать отрезок.': 'Drag boundaries to set segment.',
+    'Перетащите углы рамки для кадрирования видео': 'Drag frame corners to crop video',
+    'Тримминг, кадрирование, поворот и настройка размера.': 'Trim, crop, rotate and size tuning.',
+    'Правки применяются в реальном времени, сохранение — на сервере.': 'Edits are applied in real time, saving is done on server.',
+    'Скорость:': 'Speed:',
+    'Сбросить': 'Reset',
+    'Сохранить': 'Save',
+    '+ Сегмент': '+ Segment',
+    '− Сегмент': '− Segment',
+    '1 сегмент': '1 segment',
+    '↻ 90° по ч.с.': '↻ 90° CW',
+    '↺ 90° против ч.с.': '↺ 90° CCW',
+    '↔ По горизонтали': '↔ Horizontal',
+    '↕ По вертикали': '↕ Vertical',
+    'Загрузить файл': 'Upload file',
+    'Загрузка...': 'Loading...',
+    'Ошибка загрузки.': 'Loading error.',
+    'Выберите слот (#1/#2), затем кликните по превью. Дальше перетаскивайте/масштабируйте.': 'Choose slot (#1/#2), then click a preview. Then drag/scale.',
+    'Выберите слот (#1/#2/#3), затем кликните по превью. Дальше перетаскивайте/масштабируйте.': 'Choose slot (#1/#2/#3), then click a preview. Then drag/scale.',
+    'Нет загруженных изображений.': 'No uploaded images.',
+    'Нет загруженных изображений в разделе Original.': 'No uploaded images in Original section.',
+    'Не удалось загрузить список изображений.': 'Failed to load image list.',
+    'Не удалось загрузить 1280-картинку для Split.': 'Failed to load 1280 image for Split.',
+    'Не удалось загрузить картинку для Split3.': 'Failed to load image for Split3.',
+    'Не удалось определить размер поля.': 'Failed to determine stage size.',
+    'Генерирую OknoFix...': 'Generating OknoFix...',
+    'Генерирую OknoScale...': 'Generating OknoScale...',
+    'Удалено.': 'Deleted.',
+    'Удаляю...': 'Deleting...',
+    'Загружаю список...': 'Loading list...',
+    'Загружаю файл...': 'Uploading file...',
+    'Загружаю файл из буфера обмена...': 'Uploading file from clipboard...',
+    'Загружаю файл из перетаскивания...': 'Uploading file from drag and drop...',
+    'Файл загружен.': 'File uploaded.',
+    'Не выбран оригинал.': 'Original not selected.',
+    'Обрезаю...': 'Cropping...',
+    'Ошибка кадрирования.': 'Crop error.',
+    'Ошибка оптимизации.': 'Optimization error.',
+    'Можно выбрать максимум 15 файлов за раз.': 'You can select up to 15 files at once.',
+    'Можно загрузить максимум 15 файлов за раз.': 'You can upload up to 15 files at once.',
+    'Удалить результат': 'Delete result',
+    '🇷🇺 Русский': '🇷🇺 Русский',
+
+    'Edit создан.': 'Edit created.',
+    'OknoFix создан.': 'OknoFix created.',
+    'OknoScale создан.': 'OknoScale created.',
+    'Split создан.': 'Split created.',
+    'Split3 создан.': 'Split3 created.',
+    'Results пока пуст.': 'Results are empty for now.',
+    'Results пуст. Нажмите Refresh, если обработка завершилась только что.': 'Results are empty. Click Refresh if processing just finished.',
+    'Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.': 'Video uploaded. Select timeline segments and click Process.',
+    'Все изменения сброшены. Начните заново.': 'All edits were reset. Start again.',
+    'Выберите две картинки.': 'Choose two images.',
+    'Выберите изображение из верхнего списка.': 'Select an image from the upper list.',
+    'Выберите отрезки на таймлайне и нажмите Сделать.': 'Select timeline segments and click Process.',
+    'Готово.': 'Done.',
+    'Готово. Результат появился в Processed.': 'Done. Result appeared in Processed.',
+    'Готово. Ресайзы сброшены — их нужно создать заново.': 'Done. Resizes were reset and must be generated again.',
+    'Двигайте и масштабируйте картинку под окном.': 'Move and scale the image under the window.',
+    'Загружаю видео...': 'Uploading video...',
+    'Загрузите видео и перетащите границы на таймлайне.': 'Upload a video and drag timeline boundaries.',
+    'Настройте параметры и сохраните.': 'Adjust settings and save.',
+    'Не удалось получить статус задачи': 'Failed to get job status',
+    'Не удалось создать файл.': 'Failed to create file.',
+    'Нет загрузок.': 'No uploads.',
+    'Окно и рамка фиксированы по шаблону. Двигайте и масштабируйте картинку под окном.': 'Window and frame are fixed by template. Move and scale image under the window.',
+    'Окно фиксировано по высоте и центрировано, ширину можно менять симметрично от центра.': 'Window height is fixed and centered; width can be changed symmetrically from center.',
+    'Ошибка OknoFix.': 'OknoFix error.',
+    'Ошибка OknoScale.': 'OknoScale error.',
+    'Ошибка split.': 'Split error.',
+    'Ошибка split3.': 'Split3 error.',
+    'Ошибка сохранения.': 'Save error.',
+    'Ошибка удаления.': 'Delete error.',
+    'Превышено время ожидания завершения задачи': 'Job completion timeout exceeded',
+    'Просмотр результата. Для обработки выберите оригинал.': 'Viewing result. Select original for processing.',
+    'Сервер не вернул jobId': 'Server did not return jobId',
+    'Скачать': 'Download',
+    'Склеиваю...': 'Merging...',
+    'Сначала выберите строку в таблице файлов.': 'First select a row in the files table.',
+    'Сохраняю...': 'Saving...',
+    'сегмент': 'segment',
+    'сегмента': 'segments',
+    'сегментов': 'segments',
+    '— небольшое веб-приложение для загрузки и обработки изображений.': '— a small web app for uploading and processing images.',
+  },
+  'es-ES': {
+    'Загрузить изображение': 'Subir imagen',
+    'Нажмите на дискету, перетащите файлы или вставьте из буфера обмена — и они загрузятся.': 'Haz clic en el icono de disco, arrastra archivos o pega desde el portapapeles: se cargarán automáticamente.',
+    'Справка': 'Ayuda',
+    'Удаление': 'Eliminar',
+    'Удалить': 'Eliminar',
+    'Отмена': 'Cancelar',
+    'Закрыть': 'Cerrar',
+    'Сделать': 'Procesar',
+    'Склеить': 'Combinar',
+    'Обрезать': 'Recortar',
+    'Открыть в новой вкладке': 'Abrir en pestaña nueva',
+    'Открыть оригинал': 'Abrir original',
+    'Просмотр': 'Vista previa',
+    'Кадрирование': 'Recorte',
+    'Выберите две картинки из готового размера 1280.': 'Elige dos imágenes del tamaño 1280.',
+    'Выберите три картинки.': 'Elige tres imágenes.',
+    'Выберите строку в таблице файлов, затем откройте OknoFix.': 'Selecciona una fila en la tabla y luego abre OknoFix.',
+    'Выберите строку в таблице файлов, затем откройте OknoScale.': 'Selecciona una fila en la tabla y luego abre OknoScale.',
+    'Двигайте и масштабируйте картинку под окном. Ширину окна можно менять ручками слева/справа.': 'Mueve y escala la imagen bajo la ventana. Puedes cambiar el ancho con las asas laterales.',
+    'Справка по Jmaka': 'Ayuda de Jmaka',
+    'Краткое описание всех функций и горячих действий.': 'Descripción breve de todas las funciones y acciones rápidas.',
+    'Загрузка файлов': 'Carga de archivos',
+    'Таблица файлов': 'Tabla de archivos',
+    'Инструменты': 'Herramientas',
+    'Прочее': 'Otros',
+    'Дата - время': 'Fecha - hora',
+    'Оригинал': 'Original',
+    'Тип': 'Tipo',
+    'Результат': 'Resultado',
+    'Таблицы файлов': 'Tablas de archivos',
+    'Готовые файлы': 'Archivos listos',
+    'Размеры': 'Tamaños',
+    'Панель управления': 'Panel de control',
+    'Загрузка файла': 'Carga de archivo',
+    'Можно включить обратно, очистив настройку в LocalStorage.': 'Puedes volver a activarlo limpiando la configuración en LocalStorage.',
+    'Больше не спрашивать (удалять сразу)': 'No volver a preguntar (eliminar inmediatamente)',
+    'Удалить запись и все связанные файлы безвозвратно?': '¿Eliminar este registro y todos los archivos relacionados de forma permanente?',
+    'Выберите слот, затем кликните по превью из списка загруженных изображений:': 'Selecciona una ranura y luego haz clic en una vista previa de las imágenes subidas:',
+    'Выбор для картинки 1': 'Seleccionar para imagen 1',
+    'Выбор для картинки 2': 'Seleccionar para imagen 2',
+    'Выбор для картинки 3': 'Seleccionar para imagen 3',
+    'Левая половина': 'Mitad izquierda',
+    'Правая половина': 'Mitad derecha',
+    'Треть 1': 'Tercio 1',
+    'Треть 2': 'Tercio 2',
+    'Треть 3': 'Tercio 3',
+    'Поле 16:9': 'Área 16:9',
+    'Поле 1280×720. Перетаскивайте и масштабируйте изображения, пропорции сохраняются.': 'Área 1280×720. Arrastra y escala las imágenes manteniendo la proporción.',
+    'Пропорции кадрирования': 'Relación de recorte',
+    'Перетаскивайте рамку и её углы. Выберите пропорции:': 'Arrastra el marco y sus esquinas. Elige la proporción:',
+    'Выбор языка': 'Selector de idioma',
+    'Обрабатываю видео...': 'Procesando vídeo...',
+
+    'Split (2 изображения → 16:9)': 'Split (2 imágenes → 16:9)',
+    'Split3 (3 изображения → 16:9)': 'Split3 (3 imágenes → 16:9)',
+    'OknoFix (1 изображение → вертикальная карточка)': 'OknoFix (1 imagen → tarjeta vertical)',
+    'OknoScale (1 изображение → вертикальная карточка)': 'OknoScale (1 imagen → tarjeta vertical)',
+    'Загрузка файлов': 'Carga de archivos',
+    'Кнопка-дискета — выбор до 15 файлов за раз.': 'Botón de disco: selecciona hasta 15 archivos a la vez.',
+    'Поддержка drag &amp; drop: просто перетащите файлы на окно.': 'Soporta arrastrar y soltar: arrastra archivos a la ventana.',
+    'Вставка из буфера обмена (Ctrl+V) для картинок.': 'Pegado desde portapapeles (Ctrl+V) para imágenes.',
+    'Таблица файлов': 'Tabla de archivos',
+    'Каждая строка — загруженное изображение (новые сверху).': 'Cada fila es una imagen subida (las nuevas arriba).',
+    'В ячейке «Оригинал» — мини-preview + маленькая кнопка-дискета для скачивания.': 'En la celda «Original»: mini vista previa + botón pequeño de descarga.',
+    'В ячейке «Оригинал» — миниатюра + маленькая кнопка-дискета для скачивания.': 'En la celda «Original»: miniatura + botón pequeño de descarga.',
+    'Размеры 1280 / 1920 / 2440 создаются по клику по кнопкам сверху.': 'Los tamaños 1280 / 1920 / 2440 se crean con los botones de arriba.',
+    'Крестик справа удаляет запись и все связанные файлы.': 'La cruz a la derecha elimina el registro y todos los archivos vinculados.',
+    'Инструменты': 'Herramientas',
+    '— кадрирование исходника с выбором пропорций (1:1, 2:3, 16:9).': '— recorte de imagen original con proporciones (1:1, 2:3, 16:9).',
+    '— две картинки → одна 1280×720, белая полоса 7px по центру.': '— dos imágenes → una 1280×720, línea blanca de 7px en el centro.',
+    '— три картинки → одна 1280×720, две белые полосы 7px.': '— tres imágenes → una 1280×720, dos líneas blancas de 7px.',
+    '— вертикальная карточка по строгому PNG-шаблону:': '— tarjeta vertical según plantilla PNG estricta:',
+    'режим фиксированного окна (как на исходном PNG);': 'modo de ventana fija (como en PNG original);',
+    'картинка подложки двигается мышью и масштабируется пропорционально;': 'la imagen de fondo se mueve con el ratón y escala proporcionalmente;',
+    'масштаб — через колесо мыши или кнопки «−»/«+» внизу справа.': 'zoom con rueda del ratón o botones «−»/«+» abajo a la derecha.',
+    '— экспериментальный режим той же карточки с изменяемой шириной окна.': '— modo experimental de la misma tarjeta con ancho de ventana ajustable.',
+    '— редактирование изображений с настройкой яркости, контраста, насыщенности, оттенка, экспозиции и вибрации.': '— edición de imágenes con brillo, contraste, saturación, tono, exposición y vibración.',
+    '— редактирование видео с инструментами:': '— edición de vídeo con herramientas:',
+    '— обрезка начала/конца и вырезание сегментов из середины;': '— recorte de inicio/fin y corte de segmentos del medio;',
+    '— кадрирование видео;': '— recorte de vídeo;',
+    '— поворот на 90°, 180° или 270°;': '— rotación a 90°, 180° o 270°;',
+    '— отражение по горизонтали или вертикали;': '— volteo horizontal o vertical;',
+    '— изменение скорости (0.25x - 2.0x);': '— cambio de velocidad (0.25x - 2.0x);',
+    '— отключение звука;': '— silenciar audio;',
+    '— сброс всех изменений.': '— restablecer todos los cambios.',
+    'Прочее': 'Otros',
+    'История Split / Split3 / OknoFix / OknoScale / Edit / Video Edit — в правой таблице.': 'El historial de Split / Split3 / OknoFix / OknoScale / Edit / Video Edit está en la tabla derecha.',
+    'Каждый результат можно открыть, скачать или удалить.': 'Cada resultado se puede abrir, descargar o eliminar.',
+    'Старые записи и файлы автоматически очищаются по времени хранения.': 'Los registros y archivos antiguos se limpian automáticamente por tiempo de retención.',
+    'Используйте таймлайн ниже для выбора сегментов видео': 'Usa la línea de tiempo para seleccionar segmentos de vídeo',
+    'Перетащите границы, чтобы задать отрезок.': 'Arrastra los bordes para definir el segmento.',
+    'Перетащите углы рамки для кадрирования видео': 'Arrastra las esquinas del marco para recortar vídeo',
+    'Тримминг, кадрирование, поворот и настройка размера.': 'Recorte, recorte de área, rotación y ajuste de tamaño.',
+    'Правки применяются в реальном времени, сохранение — на сервере.': 'Los cambios se aplican en tiempo real, el guardado se hace en el servidor.',
+    'Скорость:': 'Velocidad:',
+    'Сбросить': 'Restablecer',
+    'Сохранить': 'Guardar',
+    '+ Сегмент': '+ Segmento',
+    '− Сегмент': '− Segmento',
+    '1 сегмент': '1 segmento',
+    '↻ 90° по ч.с.': '↻ 90° horario',
+    '↺ 90° против ч.с.': '↺ 90° antihorario',
+    '↔ По горизонтали': '↔ Horizontal',
+    '↕ По вертикали': '↕ Vertical',
+    'Загрузить файл': 'Subir archivo',
+    'Загрузка...': 'Cargando...',
+    'Ошибка загрузки.': 'Error de carga.',
+    'Выберите слот (#1/#2), затем кликните по превью. Дальше перетаскивайте/масштабируйте.': 'Elige ranura (#1/#2), luego pulsa una vista previa. Después arrastra/escala.',
+    'Выберите слот (#1/#2/#3), затем кликните по превью. Дальше перетаскивайте/масштабируйте.': 'Elige ranura (#1/#2/#3), luego pulsa una vista previa. Después arrastra/escala.',
+    'Нет загруженных изображений.': 'No hay imágenes subidas.',
+    'Нет загруженных изображений в разделе Original.': 'No hay imágenes subidas en la sección Original.',
+    'Не удалось загрузить список изображений.': 'No se pudo cargar la lista de imágenes.',
+    'Не удалось загрузить 1280-картинку для Split.': 'No se pudo cargar la imagen 1280 para Split.',
+    'Не удалось загрузить картинку для Split3.': 'No se pudo cargar la imagen para Split3.',
+    'Не удалось определить размер поля.': 'No se pudo determinar el tamaño del área.',
+    'Генерирую OknoFix...': 'Generando OknoFix...',
+    'Генерирую OknoScale...': 'Generando OknoScale...',
+    'Удалено.': 'Eliminado.',
+    'Удаляю...': 'Eliminando...',
+    'Загружаю список...': 'Cargando lista...',
+    'Загружаю файл...': 'Subiendo archivo...',
+    'Загружаю файл из буфера обмена...': 'Subiendo archivo desde portapapeles...',
+    'Загружаю файл из перетаскивания...': 'Subiendo archivo por arrastrar y soltar...',
+    'Файл загружен.': 'Archivo subido.',
+    'Не выбран оригинал.': 'No se seleccionó original.',
+    'Обрезаю...': 'Recortando...',
+    'Ошибка кадрирования.': 'Error de recorte.',
+    'Ошибка оптимизации.': 'Error de optimización.',
+    'Можно выбрать максимум 15 файлов за раз.': 'Puedes seleccionar máximo 15 archivos a la vez.',
+    'Можно загрузить максимум 15 файлов за раз.': 'Puedes subir máximo 15 archivos a la vez.',
+    'Удалить результат': 'Eliminar resultado',
+    'Русский': 'Русский',
+    'Таблица Split': 'Tabla Split',
+    '🇷🇺 Русский': '🇷🇺 Русский',
+
+    'Edit создан.': 'Edit creado.',
+    'OknoFix создан.': 'OknoFix creado.',
+    'OknoScale создан.': 'OknoScale creado.',
+    'Split создан.': 'Split creado.',
+    'Split3 создан.': 'Split3 creado.',
+    'Results пока пуст.': 'Results aún está vacío.',
+    'Results пуст. Нажмите Refresh, если обработка завершилась только что.': 'Results está vacío. Pulsa Refresh si el procesamiento terminó hace un momento.',
+    'Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.': 'Vídeo subido. Selecciona segmentos en la línea de tiempo y pulsa Procesar.',
+    'Все изменения сброшены. Начните заново.': 'Todos los cambios se restablecieron. Empieza de nuevo.',
+    'Выберите две картинки.': 'Elige dos imágenes.',
+    'Выберите изображение из верхнего списка.': 'Selecciona una imagen de la lista superior.',
+    'Выберите отрезки на таймлайне и нажмите Сделать.': 'Selecciona segmentos en la línea de tiempo y pulsa Procesar.',
+    'Готово.': 'Listo.',
+    'Готово. Результат появился в Processed.': 'Listo. El resultado apareció en Processed.',
+    'Готово. Ресайзы сброшены — их нужно создать заново.': 'Listo. Los tamaños se reiniciaron y deben crearse de nuevo.',
+    'Двигайте и масштабируйте картинку под окном.': 'Mueve y escala la imagen bajo la ventana.',
+    'Загружаю видео...': 'Subiendo vídeo...',
+    'Загрузите видео и перетащите границы на таймлайне.': 'Sube un vídeo y arrastra los límites en la línea de tiempo.',
+    'Настройте параметры и сохраните.': 'Ajusta los parámetros y guarda.',
+    'Не удалось получить статус задачи': 'No se pudo obtener el estado de la tarea',
+    'Не удалось создать файл.': 'No se pudo crear el archivo.',
+    'Нет загрузок.': 'No hay cargas.',
+    'Окно и рамка фиксированы по шаблону. Двигайте и масштабируйте картинку под окном.': 'La ventana y el marco son fijos por plantilla. Mueve y escala la imagen bajo la ventana.',
+    'Окно фиксировано по высоте и центрировано, ширину можно менять симметрично от центра.': 'La altura de la ventana es fija y centrada; el ancho se puede cambiar simétricamente desde el centro.',
+    'Ошибка OknoFix.': 'Error de OknoFix.',
+    'Ошибка OknoScale.': 'Error de OknoScale.',
+    'Ошибка split.': 'Error de Split.',
+    'Ошибка split3.': 'Error de Split3.',
+    'Ошибка сохранения.': 'Error al guardar.',
+    'Ошибка удаления.': 'Error al eliminar.',
+    'Превышено время ожидания завершения задачи': 'Se excedió el tiempo de espera de finalización de la tarea',
+    'Просмотр результата. Для обработки выберите оригинал.': 'Viendo resultado. Selecciona el original para procesar.',
+    'Сервер не вернул jobId': 'El servidor no devolvió jobId',
+    'Скачать': 'Descargar',
+    'Склеиваю...': 'Combinando...',
+    'Сначала выберите строку в таблице файлов.': 'Primero selecciona una fila en la tabla de archivos.',
+    'Сохраняю...': 'Guardando...',
+    'сегмент': 'segmento',
+    'сегмента': 'segmentos',
+    'сегментов': 'segmentos',
+    '— небольшое веб-приложение для загрузки и обработки изображений.': '— una pequeña aplicación web para cargar y procesar imágenes.',
+  }
+};
+
+function normalizeLang(lang) {
+  if (!lang) return 'ru';
+  if (lang === 'en' || lang === 'en-US') return 'en-US';
+  if (lang === 'es' || lang === 'es-ES') return 'es-ES';
+  return 'ru';
+}
+
+function getCurrentLanguage() {
+  try {
+    const stored = localStorage.getItem(LANGUAGE_KEY);
+    if (stored) return normalizeLang(stored);
+  } catch {}
+  return 'ru';
+}
+
+let currentLanguage = getCurrentLanguage();
+
+const REVERSE_PHRASE_TRANSLATIONS = (() => {
+  const out = {};
+  Object.entries(PHRASE_TRANSLATIONS).forEach(([lang, dict]) => {
+    const rev = {};
+    Object.entries(dict).forEach(([ru, translated]) => {
+      if (translated) rev[translated] = ru;
+    });
+    out[lang] = rev;
+  });
+  return out;
+})();
+
+function toRussianBaseText(source) {
+  if (!source) return source;
+  if (PHRASE_TRANSLATIONS['en-US'] && REVERSE_PHRASE_TRANSLATIONS['en-US'][source]) {
+    return REVERSE_PHRASE_TRANSLATIONS['en-US'][source];
+  }
+  if (PHRASE_TRANSLATIONS['es-ES'] && REVERSE_PHRASE_TRANSLATIONS['es-ES'][source]) {
+    return REVERSE_PHRASE_TRANSLATIONS['es-ES'][source];
+  }
+  return source;
+}
+
+function translateText(sourceText, lang = currentLanguage) {
+  const source = String(sourceText || '');
+  if (!source) return source;
+  const ruBase = toRussianBaseText(source);
+  if (lang === 'ru') return ruBase;
+  const dict = PHRASE_TRANSLATIONS[lang] || {};
+  return dict[ruBase] || dict[source] || source;
+}
+
+function t(keyOrText) {
+  const key = String(keyOrText || '');
+  return (UI_TEXTS[currentLanguage] && UI_TEXTS[currentLanguage][key])
+    || (UI_TEXTS.ru && UI_TEXTS.ru[key])
+    || translateText(key);
+}
+
+const I18N_ATTRS = ['aria-label', 'title', 'placeholder'];
+const i18nTextSource = new WeakMap();
+const i18nAttrSource = new WeakMap();
+let i18nIsApplying = false;
+let i18nObserverStarted = false;
+
+function translateTextNode(node) {
+  if (!node) return;
+  const original = i18nTextSource.has(node) ? i18nTextSource.get(node) : node.textContent;
+  if (!i18nTextSource.has(node)) i18nTextSource.set(node, original);
+  const translated = translateText(original);
+  if (node.textContent !== translated) node.textContent = translated;
+}
+
+function translateElementAttributes(el) {
+  if (!el || !el.getAttribute) return;
+  let src = i18nAttrSource.get(el);
+  if (!src) {
+    src = {};
+    i18nAttrSource.set(el, src);
+  }
+  for (const attr of I18N_ATTRS) {
+    const current = el.getAttribute(attr);
+    if (current == null) continue;
+    if (!(attr in src)) src[attr] = current;
+    const translated = translateText(src[attr]);
+    if (current !== translated) el.setAttribute(attr, translated);
+  }
+}
+
+function translateDomSubtree(root) {
+  if (!root) return;
+  i18nIsApplying = true;
+  try {
+    if (root.nodeType === Node.TEXT_NODE) {
+      translateTextNode(root);
+      return;
+    }
+
+    if (root.nodeType === Node.ELEMENT_NODE) {
+      const element = root;
+      if (element.tagName !== 'SCRIPT' && element.tagName !== 'STYLE') {
+        translateElementAttributes(element);
+      }
+    }
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+      acceptNode(node) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const tag = node.tagName;
+          if (tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+        if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_SKIP;
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_SKIP;
+        const pTag = parent.tagName;
+        if (pTag === 'SCRIPT' || pTag === 'STYLE') return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+
+    let node = walker.nextNode();
+    while (node) {
+      if (node.nodeType === Node.TEXT_NODE) translateTextNode(node);
+      else if (node.nodeType === Node.ELEMENT_NODE) translateElementAttributes(node);
+      node = walker.nextNode();
+    }
+  } finally {
+    i18nIsApplying = false;
+  }
+}
+
+function ensureI18nObserver() {
+  if (i18nObserverStarted || !document.body || typeof MutationObserver === 'undefined') return;
+  i18nObserverStarted = true;
+  const observer = new MutationObserver((mutations) => {
+    if (i18nIsApplying) return;
+    for (const mutation of mutations) {
+      if (mutation.type === 'characterData') {
+        const node = mutation.target;
+        i18nTextSource.set(node, node.data);
+        if (currentLanguage !== 'ru') {
+          const translated = translateText(node.data);
+          if (translated !== node.data) {
+            i18nIsApplying = true;
+            try { node.data = translated; } finally { i18nIsApplying = false; }
+          }
+        }
+      }
+      if (mutation.type === 'attributes' && mutation.target && mutation.target.nodeType === Node.ELEMENT_NODE) {
+        const el = mutation.target;
+        const attr = mutation.attributeName;
+        if (attr && I18N_ATTRS.includes(attr)) {
+          let src = i18nAttrSource.get(el);
+          if (!src) { src = {}; i18nAttrSource.set(el, src); }
+          src[attr] = el.getAttribute(attr) || '';
+          if (currentLanguage !== 'ru') {
+            const translated = translateText(src[attr]);
+            if (translated !== src[attr]) {
+              i18nIsApplying = true;
+              try { el.setAttribute(attr, translated); } finally { i18nIsApplying = false; }
+            }
+          }
+        }
+      }
+      if (mutation.type === 'childList') {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE) {
+            translateDomSubtree(node);
+          }
+        });
+      }
+    }
+  });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: I18N_ATTRS
+  });
+}
+
+window.JMAKA_I18N = {
+  t,
+  getLanguage: () => currentLanguage,
+  translateText,
+  setLanguage: (lang) => {
+    currentLanguage = normalizeLang(lang);
+    try { localStorage.setItem(LANGUAGE_KEY, currentLanguage); } catch {}
+    applyLanguage();
+    try { window.dispatchEvent(new CustomEvent('jmaka:language-changed', { detail: { language: currentLanguage } })); } catch {}
+  }
+};
+
+function applyLanguage() {
+  ensureI18nObserver();
+  const switcher = document.getElementById('languageSwitcher');
+  if (switcher) switcher.setAttribute('aria-label', t('languageLabel'));
+  document.querySelectorAll('#languageSwitcher .lang-btn').forEach((btn) => {
+    const isActive = btn.dataset.lang === currentLanguage;
+    btn.classList.toggle('is-active', isActive);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+  document.documentElement.lang = currentLanguage === 'ru' ? 'ru' : (currentLanguage === 'es-ES' ? 'es' : 'en');
+  translateDomSubtree(document.body);
+}
+
+function initLanguageButtons() {
+  const switcher = document.getElementById('languageSwitcher');
+  if (!switcher) return;
+  switcher.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('.lang-btn') : null;
+    if (!btn) return;
+    const lang = btn.dataset.lang;
+    if (!lang || lang === currentLanguage) return;
+    window.JMAKA_I18N.setLanguage(lang);
+    queueMicrotask(() => applyLanguage());
+    setTimeout(() => applyLanguage(), 0);
+  });
+}
+
 // viewer modal elements
 // RU: Элементы модального окна просмотра полноразмерной картинки.
 // EN: DOM elements for the image viewer modal used when clicking previews.
@@ -253,7 +909,7 @@ function confirmDeleteAsync(storedName) {
 
   if (!deleteModal) {
     // fallback
-    return Promise.resolve(confirm('Удалить запись и все связанные файлы безвозвратно?'));
+    return Promise.resolve(confirm(t('deleteConfirm')));
   }
 
   deleteModal.hidden = false;
@@ -275,6 +931,8 @@ if (deleteModal) {
 if (deleteCloseBtn) deleteCloseBtn.addEventListener('click', () => closeDeleteModal(false));
 if (deleteCancelBtn) deleteCancelBtn.addEventListener('click', () => closeDeleteModal(false));
 if (deleteConfirmBtn) deleteConfirmBtn.addEventListener('click', () => closeDeleteModal(true));
+initLanguageButtons();
+applyLanguage();
 
 // help modal wiring
 if (helpBtn && helpModal) {
@@ -836,7 +1494,7 @@ async function applySplit() {
   const b = splitState.b;
 
   if (!a || !a.storedName || !b || !b.storedName) {
-    if (splitHint) splitHint.textContent = 'Выберите две картинки.';
+    if (splitHint) splitHint.textContent = t('splitChooseTwo');
     return;
   }
 
@@ -858,7 +1516,7 @@ async function applySplit() {
   try {
     if (splitApplyBtn) splitApplyBtn.disabled = true;
     setBusy(true);
-    if (splitHint) splitHint.textContent = 'Склеиваю...';
+    if (splitHint) splitHint.textContent = t('splitWorking');
 
     const res = await fetch(toAbsoluteUrl('split'), {
       method: 'POST',
@@ -871,7 +1529,7 @@ async function applySplit() {
     try { data = JSON.parse(text); } catch { data = text; }
 
     if (!res.ok) {
-      if (splitHint) splitHint.textContent = 'Ошибка split.';
+      if (splitHint) splitHint.textContent = t('splitError');
       showResult(data);
       return;
     }
@@ -884,10 +1542,10 @@ async function applySplit() {
 
     await loadComposites();
 
-    hint.textContent = 'Split создан.';
+    hint.textContent = t('splitCreated');
     closeSplitModal();
   } catch (e) {
-    if (splitHint) splitHint.textContent = 'Ошибка split.';
+    if (splitHint) splitHint.textContent = t('splitError');
     showResult(String(e));
   } finally {
     setBusy(false);
@@ -3783,17 +4441,17 @@ function wireOknoScaleUI() {
         try { data = JSON.parse(text); } catch { data = text; }
 
         if (!res.ok) {
-          if (oknoScaleHint) oknoScaleHint.textContent = 'Ошибка OknoScale.';
+          if (oknoScaleHint) oknoScaleHint.textContent = t('oknoScaleError');
           showResult(data);
           return;
         }
 
         showResult(data);
         await loadComposites();
-        if (oknoScaleHint) oknoScaleHint.textContent = 'OknoScale создан.';
+        if (oknoScaleHint) oknoScaleHint.textContent = t('oknoScaleCreated');
         closeOknoScaleModal();
       } catch (err) {
-        if (oknoScaleHint) oknoScaleHint.textContent = 'Ошибка OknoScale.';
+        if (oknoScaleHint) oknoScaleHint.textContent = t('oknoScaleError');
         showResult(String(err));
       } finally {
         setBusy(false);
@@ -4248,17 +4906,17 @@ function wireTrashUI() {
         try { data = JSON.parse(text); } catch { data = text; }
 
         if (!res.ok) {
-          if (trashHint) trashHint.textContent = 'Ошибка OknoFix.';
+          if (trashHint) trashHint.textContent = t('oknoFixError');
           showResult(data);
           return;
         }
 
         showResult(data);
         await loadComposites();
-        if (trashHint) trashHint.textContent = 'OknoFix создан.';
+        if (trashHint) trashHint.textContent = t('oknoFixCreated');
         closeTrashModal();
       } catch (err) {
-        if (trashHint) trashHint.textContent = 'Ошибка OknoFix.';
+        if (trashHint) trashHint.textContent = t('oknoFixError');
         showResult(String(err));
       } finally {
         setBusy(false);
@@ -4727,7 +5385,7 @@ async function loadImageEditList() {
 async function saveImageEdit(itemOverride) {
   const item = itemOverride || imageEditState.selected;
   if (!item) return;
-  if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+  if (imageEditHint) imageEditHint.textContent = t('saving');
   const payload = {
     imageId: item.id,
     preset: imageEditState.params?.preset || 'None',
@@ -4744,10 +5402,10 @@ async function saveImageEdit(itemOverride) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data && data.error ? data.error : 'save failed');
-    if (imageEditHint) imageEditHint.textContent = 'Готово.';
+    if (imageEditHint) imageEditHint.textContent = t('saveDone');
     await loadImageEditList();
   } catch (err) {
-    if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+    if (imageEditHint) imageEditHint.textContent = t('saveError');
   }
 }
 
@@ -4818,7 +5476,7 @@ if (imageEditApplyBtn) {
     try {
       if (imageEditApplyBtn) imageEditApplyBtn.disabled = true;
       setBusy(true);
-      if (imageEditHint) imageEditHint.textContent = 'Сохраняю...';
+      if (imageEditHint) imageEditHint.textContent = t('saving');
 
       const res = await fetch(toAbsoluteUrl(`images/${imageEditState.storedName}/save-edit`), {
         method: 'POST',
@@ -4831,7 +5489,7 @@ if (imageEditApplyBtn) {
       try { data = JSON.parse(text); } catch { data = text; }
 
       if (!res.ok) {
-        if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+        if (imageEditHint) imageEditHint.textContent = t('saveError');
         showResult(data);
         return;
       }
@@ -4840,10 +5498,10 @@ if (imageEditApplyBtn) {
       await loadComposites();
       await loadImageEditList();
 
-      hint.textContent = 'Edit создан.';
+      hint.textContent = t('editCreated');
       closeImageEdit();
     } catch (e) {
-      if (imageEditHint) imageEditHint.textContent = 'Ошибка сохранения.';
+      if (imageEditHint) imageEditHint.textContent = t('saveError');
       showResult(String(e));
     } finally {
       setBusy(false);
