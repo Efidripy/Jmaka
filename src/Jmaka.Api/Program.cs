@@ -477,10 +477,9 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
-
 // Web UI (static files)
 app.UseRouting();
+app.UseHttpsRedirection();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -619,8 +618,8 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 
-app.MapRazorPages();
 app.UseAntiforgery();
+app.MapRazorPages();
 
 // PNG-шаблон для TrashImg (готовая карточка с рамкой/тенью)
 var oknoFixOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "jmaka-template-oknofix-001.png");
