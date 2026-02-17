@@ -764,3 +764,31 @@
     width: 100%;
   }
 }
+
+/* Compact cards override */
+.video-list-item,
+.video-list-item.is-processed {
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 6px;
+  align-items: stretch;
+}
+
+.video-list-item .video-thumb,
+.video-list-item.is-processed .video-thumb {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.video-list-actions,
+.video-list-item.is-processed .video-list-actions {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  grid-auto-flow: column;
+  gap: 4px;
+  background: rgba(2, 6, 23, 0.82);
+  padding: 3px;
+  border-radius: 8px;
+}
