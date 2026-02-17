@@ -1,11 +1,15 @@
+@page
+@{
+    Layout = null;
+}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Jmaka 0.3.2</title>
-  <link rel="stylesheet" href="app.css?v=0.3.2" />
-  <link rel="stylesheet" href="video-edit.css?v=0.3.2" />
+  <link rel="stylesheet" href="~/app.css" asp-append-version="true" />
+  <link rel="stylesheet" href="~/video-edit.css" asp-append-version="true" />
 </head>
 <body>
   <main class="page">
@@ -971,7 +975,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=0.3.2"></script>
-  <script src="video-edit.js?v=0.3.2"></script>
+  <script src="~/app.js" asp-append-version="true"></script>
+  <script src="~/video-edit.js" asp-append-version="true"></script>
 </body>
 </html>
