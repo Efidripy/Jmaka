@@ -85,6 +85,22 @@
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${tenths}`;
   }
 
+  function formatDurationCompact(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+    const total = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function formatSizeMb(bytes) {
+    const value = Number(bytes || 0);
+    if (!Number.isFinite(value) || value <= 0) return '—';
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
   function normalizeSegments() {
     const duration = state.duration || 0;
     const minGap = 0.1;
@@ -327,10 +343,45 @@
       originals = data.filter((item) => item && item.kind !== 'processed');
       processed = data.filter((item) => item && item.kind === 'processed');
       renderVideoLists();
+      if (processed.length === 0) {
+        setHint('Results пуст. Нажмите Refresh, если обработка завершилась только что.');
+      }
     } catch {
       videoOriginalsList.textContent = 'Ошибка загрузки.';
       videoProcessedList.textContent = 'Ошибка загрузки.';
     }
+  }
+
+  function normalizeJobStatus(rawStatus) {
+    if (typeof rawStatus === 'string') return rawStatus.toUpperCase();
+    const enumMap = ['QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED', 'EXPIRED'];
+    if (Number.isInteger(rawStatus) && rawStatus >= 0 && rawStatus < enumMap.length) {
+      return enumMap[rawStatus];
+    }
+    return String(rawStatus || '').toUpperCase();
+  }
+
+  async function waitForJobCompletion(jobId, timeoutMs = 180000) {
+    const started = Date.now();
+    const terminal = new Set(['SUCCEEDED', 'FAILED', 'CANCELED', 'EXPIRED']);
+
+    while (Date.now() - started < timeoutMs) {
+      const res = await fetch(toAbsoluteUrl(`video/jobs/${jobId}`), { cache: 'no-store' });
+      let data;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok) {
+        throw new Error(data && data.error ? data.error : 'Не удалось получить статус задачи');
+      }
+
+      const status = normalizeJobStatus(data && data.status);
+      if (terminal.has(status)) {
+        return { ...data, status };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+
+    throw new Error('Превышено время ожидания завершения задачи');
   }
 
   function renderVideoLists() {
@@ -378,13 +429,11 @@
       }
       const meta = document.createElement('div');
       meta.className = 'video-list-meta';
-      const name = document.createElement('div');
-      name.textContent = item.originalName || item.storedName || 'video';
-      const duration = Number(item.durationSeconds || 0);
-      const details = document.createElement('div');
-      details.textContent = `${formatTime(duration)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}`;
-      meta.appendChild(name);
-      meta.appendChild(details);
+      if (isProcessed) {
+        const details = document.createElement('div');
+        details.textContent = `${formatDurationCompact(item.durationSeconds)} · ${formatSizeMb(item.size)}`;
+        meta.appendChild(details);
+      }
 
       const actions = document.createElement('div');
       actions.className = 'video-list-actions';
@@ -426,7 +475,7 @@
       actions.appendChild(del);
 
       row.appendChild(thumb);
-      if (!isProcessed) row.appendChild(meta);
+      if (isProcessed) row.appendChild(meta);
       row.appendChild(actions);
       listEl.appendChild(row);
     };
@@ -434,7 +483,22 @@
     if (originals.length === 0) videoOriginalsList.textContent = 'Нет загрузок.';
     else originals.forEach((item) => renderItem(item, videoOriginalsList, false));
 
-    if (processed.length === 0) videoProcessedList.textContent = 'Пока нет результатов.';
+    if (processed.length === 0) {
+      const warn = document.createElement('div');
+      warn.className = 'video-list-empty-warning';
+      warn.textContent = 'Results пока пуст.';
+      const refreshBtn = document.createElement('button');
+      refreshBtn.type = 'button';
+      refreshBtn.className = 'btn small';
+      refreshBtn.textContent = 'Refresh';
+      refreshBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        loadVideoHistory();
+      });
+      warn.appendChild(refreshBtn);
+      videoProcessedList.appendChild(warn);
+    }
     else processed.forEach((item) => renderItem(item, videoProcessedList, true));
   }
 
@@ -749,14 +813,20 @@
         try { data = await res.json(); } catch { data = null; }
         if (!res.ok) throw new Error(data && data.error ? data.error : 'process failed');
 
-        if (videoEditPreview && data.relativePath) {
-          const cacheKey = data.storedName || state.storedName;
-          videoEditPreview.src = withCacheBust ? withCacheBust(data.relativePath, cacheKey) : data.relativePath;
+        if (!data || !data.jobId) throw new Error('Сервер не вернул jobId');
+        const job = await waitForJobCompletion(data.jobId);
+        if (job.status !== 'SUCCEEDED') {
+          throw new Error(job.error || `Задача завершилась со статусом ${job.status}`);
+        }
+
+        if (videoEditPreview && job.relativeOutputPath) {
+          videoEditPreview.src = withCacheBust ? withCacheBust(job.relativeOutputPath, data.jobId) : job.relativeOutputPath;
           timelinePreviewState.dirty = true;
         }
 
         setHint('Готово. Результат появился в Processed.');
         await loadVideoHistory();
+        console.info(`Results refreshed (${processed.length})`);
       } catch (err) {
         setHint(`Ошибка обработки видео. ${String(err || '').trim()}`.trim());
       } finally {
