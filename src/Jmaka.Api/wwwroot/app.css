@@ -483,24 +483,54 @@ html, body {
 }
 
 /* Уплотняем правую (composites) таблицу, чтобы не было горизонтальной прокрутки */
+.composites-wrap .files-table {
+  table-layout: fixed;
+}
+
+.composites-wrap .files-table th,
+.composites-wrap .files-table td {
+  padding: 7px 4px;
+}
+
 .composites-wrap .col-dt {
-  width: 130px;
+  width: 44%;
 }
 
 .composites-wrap .col-kind {
-  width: 60px;
+  width: 17%;
 }
 
 .composites-wrap .col-comp {
-  width: 80px;
+  width: 29%;
 }
 
 .composites-wrap .col-del {
-  width: 30px;
+  width: 10%;
 }
 
 .composites-wrap .table-wrap {
   overflow-x: hidden;
+}
+
+.composites-wrap .cell-with-download {
+  gap: 3px;
+}
+
+.composites-wrap .table-preview {
+  width: 50px;
+  height: 34px;
+}
+
+.composites-wrap .download-btn,
+.composites-wrap .del-btn {
+  width: 21px;
+  height: 21px;
+}
+
+.composites-wrap .download-btn svg,
+.composites-wrap .del-btn svg {
+  width: 12px;
+  height: 12px;
 }
 
 .del-btn {
