@@ -621,6 +621,13 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseAntiforgery();
 app.MapRazorPages();
 
+// Version API endpoint
+app.MapGet("/api/version", () =>
+{
+    var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.4.0";
+    return Results.Ok(new { version });
+});
+
 // PNG-шаблон для TrashImg (готовая карточка с рамкой/тенью)
 var oknoFixOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "jmaka-template-oknofix-001.png");
 

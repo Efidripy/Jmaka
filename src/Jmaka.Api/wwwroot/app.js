@@ -1,5 +1,5 @@
-// Jmaka frontend version: 0.3.2
-const APP_VERSION = '0.3.2';
+// Jmaka frontend version: 0.4.0
+let APP_VERSION = '0.4.0';
 
 const fileInput = document.getElementById('fileInput');
 const saveBtn = document.getElementById('saveBtn');
@@ -5612,3 +5612,41 @@ initImageEditSliders();
 
 // Initialize panel collapsing
 updatePanelCollapsing();
+
+// Load version from API and update all UI elements
+async function loadVersion() {
+  try {
+    const res = await fetch('/api/version');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.version) {
+        APP_VERSION = data.version;
+        updateAllVersions(data.version);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to load version from API:', e);
+  }
+}
+
+// Update all version displays in the UI
+function updateAllVersions(version) {
+  const versionElements = document.querySelectorAll('[data-version]');
+  versionElements.forEach(el => {
+    if (el.tagName === 'SPAN' || el.tagName === 'DIV') {
+      el.textContent = version;
+    }
+  });
+}
+
+// Initialize ASCII art logo
+function initAsciiLogo() {
+  const asciiArt = document.getElementById('asciiArt');
+  if (asciiArt && typeof window.getRandomAsciiArt === 'function') {
+    asciiArt.textContent = window.getRandomAsciiArt();
+  }
+}
+
+// Initialize version and ASCII logo on page load
+loadVersion();
+initAsciiLogo();
