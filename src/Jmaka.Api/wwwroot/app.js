@@ -5625,7 +5625,7 @@ async function loadVersion() {
       }
     }
   } catch (e) {
-    console.warn('Failed to load version from API:', e);
+    console.warn('Failed to load version from API, using fallback version:', APP_VERSION, e);
   }
 }
 
@@ -5648,5 +5648,14 @@ function initAsciiLogo() {
 }
 
 // Initialize version and ASCII logo on page load
-loadVersion();
-initAsciiLogo();
+// Wait for DOMContentLoaded to ensure ascii-art.js has loaded
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    loadVersion();
+    initAsciiLogo();
+  });
+} else {
+  // DOM already loaded
+  loadVersion();
+  initAsciiLogo();
+}
