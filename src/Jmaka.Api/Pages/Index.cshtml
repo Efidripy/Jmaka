@@ -14,34 +14,38 @@
 <body>
   <main class="page">
     <section class="uploader" aria-label="Загрузка файла">
-      <button class="save-btn" id="saveBtn" type="button" aria-label="Загрузить изображение">
-        <div class="save-icon" aria-hidden="true">
-          <!-- Arrow pointing to the disk -->
-          <svg class="save-arrow" viewBox="0 0 64 64" focusable="false">
-            <path d="M32 8v22" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
-            <path d="M20 24l12 12 12-12" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-
-          <!-- Disk icon -->
-          <svg class="save-disk" viewBox="0 0 64 64" focusable="false">
-            <path d="M10 8h34l10 10v38H10V8zm6 6v12h26V14H16zm0 20v16h32V34H16zm6-16h12v6H22v-6z" />
-          </svg>
-        </div>
-        <div class="save-label">Загрузить изображение</div>
-      </button>
-
-      <div id="languageSwitcher" class="language-switcher" aria-label="Language selector">
-        <button id="langRuBtn" class="lang-btn" type="button" data-lang="ru" aria-pressed="false">🇷🇺 Русский</button>
-        <button id="langEnBtn" class="lang-btn" type="button" data-lang="en-US" aria-pressed="false">🇺🇸 English</button>
-        <button id="langEsBtn" class="lang-btn" type="button" data-lang="es-ES" aria-pressed="false">🇪🇸 Español</button>
-      </div>
-
-      <div class="preview-wrap">
+      <!-- Левая панель -->
+      <div class="left-panel">
         <div class="ascii-logo-container">
           <pre id="asciiArt" class="ascii-art"></pre>
           <span class="version-badge" data-version>v0.4.0</span>
         </div>
 
+        <button class="save-btn" id="saveBtn" type="button" aria-label="Загрузить изображение">
+          <div class="save-icon" aria-hidden="true">
+            <!-- Arrow pointing to the disk -->
+            <svg class="save-arrow" viewBox="0 0 64 64" focusable="false">
+              <path d="M32 8v22" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
+              <path d="M20 24l12 12 12-12" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+
+            <!-- Disk icon -->
+            <svg class="save-disk" viewBox="0 0 64 64" focusable="false">
+              <path d="M10 8h34l10 10v38H10V8zm6 6v12h26V14H16zm0 20v16h32V34H16zm6-16h12v6H22v-6z" />
+            </svg>
+          </div>
+          <div class="save-label">Загрузить изображение</div>
+        </button>
+
+        <div id="languageSwitcher" class="language-switcher" aria-label="Language selector">
+          <button id="langRuBtn" class="lang-btn" type="button" data-lang="ru" aria-pressed="false">🇷🇺 Русский</button>
+          <button id="langEnBtn" class="lang-btn" type="button" data-lang="en-US" aria-pressed="false">🇺🇸 English</button>
+          <button id="langEsBtn" class="lang-btn" type="button" data-lang="es-ES" aria-pressed="false">🇪🇸 Español</button>
+        </div>
+      </div>
+
+      <!-- Правая панель -->
+      <div class="preview-wrap">
         <div class="main-controls" aria-label="Панель управления">
           <div class="tool-buttons" aria-label="Инструменты">
             <button id="splitToolBtn" class="btn tool-btn" type="button">Split</button>
