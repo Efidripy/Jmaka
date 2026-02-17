@@ -764,15 +764,8 @@
       <div class="modal-footer">
         <div id="videoEditHint" class="modal-hint">Загрузите видео и перетащите границы на таймлайне.</div>
         <div class="modal-actions">
-          <div class="video-output-select">
-            <label><input type="radio" name="videoOutputWidth" value="1280" checked /> 1280</label>
-            <label><input type="radio" name="videoOutputWidth" value="720" /> 720</label>
-          </div>
           <label class="video-advanced">Target size (MB)
-            <input id="videoTargetSize" type="number" min="0.5" max="2048" step="0.1" value="5" />
-          </label>
-          <label class="video-advanced">Vertical offset (px)
-            <input id="videoVerticalOffset" type="number" min="-400" max="400" step="1" value="0" />
+            <input id="videoTargetSize" type="number" min="0.1" max="2048" step="0.1" value="1" />
           </label>
           <button id="videoEditCancel" class="btn" type="button">Закрыть</button>
           <button id="videoEditSave" class="btn primary" type="button" disabled>Сделать</button>
