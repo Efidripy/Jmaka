@@ -106,6 +106,63 @@ html, body {
   cursor: not-allowed;
 }
 
+/* Левая панель с названием, кнопкой загрузки и языками */
+.left-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  background: rgba(17, 24, 39, 0.55);
+  border-radius: 14px;
+  width: min(280px, calc(100vw - 24px));
+}
+
+/* ASCII логотип внутри левой панели */
+.left-panel .ascii-logo-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+  opacity: 0;
+  animation: fadeIn 0.8s ease-out forwards;
+}
+
+/* Кнопка загрузки внутри левой панели */
+.left-panel .save-btn {
+  width: 100%;
+}
+
+/* Переключатель языков внутри левой панели */
+.left-panel .language-switcher {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.left-panel .lang-btn {
+  border: 1px solid var(--border);
+  background: rgba(17, 24, 39, 0.75);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 120ms ease;
+}
+
+.left-panel .lang-btn:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+.left-panel .lang-btn.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.45) inset;
+}
 
 .preview-wrap {
   position: relative;
@@ -1761,6 +1818,19 @@ html, body {
     grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
     gap: 6px;
   }
+
+  .uploader {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .left-panel {
+    width: 100%;
+  }
+
+  .preview-wrap {
+    width: 100%;
+  }
 }
 
 @media (max-height: 720px) {
@@ -1792,6 +1862,10 @@ html, body {
 
   .uploader {
     gap: 10px;
+  }
+
+  .left-panel {
+    width: 100%;
   }
 
   .preview-wrap {
