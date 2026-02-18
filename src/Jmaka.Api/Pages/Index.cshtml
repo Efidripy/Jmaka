@@ -51,12 +51,17 @@
       <div class="preview-wrap">
         <div class="main-controls" aria-label="Панель управления">
           <div class="tool-buttons" aria-label="Инструменты">
-            <button id="splitToolBtn" class="btn tool-btn" type="button">Split</button>
-            <button id="split3ToolBtn" class="btn tool-btn" type="button">Split3</button>
-            <button id="trashFixToolBtn" class="btn tool-btn" type="button">OknoFix</button>
-            <button id="trashToolBtn" class="btn tool-btn" type="button">OknoScale</button>
-            <button id="imageEditToolBtn" class="btn tool-btn" type="button">Edit</button>
-            <button id="videoEditToolBtn" class="btn tool-btn" type="button">Video Edit</button>
+            <div class="tool-row">
+              <button id="splitToolBtn" class="btn tool-btn" type="button">Split</button>
+              <button id="split3ToolBtn" class="btn tool-btn" type="button">Split3</button>
+              <button id="trashFixToolBtn" class="btn tool-btn" type="button">OknoFix</button>
+              <button id="trashToolBtn" class="btn tool-btn" type="button">OknoScale</button>
+            </div>
+            <div class="tool-row">
+              <button id="cropToolBtn" class="btn tool-btn" type="button">Crop</button>
+              <button id="imageEditToolBtn" class="btn tool-btn" type="button">Edit</button>
+              <button id="videoEditToolBtn" class="btn tool-btn video-edit" type="button">Video Edit<span class="excl">❗</span></button>
+            </div>
           </div>
 
           <div id="sizeButtons" class="size-buttons" aria-label="Размеры">
