@@ -6,6 +6,8 @@
   --muted: #9ca3af;
   --accent: #60a5fa;
   --border: rgba(255, 255, 255, 0.12);
+  --danger: #b91c1c;
+  --danger-light: #ff4d4f;
 }
 
 * { box-sizing: border-box; }
@@ -272,17 +274,18 @@ html, body {
 .tool-row {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .btn.video-edit {
-  background-color: #b91c1c;
+  background-color: var(--danger);
   color: white;
   border-color: rgba(0,0,0,0.15);
 }
 
 .btn.video-edit .excl {
   margin-left: 6px;
-  color: #ff4d4f;
+  color: var(--danger-light);
   font-weight: 700;
 }
 
