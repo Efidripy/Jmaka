@@ -265,9 +265,25 @@ html, body {
 /* Row 1: tools */
 .tool-buttons {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   gap: 8px;
-  flex-wrap: wrap;
+}
+
+.tool-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn.video-edit {
+  background-color: #b91c1c;
+  color: white;
+  border-color: rgba(0,0,0,0.15);
+}
+
+.btn.video-edit .excl {
+  margin-left: 6px;
+  color: #ff4d4f;
+  font-weight: 700;
 }
 
 .tool-btn {
