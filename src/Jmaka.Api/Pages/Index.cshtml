@@ -630,16 +630,15 @@
       <div class="modal-header">
         <div class="modal-title-wrap">
           <div class="modal-title">Video Edit</div>
-          <div class="modal-sub">
-            <span class="modal-subtext">Тримминг, кадрирование, поворот и настройка размера.</span>
-          </div>
+          <div class="modal-sub"><span class="modal-subtext">Trim, crop, rotate and size tuning.</span></div>
         </div>
         <button id="videoEditClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
       </div>
-      
-      <!-- Video Edit Toolbar -->
-      <div class="video-edit-toolbar">
-        <div class="video-tool-group">
+
+      <div class="modal-body video-edit-body">
+        <section class="video-edit-main">
+          <div class="video-edit-toolbar">
+            <div class="video-tool-group">
           <button class="tool-btn" data-tool="trim" type="button" title="Trim">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
               <path d="M3 2l1 1-1 1-1-1 1-1zm5 0l1 1-1 1-1-1 1-1zm5 0l1 1-1 1-1-1 1-1zm-10 5l1 1-1 1-1-1 1-1zm5 0l1 1-1 1-1-1 1-1zm5 0l1 1-1 1-1-1 1-1zm-10 5l1 1-1 1-1-1 1-1zm5 0l1 1-1 1-1-1 1-1zm5 0l1 1-1 1-1-1 1-1z"/>
@@ -661,13 +660,6 @@
             </svg>
             <span>Rotate</span>
           </button>
-          <button class="tool-btn" data-tool="flip" type="button" title="Flip">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M7 1v14H6V1h1zm2 0v14h1V1H9z"/>
-              <path d="M2 4l3 4-3 4V4zm12 0l-3 4 3 4V4z" fill-opacity="0.6"/>
-            </svg>
-            <span>Flip</span>
-          </button>
           <button class="tool-btn" data-tool="speed" type="button" title="Speed">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8 2a6 6 0 100 12A6 6 0 008 2zm0 1a5 5 0 110 10A5 5 0 018 3z"/>
@@ -675,125 +667,113 @@
             </svg>
             <span>Speed</span>
           </button>
-        </div>
-        <div class="video-tool-group">
-          <label class="tool-btn tool-toggle" title="Убрать аудио">
-            <input id="videoMuteAudio" type="checkbox" hidden />
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 3l-3 3H2v4h3l3 3V3z"/>
-              <path d="M12 5l-1 1 2 2-2 2 1 1 2-2 2 2 1-1-2-2 2-2-1-1-2 2-2-2z" fill-opacity="0.8"/>
-            </svg>
-            <span id="videoMuteLabel">Без звука</span>
-          </label>
-          <button id="videoResetBtn" class="tool-btn" type="button" title="Сбросить все изменения">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 2a6 6 0 00-5.29 3H5v1H1V2h1v2.08A7 7 0 118 15v-1a6 6 0 100-12z"/>
-            </svg>
-            <span>Reset</span>
-          </button>
-        </div>
-      </div>
+            </div>
+          </div>
 
-      <!-- Tool-specific panels -->
-      <div class="video-tool-panels">
-        <div class="video-tool-panel" data-tool-panel="trim">
-          <div class="panel-hint">Используйте таймлайн ниже для выбора сегментов видео</div>
-        </div>
-        <div class="video-tool-panel" data-tool-panel="crop" hidden>
-          <div class="panel-hint">Перетащите углы рамки для кадрирования видео</div>
-        </div>
-        <div class="video-tool-panel" data-tool-panel="rotate" hidden>
-          <div class="panel-controls">
-            <button id="videoRotateCw" class="btn small" type="button">↻ 90° по ч.с.</button>
-            <button id="videoRotateCcw" class="btn small" type="button">↺ 90° против ч.с.</button>
-            <button id="videoRotateReset" class="btn small" type="button">Сбросить</button>
-          </div>
-        </div>
-        <div class="video-tool-panel" data-tool-panel="flip" hidden>
-          <div class="panel-controls">
-            <button id="videoFlipH" class="btn small" type="button">↔ По горизонтали</button>
-            <button id="videoFlipV" class="btn small" type="button">↕ По вертикали</button>
-          </div>
-        </div>
-        <div class="video-tool-panel" data-tool-panel="speed" hidden>
-          <div class="panel-controls">
-            <label class="video-speed-label">
-              Скорость: <span id="videoSpeedValue">1.0x</span>
-              <input id="videoSpeedRange" type="range" min="0.25" max="2" step="0.25" value="1" />
-            </label>
-          </div>
-        </div>
-      </div>
-      
-      <div class="modal-body video-edit-body">
-        <div class="video-edit-layout">
-          <div class="video-edit-main">
-            <div class="video-preview-wrap">
-              <div class="video-preview-stage">
-                <video id="videoEditPreview" class="video-preview" playsinline></video>
-                <div id="videoCropOverlay" class="video-crop-overlay" hidden>
-                  <div id="videoCropRect" class="video-crop-rect" role="presentation">
-                    <span class="crop-handle tl" data-handle="tl"></span>
-                    <span class="crop-handle tr" data-handle="tr"></span>
-                    <span class="crop-handle bl" data-handle="bl"></span>
-                    <span class="crop-handle br" data-handle="br"></span>
-                  </div>
+          <div class="video-preview-wrap">
+            <div class="video-preview-stage">
+              <video id="videoEditPreview" class="video-preview" playsinline></video>
+              <div id="videoCropOverlay" class="video-crop-overlay" hidden>
+                <div id="videoCropRect" class="video-crop-rect" role="presentation">
+                  <span class="crop-handle tl" data-handle="tl"></span>
+                  <span class="crop-handle tr" data-handle="tr"></span>
+                  <span class="crop-handle bl" data-handle="bl"></span>
+                  <span class="crop-handle br" data-handle="br"></span>
                 </div>
               </div>
             </div>
-            <div class="video-timeline">
-              <div class="timeline-strip" id="videoTimelineStrip">
-                <canvas id="videoTimelineCanvas"></canvas>
-                <div id="videoTimelineSegments" class="timeline-segments"></div>
-                <div id="videoTimelinePlayhead" class="timeline-playhead"></div>
-              </div>
-              <div class="timeline-meta">
-                <div class="timeline-range">
-                  IN <span id="videoTrimStartLabel">00:00</span> · OUT <span id="videoTrimEndLabel">00:00</span>
-                </div>
-                <div class="timeline-help">Перетащите границы, чтобы задать отрезок.</div>
-                <div class="timeline-segment-controls">
-                  <button id="videoAddSegment" class="btn small" type="button" title="Добавить сегмент">+ Сегмент</button>
-                  <button id="videoRemoveSegment" class="btn small" type="button" title="Удалить активный сегмент">− Сегмент</button>
-                  <span id="videoSegmentsInfo" class="segments-info">1 сегмент</span>
-                </div>
-              </div>
+          </div>
+
+          <div class="video-timeline">
+            <div class="timeline-title">Use timeline below to select video segments</div>
+            <div class="timeline-strip" id="videoTimelineStrip">
+              <canvas id="videoTimelineCanvas"></canvas>
+              <div id="videoTimelineSegments" class="timeline-segments"></div>
+              <div id="videoTimelinePlayhead" class="timeline-playhead"></div>
             </div>
-            <div class="video-edit-controls">
-              <button id="videoPlayToggle" class="btn icon-btn" type="button">▶</button>
-              <div class="video-timecode"><span id="videoCurrentTime">00:00</span> / <span id="videoDuration">00:00</span></div>
+            <div class="timeline-meta">
+              <div class="timeline-range">IN <span id="videoTrimStartLabel">00:00</span> - OUT <span id="videoTrimEndLabel">00:00</span></div>
+              <div class="timeline-help">Drag boundaries to set segment.</div>
+              <div class="timeline-segment-controls">
+                <button id="videoAddSegment" class="btn small" type="button" title="Добавить сегмент">+ Segment</button>
+                <button id="videoRemoveSegment" class="btn small" type="button" title="Удалить активный сегмент">- Segment</button>
+                <span id="videoSegmentsInfo" class="segments-info">1 segment</span>
+              </div>
             </div>
           </div>
-          <aside class="video-edit-sidebar">
+
+          <div class="video-status-line">Results are empty. Click Refresh if processing just finished.</div>
+
+          <div class="video-tool-panels">
+            <div class="video-tool-panel" data-tool-panel="trim"></div>
+            <div class="video-tool-panel" data-tool-panel="crop" hidden></div>
+            <div class="video-tool-panel" data-tool-panel="rotate" hidden>
+              <div class="panel-controls">
+                <button id="videoRotateCw" class="btn small" type="button">↻ 90°</button>
+                <button id="videoRotateCcw" class="btn small" type="button">↺ 90°</button>
+                <button id="videoRotateReset" class="btn small" type="button">Reset</button>
+              </div>
+            </div>
+            <div class="video-tool-panel" data-tool-panel="speed" hidden>
+              <div class="panel-controls">
+                <label class="video-speed-label">Speed <span id="videoSpeedValue">1.0x</span>
+                  <input id="videoSpeedRange" type="range" min="0.25" max="2" step="0.25" value="1" />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="video-edit-controls">
+            <button id="videoPlayToggle" class="btn icon-btn" type="button">▶</button>
+            <div class="video-timecode"><span id="videoCurrentTime">00:00</span> / <span id="videoDuration">00:00</span></div>
+          </div>
+
+          <input id="videoTargetSize" type="number" min="0.1" max="2048" step="0.1" value="10" hidden />
+        </div>
+        <aside class="video-edit-sidebar">
+          <label class="video-upload-btn">
+            Upload
+            <input id="videoUploadInput" type="file" accept="video/*" hidden />
+          </label>
+          <div class="sidebar-libraries">
             <div class="sidebar-section">
               <div class="sidebar-header">
-                <span>Originals</span>
-                <label class="btn small">
-                  Upload
-                  <input id="videoUploadInput" type="file" accept="video/*" hidden />
-                </label>
+                <span>Оригинал</span>
                 <button id="videoHistoryRefresh" class="btn small" type="button">Refresh</button>
               </div>
               <div id="videoOriginalsList" class="video-list"></div>
             </div>
             <div class="sidebar-section">
               <div class="sidebar-header">
-                <span>Processed</span>
+                <span>Итог</span>
+                <button id="videoProcessedRefresh" class="btn small" type="button">Refresh</button>
               </div>
               <div id="videoProcessedList" class="video-list"></div>
             </div>
-          </aside>
-        </div>
+          </div>
+        </aside>
         <div id="videoProcessingOverlay" class="video-processing-overlay" hidden>Processing…</div>
       </div>
-      <div class="modal-footer">
-        <div id="videoEditHint" class="modal-hint">Загрузите видео и перетащите границы на таймлайне.</div>
-        <div class="modal-actions">
-          <label class="video-advanced">Target size (MB)
-            <input id="videoTargetSize" type="number" min="0.1" max="2048" step="0.1" value="1" />
+      <div class="modal-footer video-footer">
+        <div class="video-footer-left">
+          <button id="videoResetBtn" class="btn" type="button">Reset</button>
+          <div id="videoEditHint" class="modal-hint">Results are empty. Click Refresh if processing just finished.</div>
+        </div>
+        <div class="video-footer-right">
+          <label class="icon-toggle-btn" title="Mute / Unmute">
+            <input id="videoMuteAudio" type="checkbox" hidden />
+            <span id="videoMuteLabel">🔊</span>
           </label>
-          <button id="videoEditCancel" class="btn" type="button">Закрыть</button>
-          <button id="videoEditSave" class="btn primary" type="button" disabled>Сделать</button>
+          <button id="videoModeVidcov" class="btn" type="button">Vidcov</button>
+          <div class="video-size-group">
+            <span class="video-size-label">Episod:</span>
+            <button class="btn" type="button" data-size-limit="10mb">10 МБ</button>
+            <button class="btn" type="button" data-size-limit="20mb">20 МБ</button>
+            <button class="btn" type="button" data-size-limit="30mb">30 МБ</button>
+          </div>
+          <span class="video-footer-separator" aria-hidden="true"></span>
+          <button id="videoEditSave" class="btn primary" type="button" disabled>Process</button>
+          <button id="videoEditCancel" class="btn" type="button">Close</button>
         </div>
       </div>
     </div>
