@@ -669,10 +669,11 @@
           </button>
             </div>
             <div class="video-tool-group video-tool-group-right">
-              <label class="video-upload-btn" title="Upload">
-                Upload
-                <input id="videoUploadInput" type="file" accept="video/*" hidden />
+              <label class="tool-btn tool-toggle" title="Mute / Unmute">
+                <input id="videoMuteAudio" type="checkbox" hidden />
+                <span id="videoMuteLabel">Mute</span>
               </label>
+              <button id="videoResetBtn" class="tool-btn" type="button">Reset</button>
             </div>
           </div>
 
@@ -734,11 +735,10 @@
             <div class="video-timecode"><span id="videoCurrentTime">00:00</span> / <span id="videoDuration">00:00</span></div>
           </div>
 
-          <input id="videoTargetSize" type="number" min="0.1" max="2048" step="0.1" value="10" hidden />
         </div>
         <aside class="video-edit-sidebar">
-          <div class="sidebar-libraries side-by-side">
-            <div class="sidebar-section video-column">
+          <div class="sidebar-libraries">
+            <div class="sidebar-section">
               <div class="sidebar-header">
                 <span>Оригинал</span>
                 <button id="videoHistoryRefresh" class="btn small" type="button">Refresh</button>
@@ -747,7 +747,7 @@
             </div>
             <div class="sidebar-section video-column">
               <div class="sidebar-header">
-                <span>Итог</span>
+                <span>Processed</span>
                 <button id="videoProcessedRefresh" class="btn small" type="button">Refresh</button>
               </div>
               <div id="videoProcessedList" class="video-list"></div>
@@ -758,24 +758,14 @@
       </div>
       <div class="modal-footer video-footer">
         <div class="video-footer-left">
-          <button id="videoResetBtn" class="btn" type="button">Reset</button>
-          <label class="icon-toggle-btn" title="Mute / Unmute">
-            <input id="videoMuteAudio" type="checkbox" hidden />
-            <span id="videoMuteLabel">🔊</span>
-          </label>
           <div id="videoEditHint" class="modal-hint">Results are empty. Click Refresh if processing just finished.</div>
         </div>
         <div class="video-footer-right">
-          <button id="videoModeVidcov" class="btn" type="button">Vidcov</button>
-          <div class="video-size-group">
-            <span class="video-size-label">Episod:</span>
-            <button class="btn" type="button" data-size-limit="10mb">10 МБ</button>
-            <button class="btn" type="button" data-size-limit="20mb">20 МБ</button>
-            <button class="btn" type="button" data-size-limit="30mb">30 МБ</button>
-          </div>
-          <span class="video-footer-separator" aria-hidden="true"></span>
-          <button id="videoEditSave" class="btn primary" type="button" disabled>Process</button>
+          <label class="video-advanced">Target size (MB)
+            <input id="videoTargetSize" type="number" min="0.1" max="2048" step="0.1" value="1" />
+          </label>
           <button id="videoEditCancel" class="btn" type="button">Close</button>
+          <button id="videoEditSave" class="btn primary" type="button" disabled>Process</button>
         </div>
       </div>
     </div>
