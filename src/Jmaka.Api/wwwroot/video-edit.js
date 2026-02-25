@@ -323,10 +323,8 @@
   function renderOutputControls() {
     if (videoTargetSize) videoTargetSize.value = String(state.targetSizeMb);
     if (videoEditSave) videoEditSave.disabled = !state.storedName;
-    sizeLimitButtons.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.sizeLimit === state.selectedSizeLimit));
-    if (videoModeVidcov) videoModeVidcov.classList.toggle('is-active', state.outputMode === 'vidcov');
-    if (videoMuteLabel) videoMuteLabel.textContent = state.muteAudio ? '🔇' : '🔊';
-    const muteWrap = videoMuteLabel ? videoMuteLabel.closest('.icon-toggle-btn') : null;
+    if (videoMuteLabel) videoMuteLabel.textContent = state.muteAudio ? 'Unmute' : 'Mute';
+    const muteWrap = videoMuteLabel ? videoMuteLabel.closest('.tool-toggle') : null;
     if (muteWrap) muteWrap.classList.toggle('is-active', state.muteAudio);
   }
 
@@ -711,29 +709,6 @@
   });
 
   if (videoResetBtn) videoResetBtn.addEventListener('click', resetAllEdits);
-
-
-  if (videoModeVidcov) videoModeVidcov.addEventListener('click', () => {
-    state.outputMode = 'vidcov';
-    state.selectedSizeLimit = 'vidcov';
-    state.targetSizeMb = 1.5;
-    state.muteAudio = true;
-    if (videoMuteAudio) videoMuteAudio.checked = true;
-    renderOutputControls();
-  });
-
-  sizeLimitButtons.forEach((btn) => btn.addEventListener('click', () => {
-    const limit = btn.dataset.sizeLimit;
-    if (limit === '10mb') state.targetSizeMb = 10;
-    if (limit === '20mb') state.targetSizeMb = 20;
-    if (limit === '30mb') state.targetSizeMb = 30;
-    state.outputMode = 'episod';
-    state.selectedSizeLimit = limit || '10mb';
-    state.muteAudio = false;
-    if (videoMuteAudio) videoMuteAudio.checked = false;
-    renderOutputControls();
-  }));
-
   if (videoTargetSize) videoTargetSize.addEventListener('change', () => {
     const next = Number(videoTargetSize.value);
     state.targetSizeMb = Number.isFinite(next) ? clamp(next, 0.1, 2048) : 1;
