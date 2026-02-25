@@ -39,6 +39,8 @@
   const videoMuteAudio = document.getElementById('videoMuteAudio');
   const videoMuteLabel = document.getElementById('videoMuteLabel');
   const videoResetBtn = document.getElementById('videoResetBtn');
+  const videoModeVidcov = document.getElementById('videoModeVidcov');
+  const sizeLimitButtons = Array.from(videoEditModal.querySelectorAll('[data-size-limit]'));
 
   const timelinePreviewState = {
     dirty: true,
@@ -51,6 +53,7 @@
 
   const state = {
     tool: 'trim',
+    outputMode: 'episod',
     storedName: null,
     duration: 0,
     trim: { start: 0, end: 0 },
@@ -62,7 +65,8 @@
     flipV: false,
     speed: 1,
     muteAudio: false,
-    targetSizeMb: 1,
+    targetSizeMb: 10,
+    selectedSizeLimit: '10mb',
   };
 
   let originals = [];
@@ -770,6 +774,11 @@
     videoEditSave.addEventListener('click', async () => {
       if (!state.storedName) return;
       normalizeSegments();
+      if (state.outputMode === 'vidcov') {
+        state.targetSizeMb = 1.5;
+        state.muteAudio = true;
+      }
+
       const payload = {
         storedName: state.storedName,
         trimStartSec: state.segments[0]?.start ?? 0,
@@ -788,7 +797,8 @@
         flipH: state.flipH,
         flipV: state.flipV,
         speed: state.speed,
-        muteAudio: state.muteAudio
+        muteAudio: state.muteAudio,
+        encodingMode: state.outputMode === 'vidcov' ? 'ULTRA_SAFE' : 'BALANCED'
       };
 
       setProcessing(true);

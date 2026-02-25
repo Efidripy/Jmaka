@@ -25,6 +25,8 @@
   background: rgba(7, 30, 58, 0.75);
 }
 
+#videoEditModal .modal-subtext { color: #6b7280; }
+
 .video-edit-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -188,6 +190,9 @@
   overflow: hidden;
 }
 
+.sidebar-libraries.side-by-side {
+  grid-template-columns: 1fr 1fr;
+}
 .sidebar-section {
   min-height: 0;
   display: flex;
@@ -206,7 +211,6 @@
   font-weight: 600;
   margin-right: auto;
 }
-
 .video-list {
   flex: 1;
   min-height: 0;
