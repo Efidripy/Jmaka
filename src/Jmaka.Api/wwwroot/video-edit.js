@@ -440,11 +440,9 @@
       }
       const meta = document.createElement('div');
       meta.className = 'video-list-meta';
-      if (isProcessed) {
-        const details = document.createElement('div');
-        details.textContent = `${formatDurationCompact(item.durationSeconds)} · ${formatSizeMb(item.size)}`;
-        meta.appendChild(details);
-      }
+      const details = document.createElement('div');
+      details.textContent = `${formatDurationCompact(item.durationSeconds)} · ${formatSizeMb(item.size)}`;
+      meta.appendChild(details);
 
       const actions = document.createElement('div');
       actions.className = 'video-list-actions';
@@ -486,7 +484,7 @@
       actions.appendChild(del);
 
       row.appendChild(thumb);
-      if (isProcessed) row.appendChild(meta);
+      row.appendChild(meta);
       row.appendChild(actions);
       listEl.appendChild(row);
     };
