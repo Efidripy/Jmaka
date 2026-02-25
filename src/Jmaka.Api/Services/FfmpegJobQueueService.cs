@@ -231,10 +231,15 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             ? selectedSegments.Sum(x => Math.Max(0, x.End - x.Start))
             : duration;
 
+        var isVidcovMode = string.Equals(job.Request.EncodingMode, "VIDCOV", StringComparison.OrdinalIgnoreCase)
+            || (mode == EncodingMode.ULTRA_SAFE && (job.Request.MuteAudio ?? false) && job.Request.TargetSizeMb <= 1.6);
+
         var targetMb = Math.Clamp(job.Request.TargetSizeMb, 0.1, 2048);
-        var desiredKbps = (int)Math.Round((targetMb * 8192.0 / Math.Max(1, effectiveDuration)) * 0.9);
-        var minKbps = mode == EncodingMode.ULTRA_SAFE ? 120 : 180;
-        var maxKbps = mode == EncodingMode.ULTRA_SAFE ? 1200 : 3500;
+        var desiredTargetMb = isVidcovMode ? Math.Min(1.5, targetMb) : targetMb;
+        var desiredKbps = (int)Math.Round((desiredTargetMb * 8192.0 / Math.Max(1, effectiveDuration)) * 0.9);
+
+        var minKbps = isVidcovMode ? 80 : (mode == EncodingMode.ULTRA_SAFE ? 120 : 180);
+        var maxKbps = isVidcovMode ? 420 : (mode == EncodingMode.ULTRA_SAFE ? 1200 : 3500);
         var videoKbps = Math.Clamp(desiredKbps, minKbps, maxKbps);
         var bitrate = $"{videoKbps}k";
 
@@ -261,7 +266,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         var filter = string.Join(';', filterParts);
 
         var passlog = Path.Combine(Path.GetDirectoryName(job.OutputPath) ?? ".", $"pass-{job.JobId:N}");
-        var includeAudio = !(job.Request.MuteAudio ?? false) && selectedSegments.Count == 0;
+        var includeAudio = !(job.Request.MuteAudio ?? false) && selectedSegments.Count == 0 && !isVidcovMode;
 
         if (mode == EncodingMode.MAX_QUALITY)
         {
