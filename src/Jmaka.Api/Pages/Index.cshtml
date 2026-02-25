@@ -668,6 +668,12 @@
             <span>Speed</span>
           </button>
             </div>
+            <div class="video-tool-group video-tool-group-right">
+              <label class="video-upload-btn" title="Upload">
+                Upload
+                <input id="videoUploadInput" type="file" accept="video/*" hidden />
+              </label>
+            </div>
           </div>
 
           <div class="video-preview-wrap">
@@ -731,19 +737,15 @@
           <input id="videoTargetSize" type="number" min="0.1" max="2048" step="0.1" value="10" hidden />
         </div>
         <aside class="video-edit-sidebar">
-          <label class="video-upload-btn">
-            Upload
-            <input id="videoUploadInput" type="file" accept="video/*" hidden />
-          </label>
-          <div class="sidebar-libraries">
-            <div class="sidebar-section">
+          <div class="sidebar-libraries side-by-side">
+            <div class="sidebar-section video-column">
               <div class="sidebar-header">
                 <span>Оригинал</span>
                 <button id="videoHistoryRefresh" class="btn small" type="button">Refresh</button>
               </div>
               <div id="videoOriginalsList" class="video-list"></div>
             </div>
-            <div class="sidebar-section">
+            <div class="sidebar-section video-column">
               <div class="sidebar-header">
                 <span>Итог</span>
                 <button id="videoProcessedRefresh" class="btn small" type="button">Refresh</button>
@@ -757,13 +759,13 @@
       <div class="modal-footer video-footer">
         <div class="video-footer-left">
           <button id="videoResetBtn" class="btn" type="button">Reset</button>
-          <div id="videoEditHint" class="modal-hint">Results are empty. Click Refresh if processing just finished.</div>
-        </div>
-        <div class="video-footer-right">
           <label class="icon-toggle-btn" title="Mute / Unmute">
             <input id="videoMuteAudio" type="checkbox" hidden />
             <span id="videoMuteLabel">🔊</span>
           </label>
+          <div id="videoEditHint" class="modal-hint">Results are empty. Click Refresh if processing just finished.</div>
+        </div>
+        <div class="video-footer-right">
           <button id="videoModeVidcov" class="btn" type="button">Vidcov</button>
           <div class="video-size-group">
             <span class="video-size-label">Episod:</span>
