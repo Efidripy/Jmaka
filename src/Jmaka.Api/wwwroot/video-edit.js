@@ -11,6 +11,7 @@
   const videoEditPreview = document.getElementById('videoEditPreview');
   const videoUploadInput = document.getElementById('videoUploadInput');
   const videoHistoryRefresh = document.getElementById('videoHistoryRefresh');
+  const videoProcessedRefresh = document.getElementById('videoProcessedRefresh');
   const videoOriginalsList = document.getElementById('videoOriginalsList');
   const videoProcessedList = document.getElementById('videoProcessedList');
   const videoTimelineStrip = document.getElementById('videoTimelineStrip');
@@ -26,8 +27,6 @@
   const videoRotateCw = document.getElementById('videoRotateCw');
   const videoRotateCcw = document.getElementById('videoRotateCcw');
   const videoRotateReset = document.getElementById('videoRotateReset');
-  const videoFlipH = document.getElementById('videoFlipH');
-  const videoFlipV = document.getElementById('videoFlipV');
   const videoSpeedRange = document.getElementById('videoSpeedRange');
   const videoSpeedValue = document.getElementById('videoSpeedValue');
   const videoTargetSize = document.getElementById('videoTargetSize');
@@ -150,13 +149,7 @@
     if (videoCropOverlay) videoCropOverlay.hidden = state.tool !== 'crop';
     if (videoSegmentsInfo) {
       const n = state.segments.length;
-      // Russian pluralization: 1 сегмент, 2-4 сегмента, 5+ сегментов
-      const form = (n % 10 === 1 && n % 100 !== 11) 
-        ? vt('сегмент', 'сегмент')
-        : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) 
-        ? vt('сегмента', 'сегмента')
-        : vt('сегментов', 'сегментов');
-      videoSegmentsInfo.textContent = `${n} ${form}`;
+      videoSegmentsInfo.textContent = `${n} segment${n === 1 ? '' : 's'}`;
     }
   }
 
@@ -326,6 +319,9 @@
   function renderOutputControls() {
     if (videoTargetSize) videoTargetSize.value = String(state.targetSizeMb);
     if (videoEditSave) videoEditSave.disabled = !state.storedName;
+    if (videoMuteLabel) videoMuteLabel.textContent = state.muteAudio ? 'Unmute' : 'Mute';
+    const muteWrap = videoMuteLabel ? videoMuteLabel.closest('.tool-toggle') : null;
+    if (muteWrap) muteWrap.classList.toggle('is-active', state.muteAudio);
   }
 
   function renderAll() {
@@ -438,11 +434,9 @@
       }
       const meta = document.createElement('div');
       meta.className = 'video-list-meta';
-      if (isProcessed) {
-        const details = document.createElement('div');
-        details.textContent = `${formatDurationCompact(item.durationSeconds)} · ${formatSizeMb(item.size)}`;
-        meta.appendChild(details);
-      }
+      const details = document.createElement('div');
+      details.textContent = `${formatDurationCompact(item.durationSeconds)} · ${formatSizeMb(item.size)}`;
+      meta.appendChild(details);
 
       const actions = document.createElement('div');
       actions.className = 'video-list-actions';
@@ -484,7 +478,7 @@
       actions.appendChild(del);
 
       row.appendChild(thumb);
-      if (isProcessed) row.appendChild(meta);
+      row.appendChild(meta);
       row.appendChild(actions);
       listEl.appendChild(row);
     };
@@ -700,9 +694,6 @@
   if (videoRotateCw) videoRotateCw.addEventListener('click', () => { state.rotateDeg = (state.rotateDeg + 90) % 360; renderPlaybackState(); });
   if (videoRotateCcw) videoRotateCcw.addEventListener('click', () => { state.rotateDeg = (state.rotateDeg - 90 + 360) % 360; renderPlaybackState(); });
   if (videoRotateReset) videoRotateReset.addEventListener('click', () => { state.rotateDeg = 0; renderPlaybackState(); });
-  if (videoFlipH) videoFlipH.addEventListener('click', () => { state.flipH = !state.flipH; renderPlaybackState(); });
-  if (videoFlipV) videoFlipV.addEventListener('click', () => { state.flipV = !state.flipV; renderPlaybackState(); });
-
   if (videoSpeedRange) videoSpeedRange.addEventListener('input', () => {
     state.speed = Number(videoSpeedRange.value);
     renderPlaybackState();
@@ -710,11 +701,10 @@
 
   if (videoMuteAudio) videoMuteAudio.addEventListener('change', () => {
     state.muteAudio = videoMuteAudio.checked;
-    if (videoMuteLabel) videoMuteLabel.textContent = state.muteAudio ? vt('Звук выключен', 'Звук выключен') : vt('Без звука', 'Без звука');
+    renderOutputControls();
   });
 
   if (videoResetBtn) videoResetBtn.addEventListener('click', resetAllEdits);
-
   if (videoTargetSize) videoTargetSize.addEventListener('change', () => {
     const next = Number(videoTargetSize.value);
     state.targetSizeMb = Number.isFinite(next) ? clamp(next, 0.1, 2048) : 1;
@@ -747,6 +737,7 @@
   if (videoTimelineStrip) videoTimelineStrip.addEventListener('pointerdown', handleTimelinePointerDown);
   if (videoCropRect) videoCropRect.addEventListener('pointerdown', handleCropPointerDown);
   if (videoHistoryRefresh) videoHistoryRefresh.addEventListener('click', (e) => { e.preventDefault(); loadVideoHistory(); });
+  if (videoProcessedRefresh) videoProcessedRefresh.addEventListener('click', (e) => { e.preventDefault(); loadVideoHistory(); });
 
   if (videoUploadInput) {
     videoUploadInput.addEventListener('change', async () => {
