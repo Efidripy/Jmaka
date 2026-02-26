@@ -10,6 +10,7 @@
   const videoEditHint = document.getElementById('videoEditHint');
   const videoEditPreview = document.getElementById('videoEditPreview');
   const videoUploadInput = document.getElementById('videoUploadInput');
+  const videoUploadBtn = document.getElementById('videoUploadBtn');
   const videoHistoryRefresh = document.getElementById('videoHistoryRefresh');
   const videoProcessedRefresh = document.getElementById('videoProcessedRefresh');
   const videoOriginalsList = document.getElementById('videoOriginalsList');
@@ -29,6 +30,9 @@
   const videoRotateReset = document.getElementById('videoRotateReset');
   const videoSpeedRange = document.getElementById('videoSpeedRange');
   const videoSpeedValue = document.getElementById('videoSpeedValue');
+  const videoFlipH = document.getElementById('videoFlipH');
+  const videoFlipV = document.getElementById('videoFlipV');
+  const videoFlipReset = document.getElementById('videoFlipReset');
   const videoTargetSize = document.getElementById('videoTargetSize');
   const videoCropOverlay = document.getElementById('videoCropOverlay');
   const videoCropRect = document.getElementById('videoCropRect');
@@ -164,6 +168,8 @@
     videoEditPreview.style.transform = `rotate(${state.rotateDeg}deg) scale(${flipX}, ${flipY})`;
     videoEditPreview.playbackRate = state.speed;
     if (videoSpeedValue) videoSpeedValue.textContent = `${state.speed.toFixed(1)}x`;
+    if (videoFlipH) videoFlipH.classList.toggle('is-active', state.flipH);
+    if (videoFlipV) videoFlipV.classList.toggle('is-active', state.flipV);
   }
 
   function renderCropRect() {
@@ -321,11 +327,29 @@
   }
 
   function renderOutputControls() {
+    const isVidcovMode = state.outputMode === 'vidcov';
     if (videoTargetSize) videoTargetSize.value = String(state.targetSizeMb);
     if (videoEditSave) videoEditSave.disabled = !state.storedName;
     if (videoMuteLabel) videoMuteLabel.textContent = state.muteAudio ? 'Unmute' : 'Mute';
-    const muteWrap = videoMuteLabel ? videoMuteLabel.closest('.tool-toggle') : null;
-    if (muteWrap) muteWrap.classList.toggle('is-active', state.muteAudio);
+    if (videoMuteAudio) {
+      videoMuteAudio.checked = !!state.muteAudio;
+      videoMuteAudio.disabled = isVidcovMode;
+    }
+    const muteWrap = videoMuteLabel ? (videoMuteLabel.closest('.video-bottom-mute') || videoMuteLabel.closest('.tool-toggle')) : null;
+    if (muteWrap) {
+      muteWrap.classList.toggle('is-active', state.muteAudio);
+      muteWrap.classList.toggle('is-locked', isVidcovMode);
+      muteWrap.setAttribute('aria-pressed', state.muteAudio ? 'true' : 'false');
+    }
+    if (videoModeVidcov) {
+      videoModeVidcov.classList.toggle('is-active', isVidcovMode);
+      videoModeVidcov.setAttribute('aria-pressed', isVidcovMode ? 'true' : 'false');
+    }
+    sizeLimitButtons.forEach((btn) => {
+      const isActive = !isVidcovMode && btn.dataset.sizeLimit === state.selectedSizeLimit;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
   }
 
   function renderAll() {
@@ -487,13 +511,13 @@
       listEl.appendChild(row);
     };
 
-    if (originals.length === 0) videoOriginalsList.textContent = vt('Нет загрузок.', 'Нет загрузок.');
+    if (originals.length === 0) videoOriginalsList.textContent = vt('No uploads.', 'No uploads.');
     else originals.forEach((item) => renderItem(item, videoOriginalsList, false));
 
     if (processed.length === 0) {
       const warn = document.createElement('div');
       warn.className = 'video-list-empty-warning';
-      warn.textContent = vt('Results пока пуст.', 'Results пока пуст.');
+      warn.textContent = vt('Results are empty for now.', 'Results are empty for now.');
       const refreshBtn = document.createElement('button');
       refreshBtn.type = 'button';
       refreshBtn.className = 'btn small';
@@ -624,6 +648,9 @@
     state.flipV = false;
     state.speed = 1;
     state.muteAudio = false;
+    state.outputMode = 'episod';
+    state.targetSizeMb = 10;
+    state.selectedSizeLimit = '10mb';
     state.tool = 'trim';
     
     // Update UI elements
@@ -635,6 +662,7 @@
     renderPlaybackState();
     renderCropRect();
     renderTimeline();
+    renderOutputControls();
     
     setHint(vt('Все изменения сброшены. Начните заново.', 'Все изменения сброшены. Начните заново.'));
   }
@@ -702,8 +730,24 @@
     state.speed = Number(videoSpeedRange.value);
     renderPlaybackState();
   });
+  if (videoFlipH) videoFlipH.addEventListener('click', () => {
+    state.flipH = !state.flipH;
+    renderPlaybackState();
+  });
+  if (videoFlipV) videoFlipV.addEventListener('click', () => {
+    state.flipV = !state.flipV;
+    renderPlaybackState();
+  });
+  if (videoFlipReset) videoFlipReset.addEventListener('click', () => {
+    state.flipH = false;
+    state.flipV = false;
+    renderPlaybackState();
+  });
 
   if (videoMuteAudio) videoMuteAudio.addEventListener('change', () => {
+    if (state.outputMode === 'vidcov' && !videoMuteAudio.checked) {
+      videoMuteAudio.checked = true;
+    }
     state.muteAudio = videoMuteAudio.checked;
     renderOutputControls();
   });
@@ -714,6 +758,30 @@
     state.targetSizeMb = Number.isFinite(next) ? clamp(next, 0.1, 2048) : 1;
     renderOutputControls();
   });
+  if (videoModeVidcov) {
+    videoModeVidcov.addEventListener('click', () => {
+      state.outputMode = state.outputMode === 'vidcov' ? 'episod' : 'vidcov';
+      if (state.outputMode === 'vidcov') {
+        state.muteAudio = true;
+      }
+      renderOutputControls();
+    });
+  }
+  if (sizeLimitButtons.length > 0) {
+    sizeLimitButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const raw = btn.dataset.sizeLimit || '10mb';
+        const value = Number.parseFloat(raw);
+        if (Number.isFinite(value) && value > 0) {
+          state.targetSizeMb = value;
+          state.selectedSizeLimit = raw;
+          state.outputMode = 'episod';
+          state.muteAudio = false;
+          renderOutputControls();
+        }
+      });
+    });
+  }
 
   if (videoPlayToggle && videoEditPreview) {
     videoPlayToggle.addEventListener('click', () => {
@@ -742,6 +810,11 @@
   if (videoCropRect) videoCropRect.addEventListener('pointerdown', handleCropPointerDown);
   if (videoHistoryRefresh) videoHistoryRefresh.addEventListener('click', (e) => { e.preventDefault(); loadVideoHistory(); });
   if (videoProcessedRefresh) videoProcessedRefresh.addEventListener('click', (e) => { e.preventDefault(); loadVideoHistory(); });
+  if (videoUploadBtn && videoUploadInput) {
+    videoUploadBtn.addEventListener('click', () => {
+      videoUploadInput.click();
+    });
+  }
 
   if (videoUploadInput) {
     videoUploadInput.addEventListener('change', async () => {
@@ -774,10 +847,9 @@
     videoEditSave.addEventListener('click', async () => {
       if (!state.storedName) return;
       normalizeSegments();
-      if (state.outputMode === 'vidcov') {
-        state.targetSizeMb = 1.5;
-        state.muteAudio = true;
-      }
+      const isVidcovMode = state.outputMode === 'vidcov';
+      const targetSizeMb = isVidcovMode ? 1.5 : state.targetSizeMb;
+      const muteAudio = isVidcovMode ? true : state.muteAudio;
 
       const payload = {
         storedName: state.storedName,
@@ -786,7 +858,7 @@
         cutStartSec: null,
         cutEndSec: null,
         outputWidth: 1280,
-        targetSizeMb: state.targetSizeMb,
+        targetSizeMb,
         verticalOffsetPx: 0,
         segments: state.segments.map((x) => ({ startSec: x.start, endSec: x.end })),
         cropX: state.crop.x,
@@ -797,8 +869,8 @@
         flipH: state.flipH,
         flipV: state.flipV,
         speed: state.speed,
-        muteAudio: state.muteAudio,
-        encodingMode: state.outputMode === 'vidcov' ? 'ULTRA_SAFE' : 'BALANCED'
+        muteAudio,
+        encodingMode: isVidcovMode ? 'VIDCOV' : 'BALANCED'
       };
 
       setProcessing(true);

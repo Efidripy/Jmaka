@@ -11,7 +11,8 @@ public enum EncodingMode
 {
     MAX_QUALITY,
     BALANCED,
-    ULTRA_SAFE
+    ULTRA_SAFE,
+    VIDCOV
 }
 
 public sealed class FfmpegQueueOptions
@@ -209,6 +210,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         if (duration <= 0) throw new InvalidOperationException("unable to detect duration");
         job.DurationSeconds = duration;
 
+        var isVidcovMode = job.RequestedMode == EncodingMode.VIDCOV;
         var (mode, reason) = ResolveMode(job.RequestedMode, duration, ReadAvailableRamMb());
         job.ResolvedMode = mode;
         job.RamDecision = reason;
@@ -231,16 +233,37 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             ? selectedSegments.Sum(x => Math.Max(0, x.End - x.Start))
             : duration;
 
-        var isVidcovMode = string.Equals(job.Request.EncodingMode, "VIDCOV", StringComparison.OrdinalIgnoreCase)
-            || (mode == EncodingMode.ULTRA_SAFE && (job.Request.MuteAudio ?? false) && job.Request.TargetSizeMb <= 1.6);
+        var cropXNorm = Math.Clamp(job.Request.CropX ?? 0d, 0d, 1d);
+        var cropYNorm = Math.Clamp(job.Request.CropY ?? 0d, 0d, 1d);
+        var cropWNorm = Math.Clamp(job.Request.CropW ?? 1d, 0.05d, 1d);
+        var cropHNorm = Math.Clamp(job.Request.CropH ?? 1d, 0.05d, 1d);
+        if (cropXNorm + cropWNorm > 1d) cropXNorm = Math.Max(0d, 1d - cropWNorm);
+        if (cropYNorm + cropHNorm > 1d) cropYNorm = Math.Max(0d, 1d - cropHNorm);
 
         var targetMb = Math.Clamp(job.Request.TargetSizeMb, 0.1, 2048);
-        var desiredTargetMb = isVidcovMode ? Math.Min(1.5, targetMb) : targetMb;
-        var desiredKbps = (int)Math.Round((desiredTargetMb * 8192.0 / Math.Max(1, effectiveDuration)) * 0.9);
+        var desiredTargetMb = isVidcovMode ? 1.2 : targetMb;
+        var includeAudio = !(job.Request.MuteAudio ?? false) && selectedSegments.Count == 0 && !isVidcovMode;
+        var audioKbps = includeAudio ? (mode == EncodingMode.MAX_QUALITY ? 128 : 96) : 0;
+        var desiredTotalKbps = (desiredTargetMb * 8192.0) / Math.Max(1, effectiveDuration);
+        var desiredVideoKbps = (int)Math.Round(Math.Max(80, desiredTotalKbps - audioKbps) * 0.98);
 
-        var minKbps = isVidcovMode ? 80 : (mode == EncodingMode.ULTRA_SAFE ? 120 : 180);
-        var maxKbps = isVidcovMode ? 420 : (mode == EncodingMode.ULTRA_SAFE ? 1200 : 3500);
-        var videoKbps = Math.Clamp(desiredKbps, minKbps, maxKbps);
+        int minKbps;
+        int maxKbps;
+        if (isVidcovMode)
+        {
+            // Vidcov should stay compact (~0.8-1.5 MB) even with many short segments.
+            var minTargetKbps = (int)Math.Floor((0.8 * 8192.0 / Math.Max(1, effectiveDuration)) * 0.96);
+            var maxTargetKbps = (int)Math.Ceiling((1.5 * 8192.0 / Math.Max(1, effectiveDuration)) * 0.99);
+            minKbps = Math.Clamp(minTargetKbps, 60, 1800);
+            maxKbps = Math.Clamp(maxTargetKbps, Math.Max(minKbps, 90), 1800);
+        }
+        else
+        {
+            minKbps = mode == EncodingMode.ULTRA_SAFE ? 120 : 180;
+            maxKbps = mode == EncodingMode.ULTRA_SAFE ? 1800 : 12000;
+        }
+
+        var videoKbps = Math.Clamp(desiredVideoKbps, minKbps, maxKbps);
         var bitrate = $"{videoKbps}k";
 
         string sourceLabel;
@@ -262,11 +285,26 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             sourceLabel = "[0:v]";
         }
 
-        filterParts.Add($"{sourceLabel}scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={target.Item1}:{target.Item2}:x=max((ow-iw)/2\\,0):y=max((oh-ih)/2\\,0):color=black,format=yuv420p[v]");
+        // Match preview behavior: always fill 16:9 viewport and keep only the visible region.
+        filterParts.Add($"{sourceLabel}scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=increase:force_divisible_by=2,crop={target.Item1}:{target.Item2}:(iw-ow)/2:(ih-oh)/2[vviewport]");
+
+        var cropWidthPx = Math.Clamp((int)Math.Round(target.Item1 * cropWNorm), 2, target.Item1);
+        if ((cropWidthPx & 1) != 0) cropWidthPx -= 1;
+        if (cropWidthPx < 2) cropWidthPx = 2;
+
+        var cropHeightPx = Math.Clamp((int)Math.Round(target.Item2 * cropHNorm), 2, target.Item2);
+        if ((cropHeightPx & 1) != 0) cropHeightPx -= 1;
+        if (cropHeightPx < 2) cropHeightPx = 2;
+
+        var cropLeftPx = (int)Math.Round((target.Item1 - cropWidthPx) * cropXNorm);
+        var cropTopPx = (int)Math.Round((target.Item2 - cropHeightPx) * cropYNorm);
+        cropLeftPx = Math.Clamp(cropLeftPx, 0, Math.Max(0, target.Item1 - cropWidthPx));
+        cropTopPx = Math.Clamp(cropTopPx, 0, Math.Max(0, target.Item2 - cropHeightPx));
+
+        filterParts.Add($"[vviewport]crop={cropWidthPx}:{cropHeightPx}:{cropLeftPx}:{cropTopPx},scale={target.Item1}:{target.Item2}:flags=lanczos,format=yuv420p[v]");
         var filter = string.Join(';', filterParts);
 
         var passlog = Path.Combine(Path.GetDirectoryName(job.OutputPath) ?? ".", $"pass-{job.JobId:N}");
-        var includeAudio = !(job.Request.MuteAudio ?? false) && selectedSegments.Count == 0 && !isVidcovMode;
 
         if (mode == EncodingMode.MAX_QUALITY)
         {
@@ -275,7 +313,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             var pass2 = new List<string>{"-y","-threads","1","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-c:v","libx264","-b:v",bitrate,"-pass","2","-passlogfile",passlog};
             if (includeAudio)
             {
-                pass2.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a","128k"});
+                pass2.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a",$"{audioKbps}k"});
             }
             else
             {
@@ -291,7 +329,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             var args = new List<string>{"-y","-threads","1","-r","24","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-c:v","libx264","-pix_fmt","yuv420p","-b:v",bitrate};
             if (includeAudio)
             {
-                args.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a","96k"});
+                args.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a",$"{audioKbps}k"});
             }
             else
             {
@@ -326,11 +364,16 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
 
     private (EncodingMode Mode, string Reason) ResolveMode(EncodingMode requested, double duration, int ramMb)
     {
+        if (requested == EncodingMode.VIDCOV)
+        {
+            return (EncodingMode.ULTRA_SAFE, "vidcov_requested");
+        }
+
         var mode = requested == EncodingMode.BALANCED
-            ? (duration > _opts.BalancedDurationLimitSeconds ? EncodingMode.ULTRA_SAFE : EncodingMode.MAX_QUALITY)
+            ? (duration > _opts.BalancedDurationLimitSeconds ? EncodingMode.BALANCED : EncodingMode.MAX_QUALITY)
             : requested;
         var reason = requested == EncodingMode.BALANCED
-            ? (duration > _opts.BalancedDurationLimitSeconds ? "duration_limit_exceeded" : "short_video")
+            ? (duration > _opts.BalancedDurationLimitSeconds ? "duration_limit_balanced" : "short_video")
             : "requested";
 
         if (_opts.EnableRamBasedFallback)
@@ -339,14 +382,14 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             _logger.LogInformation("RAM check: MemAvailable={available_mb}MB, effective={available_mb_effective}MB, margin={margin}MB", ramMb, effective, _opts.RamSafetyMarginMb);
             if (mode == EncodingMode.MAX_QUALITY && effective < _opts.MinAvailableRamMbFor720p2Pass)
             {
-                _logger.LogInformation("RAM fallback decision: {from_profile} -> {to_profile} (reason={reason})", mode, EncodingMode.ULTRA_SAFE, "low_ram_for_2pass_720p");
-                return (EncodingMode.ULTRA_SAFE, "low_ram_for_2pass_720p");
+                _logger.LogInformation("RAM fallback decision: {from_profile} -> {to_profile} (reason={reason})", mode, EncodingMode.BALANCED, "low_ram_for_2pass_720p");
+                return (EncodingMode.BALANCED, "low_ram_for_2pass_720p");
             }
 
-            if ((mode == EncodingMode.MAX_QUALITY || mode == EncodingMode.BALANCED) && effective < _opts.MinAvailableRamMbFor720pAny)
+            if (mode == EncodingMode.BALANCED && effective < _opts.MinAvailableRamMbFor720pAny)
             {
-                _logger.LogInformation("RAM fallback decision: {from_profile} -> {to_profile} (reason={reason})", mode, EncodingMode.ULTRA_SAFE, "low_ram_for_720p_any");
-                return (EncodingMode.ULTRA_SAFE, "low_ram_for_720p_any");
+                _logger.LogInformation("RAM fallback decision: keep {profile} (reason={reason})", mode, "low_ram_for_720p_any");
+                return (EncodingMode.BALANCED, "low_ram_for_720p_any");
             }
         }
 
@@ -389,6 +432,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
     private static EncodingMode? ParseMode(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
+        if (string.Equals(raw, "VIDCOV", StringComparison.OrdinalIgnoreCase)) return EncodingMode.VIDCOV;
         return Enum.TryParse<EncodingMode>(raw, true, out var mode) ? mode : null;
     }
 
