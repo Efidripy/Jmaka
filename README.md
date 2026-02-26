@@ -1,6 +1,6 @@
 # Jmaka
 
-Версия: 0.4.0
+Версия: 0.5.0
 
 <pre>
 <span style="color:#1d4ed8">     ██╗</span><span style="color:#0ea5e9">███╗   ███╗</span><span style="color:#1d4ed8"> █████╗ </span><span style="color:#0ea5e9">██╗  ██╗</span><span style="color:#1d4ed8"> █████╗ </span>
