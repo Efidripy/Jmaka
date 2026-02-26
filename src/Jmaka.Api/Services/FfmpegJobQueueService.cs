@@ -360,6 +360,11 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
                 var bufSize = $"{Math.Max(120, videoKbps * 2)}k";
                 args.AddRange(new[] { "-maxrate", maxRate, "-bufsize", bufSize, "-preset", "veryfast", "-movflags", "+faststart" });
             }
+            else
+            {
+                // Stable default for episod 10/20/30 on constrained hosts.
+                args.AddRange(new[] { "-preset", "veryfast", "-movflags", "+faststart" });
+            }
             if (includeAudio)
             {
                 if (!string.IsNullOrWhiteSpace(audioSourceLabel))
@@ -409,12 +414,10 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             return (EncodingMode.ULTRA_SAFE, "vidcov_requested");
         }
 
-        var mode = requested == EncodingMode.BALANCED
-            ? (duration > _opts.BalancedDurationLimitSeconds ? EncodingMode.BALANCED : EncodingMode.MAX_QUALITY)
-            : requested;
-        var reason = requested == EncodingMode.BALANCED
-            ? (duration > _opts.BalancedDurationLimitSeconds ? "duration_limit_balanced" : "short_video")
-            : "requested";
+        // Keep BALANCED truly single-pass for production stability (low-RAM servers),
+        // instead of auto-upgrading short clips to MAX_QUALITY (2-pass).
+        var mode = requested == EncodingMode.BALANCED ? EncodingMode.BALANCED : requested;
+        var reason = requested == EncodingMode.BALANCED ? "balanced_requested" : "requested";
 
         if (_opts.EnableRamBasedFallback)
         {
