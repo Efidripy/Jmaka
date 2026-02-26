@@ -145,9 +145,9 @@
 }
 
 .video-preview-stage {
-  --preview-h: clamp(180px, 40vh, 500px);
-  width: min(100%, calc(var(--preview-h) * 16 / 9));
-  height: var(--preview-h);
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  height: auto;
   border-radius: 14px;
   border: 1px solid #2d3748;
   background: #111827;
@@ -610,9 +610,6 @@
     align-content: start;
   }
 
-  .video-preview-stage {
-    --preview-h: clamp(180px, 42vh, 460px);
-  }
 }
 
 @media (max-width: 760px) {
@@ -630,10 +627,6 @@
 
   .video-edit-body {
     padding: 0 12px 12px;
-  }
-
-  .video-preview-stage {
-    --preview-h: clamp(160px, 34vh, 320px);
   }
 
   .timeline-meta {
