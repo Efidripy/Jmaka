@@ -32,10 +32,6 @@ builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = MaxVideoUploadBytes;
 });
-builder.Services.Configure<IISServerOptions>(options =>
-{
-    options.MaxRequestBodySize = MaxVideoUploadBytes;
-});
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -113,13 +109,6 @@ foreach (var w in resizeWidths)
 var historyLock = new SemaphoreSlim(1, 1);
 var compositesLock = new SemaphoreSlim(1, 1);
 var videoHistoryLock = new SemaphoreSlim(1, 1);
-
-// Track last FFmpeg exit code to detect OOM and enable ultra-safe mode
-var lastFfmpegExitCode = 0;
-var ffmpegExitCodeLock = new object();
-
-// Ultra-safe mode vertical offset limit (prevents pad errors with small scaled videos)
-const int UltraSafeOffsetLimit = 200; // ±200px safe for 720x404 output
 
 // Retention: delete entries/files older than N hours (default 48h)
 var retentionHours = 48;
@@ -2016,7 +2005,7 @@ app.MapPost("/delete-video", async Task<IResult> (VideoDeleteRequest req, Cancel
         return Results.NotFound(new { error = "not found" });
     }
 
-    DeleteVideoFilesForEntry(removed);
+    DeleteVideoFilesForEntry(removed, videoDir, videoOutDir);
     return Results.Ok(new { ok = true, storedName });
 })
 .DisableAntiforgery()
@@ -2076,62 +2065,6 @@ static async Task<double> TryGetVideoDurationSecondsAsync(string absolutePath, C
     }
 
     return 0;
-}
-
-static void CleanupPassLogs(string passLogBase)
-{
-    TryDeleteFile($"{passLogBase}-0.log");
-    TryDeleteFile($"{passLogBase}-0.log.mbtree");
-}
-
-static bool IsLowMemoryServer()
-{
-    try
-    {
-        if (OperatingSystem.IsLinux())
-        {
-            var memInfo = File.ReadAllText("/proc/meminfo");
-            var memTotalLine = memInfo.Split('\n').FirstOrDefault(l => l.StartsWith("MemTotal:"));
-            if (memTotalLine != null)
-            {
-                var parts = memTotalLine.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 2 && long.TryParse(parts[1], out var memKb))
-                {
-                    var memGb = memKb / (1024.0 * 1024.0);
-                    return memGb <= 2.0;
-                }
-            }
-        }
-    }
-    catch
-    {
-        // If we can't detect, assume not low memory
-    }
-    return false;
-}
-
-/// <summary>
-/// Normalizes dimensions to even values required by libx264/yuv420p.
-/// Subtracts 1 if the dimension is odd to ensure compatibility.
-/// </summary>
-static int NormalizeToEven(int dimension)
-{
-    return dimension - (dimension % 2);
-}
-
-bool ShouldUseUltraSafeMode()
-{
-    // Ultra-safe mode activates if:
-    // 1. Low memory server detected (<= 2GB RAM)
-    // 2. OR previous FFmpeg run was killed by OOM (exit code 137)
-    var lowMem = IsLowMemoryServer();
-    int lastExitCode;
-    lock (ffmpegExitCodeLock)
-    {
-        lastExitCode = lastFfmpegExitCode;
-    }
-    var previousOom = lastExitCode == 137;
-    return lowMem || previousOom;
 }
 
 static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> args, CancellationToken ct, Microsoft.Extensions.Logging.ILogger? logger = null, string? context = null, Action<int>? exitCodeCallback = null)
@@ -2582,27 +2515,22 @@ static async Task<VideoHistoryItem?> RemoveVideoHistoryEntryAsync(string history
     return removed;
 }
 
-static void DeleteVideoFilesForEntry(VideoHistoryItem entry)
+static void DeleteVideoFilesForEntry(VideoHistoryItem entry, string videoDir, string videoOutDir)
 {
-    if (string.IsNullOrWhiteSpace(entry.RelativePath))
+    var safeName = Path.GetFileName(entry.StoredName ?? string.Empty);
+    if (string.IsNullOrWhiteSpace(safeName))
     {
         return;
     }
 
-    var rel = entry.RelativePath.Replace('\\', '/').TrimStart('/');
-    if (rel.Contains("..", StringComparison.Ordinal))
+    // Primary deletion path: derive from kind + storedName to avoid base-path mismatches.
+    if (string.Equals(entry.Kind, "processed", StringComparison.OrdinalIgnoreCase))
     {
+        TryDeleteFile(Path.Combine(videoOutDir, safeName));
         return;
     }
 
-    var storageRoot = Environment.GetEnvironmentVariable("JMAKA_STORAGE_ROOT");
-    if (string.IsNullOrWhiteSpace(storageRoot))
-    {
-        storageRoot = AppContext.BaseDirectory;
-    }
-
-    var absolute = Path.Combine(storageRoot, rel);
-    TryDeleteFile(absolute);
+    TryDeleteFile(Path.Combine(videoDir, safeName));
 }
 
 static void TryDeleteFile(string path)
