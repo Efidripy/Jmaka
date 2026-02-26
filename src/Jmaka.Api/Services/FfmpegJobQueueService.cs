@@ -244,7 +244,8 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
 
         var targetMb = Math.Clamp(job.Request.TargetSizeMb, 0.1, 2048);
         var desiredTargetMb = isVidcovMode ? 1.2 : targetMb;
-        var includeAudio = !(job.Request.MuteAudio ?? false) && !isVidcovMode;
+        var sourceHasAudio = await TryHasAudioStreamAsync(job.InputPath, ct);
+        var includeAudio = !(job.Request.MuteAudio ?? false) && !isVidcovMode && sourceHasAudio;
         var audioKbps = includeAudio ? (mode == EncodingMode.MAX_QUALITY ? 128 : 96) : 0;
         var desiredTotalKbps = (desiredTargetMb * 8192.0) / Math.Max(1, effectiveDuration);
         var desiredVideoKbps = (int)Math.Round(Math.Max(80, desiredTotalKbps - audioKbps) * 0.98);
@@ -269,17 +270,33 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         var bitrate = $"{videoKbps}k";
 
         string sourceLabel;
+        string? audioSourceLabel = null;
         var filterParts = new List<string>();
         if (selectedSegments.Count > 0)
         {
+            var concatVideoInputs = new StringBuilder();
+            var concatAudioInputs = new StringBuilder();
             for (var i = 0; i < selectedSegments.Count; i++)
             {
                 var seg = selectedSegments[i];
                 filterParts.Add($"[0:v]trim=start={seg.Start.ToString(CultureInfo.InvariantCulture)}:end={seg.End.ToString(CultureInfo.InvariantCulture)},setpts=PTS-STARTPTS,settb=AVTB[v{i}]");
+                concatVideoInputs.Append($"[v{i}]");
+                if (includeAudio)
+                {
+                    filterParts.Add($"[0:a]atrim=start={seg.Start.ToString(CultureInfo.InvariantCulture)}:end={seg.End.ToString(CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS[a{i}]");
+                    concatAudioInputs.Append($"[a{i}]");
+                }
             }
 
-            var concatInputs = string.Concat(Enumerable.Range(0, selectedSegments.Count).Select(i => $"[v{i}]"));
-            filterParts.Add($"{concatInputs}concat=n={selectedSegments.Count}:v=1:a=0:unsafe=1[vsrc]");
+            if (includeAudio)
+            {
+                filterParts.Add($"{concatVideoInputs}{concatAudioInputs}concat=n={selectedSegments.Count}:v=1:a=1:unsafe=1[vsrc][asrc]");
+                audioSourceLabel = "[asrc]";
+            }
+            else
+            {
+                filterParts.Add($"{concatVideoInputs}concat=n={selectedSegments.Count}:v=1:a=0:unsafe=1[vsrc]");
+            }
             sourceLabel = "[vsrc]";
         }
         else
@@ -315,7 +332,14 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             var pass2 = new List<string>{"-y","-threads","1","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-c:v","libx264","-b:v",bitrate,"-pass","2","-passlogfile",passlog};
             if (includeAudio)
             {
-                pass2.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a",$"{audioKbps}k"});
+                if (!string.IsNullOrWhiteSpace(audioSourceLabel))
+                {
+                    pass2.AddRange(new []{"-map",audioSourceLabel,"-c:a","aac","-b:a",$"{audioKbps}k"});
+                }
+                else
+                {
+                    pass2.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a",$"{audioKbps}k"});
+                }
             }
             else
             {
@@ -338,7 +362,14 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             }
             if (includeAudio)
             {
-                args.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a",$"{audioKbps}k"});
+                if (!string.IsNullOrWhiteSpace(audioSourceLabel))
+                {
+                    args.AddRange(new []{"-map",audioSourceLabel,"-c:a","aac","-b:a",$"{audioKbps}k"});
+                }
+                else
+                {
+                    args.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a",$"{audioKbps}k"});
+                }
             }
             else
             {
@@ -468,6 +499,18 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         var output = await p.StandardOutput.ReadToEndAsync(ct);
         await p.WaitForExitAsync(ct);
         return double.TryParse(output.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out var duration) ? duration : 0;
+    }
+
+    private static async Task<bool> TryHasAudioStreamAsync(string absolutePath, CancellationToken ct)
+    {
+        var args = new List<string> { "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=index", "-of", "default=nokey=1:noprint_wrappers=1", absolutePath };
+        var psi = new ProcessStartInfo { FileName = "ffprobe", RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = new Process { StartInfo = psi };
+        if (!p.Start()) return false;
+        var output = await p.StandardOutput.ReadToEndAsync(ct);
+        await p.WaitForExitAsync(ct);
+        return p.ExitCode == 0 && !string.IsNullOrWhiteSpace(output);
     }
 
     private static void CleanupPassLogs(string passLogBase)
