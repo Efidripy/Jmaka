@@ -215,7 +215,9 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         job.ResolvedMode = mode;
         job.RamDecision = reason;
 
-        var target = mode == EncodingMode.ULTRA_SAFE ? (720, 405) : (1280, 720);
+        // x264 + yuv420p requires even frame dimensions.
+        // Ultra-safe profile historically used 720x405 (16:9), which causes encoder failure.
+        var target = mode == EncodingMode.ULTRA_SAFE ? (720, 404) : (1280, 720);
 
         var selectedSegments = (job.Request.Segments ?? Array.Empty<VideoProcessSegment>())
             .Where(x => x is not null)
@@ -327,6 +329,13 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         else
         {
             var args = new List<string>{"-y","-threads","1","-r","24","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-c:v","libx264","-pix_fmt","yuv420p","-b:v",bitrate};
+            if (isVidcovMode)
+            {
+                // Keep VIDCOV output size predictable even with many stitched segments.
+                var maxRate = $"{videoKbps}k";
+                var bufSize = $"{Math.Max(120, videoKbps * 2)}k";
+                args.AddRange(new[] { "-maxrate", maxRate, "-bufsize", bufSize, "-preset", "veryfast", "-movflags", "+faststart" });
+            }
             if (includeAudio)
             {
                 args.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a",$"{audioKbps}k"});
