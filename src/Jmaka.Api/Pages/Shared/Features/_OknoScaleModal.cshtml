@@ -1,0 +1,40 @@
+  <!-- OknoScale -->
+  <div id="oknoScaleModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card okno-modal-card" role="dialog" aria-modal="true" aria-label="OknoScale">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-title">OknoScale (1 изображение → вертикальная карточка)</div>
+          <div class="modal-sub">
+            <span class="modal-subtext">Окно фиксировано по высоте и центрировано, ширину можно менять симметрично от центра.</span>
+          </div>
+        </div>
+        <button id="oknoScaleClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="okno-stage-wrap">
+          <div id="oknoScaleStage" class="okno-stage" aria-label="OknoScale шаблон">
+            <div id="oknoScaleCard" class="okno-card">
+              <div id="oknoScaleImgViewport" class="okno-img-viewport">
+                <img id="oknoScaleImg" class="okno-img" alt="" />
+              </div>
+              <div id="oknoScaleHandleLeft" class="oknoscale-handle left" data-side="left"></div>
+              <div id="oknoScaleHandleRight" class="oknoscale-handle right" data-side="right"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div id="oknoScaleHint" class="modal-hint">Выберите строку в таблице файлов, затем откройте OknoScale.</div>
+        <div class="modal-actions">
+          <div class="okno-zoom-controls" aria-label="Масштаб картинки подложки">
+            <button id="oknoScaleZoomOut" class="btn okno-zoom-btn" type="button">−</button>
+            <button id="oknoScaleZoomIn" class="btn okno-zoom-btn" type="button">+</button>
+          </div>
+          <button id="oknoScaleCancel" class="btn" type="button">Закрыть</button>
+          <button id="oknoScaleApply" class="btn primary" type="button" disabled>Сделать</button>
+        </div>
+      </div>
+    </div>
+  </div>
+

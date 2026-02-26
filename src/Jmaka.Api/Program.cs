@@ -617,7 +617,7 @@ app.MapGet("/api/version", () =>
     return Results.Ok(new { version });
 });
 
-// PNG-шаблон для TrashImg (готовая карточка с рамкой/тенью)
+// PNG-шаблон для OknoFix (готовая карточка с рамкой/тенью)
 var oknoFixOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "jmaka-template-oknofix-001.png");
 
 // --- History & composites endpoints ---
