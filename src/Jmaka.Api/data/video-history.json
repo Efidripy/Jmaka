@@ -7,5 +7,23 @@
     "Size": 200042,
     "RelativePath": "video/edb3282fd0bc4498acbf33782f27326a.mp4",
     "DurationSeconds": 41.666667
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260226-024617-260-e516900152734d09a9a2c6cdcd2c6c82.mp4",
+    "OriginalName": "20260226-024617-260-e516900152734d09a9a2c6cdcd2c6c82.mp4",
+    "CreatedAt": "2026-02-26T02:46:23.6471565+00:00",
+    "Size": 5963044,
+    "RelativePath": "video-out/20260226-024617-260-e516900152734d09a9a2c6cdcd2c6c82.mp4",
+    "DurationSeconds": 4
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260226-024713-433-994746eb9484496da80f61618840aa41.mp4",
+    "OriginalName": "20260226-024713-433-994746eb9484496da80f61618840aa41.mp4",
+    "CreatedAt": "2026-02-26T02:47:18.7604527+00:00",
+    "Size": 5920302,
+    "RelativePath": "video-out/20260226-024713-433-994746eb9484496da80f61618840aa41.mp4",
+    "DurationSeconds": 4
   }
 ]
