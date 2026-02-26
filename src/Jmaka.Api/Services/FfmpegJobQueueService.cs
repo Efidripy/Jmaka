@@ -244,7 +244,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
 
         var targetMb = Math.Clamp(job.Request.TargetSizeMb, 0.1, 2048);
         var desiredTargetMb = isVidcovMode ? 1.2 : targetMb;
-        var includeAudio = !(job.Request.MuteAudio ?? false) && selectedSegments.Count == 0 && !isVidcovMode;
+        var includeAudio = !(job.Request.MuteAudio ?? false) && !isVidcovMode;
         var audioKbps = includeAudio ? (mode == EncodingMode.MAX_QUALITY ? 128 : 96) : 0;
         var desiredTotalKbps = (desiredTargetMb * 8192.0) / Math.Max(1, effectiveDuration);
         var desiredVideoKbps = (int)Math.Round(Math.Max(80, desiredTotalKbps - audioKbps) * 0.98);
