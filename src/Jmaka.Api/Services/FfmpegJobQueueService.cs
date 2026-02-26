@@ -275,11 +275,11 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             for (var i = 0; i < selectedSegments.Count; i++)
             {
                 var seg = selectedSegments[i];
-                filterParts.Add($"[0:v]trim=start={seg.Start.ToString(CultureInfo.InvariantCulture)}:end={seg.End.ToString(CultureInfo.InvariantCulture)},setpts=PTS-STARTPTS[v{i}]");
+                filterParts.Add($"[0:v]trim=start={seg.Start.ToString(CultureInfo.InvariantCulture)}:end={seg.End.ToString(CultureInfo.InvariantCulture)},setpts=PTS-STARTPTS,settb=AVTB[v{i}]");
             }
 
             var concatInputs = string.Concat(Enumerable.Range(0, selectedSegments.Count).Select(i => $"[v{i}]"));
-            filterParts.Add($"{concatInputs}concat=n={selectedSegments.Count}:v=1:a=0[vsrc]");
+            filterParts.Add($"{concatInputs}concat=n={selectedSegments.Count}:v=1:a=0:unsafe=1[vsrc]");
             sourceLabel = "[vsrc]";
         }
         else
@@ -303,7 +303,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         cropLeftPx = Math.Clamp(cropLeftPx, 0, Math.Max(0, target.Item1 - cropWidthPx));
         cropTopPx = Math.Clamp(cropTopPx, 0, Math.Max(0, target.Item2 - cropHeightPx));
 
-        filterParts.Add($"[vviewport]crop={cropWidthPx}:{cropHeightPx}:{cropLeftPx}:{cropTopPx},scale={target.Item1}:{target.Item2}:flags=lanczos,format=yuv420p[v]");
+        filterParts.Add($"[vviewport]crop={cropWidthPx}:{cropHeightPx}:{cropLeftPx}:{cropTopPx},scale={target.Item1}:{target.Item2}:flags=lanczos,fps=24,format=yuv420p[v]");
         var filter = string.Join(';', filterParts);
 
         var passlog = Path.Combine(Path.GetDirectoryName(job.OutputPath) ?? ".", $"pass-{job.JobId:N}");
@@ -328,7 +328,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         }
         else
         {
-            var args = new List<string>{"-y","-threads","1","-r","24","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-c:v","libx264","-pix_fmt","yuv420p","-b:v",bitrate};
+            var args = new List<string>{"-y","-threads","1","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-c:v","libx264","-pix_fmt","yuv420p","-b:v",bitrate};
             if (isVidcovMode)
             {
                 // Keep VIDCOV output size predictable even with many stitched segments.
