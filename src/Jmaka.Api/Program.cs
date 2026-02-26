@@ -854,7 +854,7 @@ app.MapPost("/upload", async Task<IResult> (HttpRequest request, ImagePipelineSe
 .Produces(StatusCodes.Status400BadRequest);
 
 // --- Video upload endpoint ---
-app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, CancellationToken ct) =>
+app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, ILogger<Program> logger, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
 
@@ -879,20 +879,61 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, Cancellat
         return Results.BadRequest(new { error = "file is too large" });
     }
 
-    var ext = SanitizeExtension(Path.GetExtension(file.FileName));
-    if (string.IsNullOrWhiteSpace(ext))
+    if (!HasCommand("ffmpeg") || !HasCommand("ffprobe"))
     {
-        ext = ".mp4";
+        return Results.BadRequest(new { error = "ffmpeg/ffprobe not found on server" });
     }
 
-    var storedName = $"{Guid.NewGuid():N}{ext}";
+    var uploadExt = SanitizeExtension(Path.GetExtension(file.FileName));
+    if (string.IsNullOrWhiteSpace(uploadExt))
+    {
+        uploadExt = ".bin";
+    }
+
+    // Always normalize uploads to browser-friendly MP4 (H.264/AAC) for stable preview/editing.
+    var uploadTempName = $"{Guid.NewGuid():N}.upload{uploadExt}";
+    var uploadTempPath = Path.Combine(videoDir, uploadTempName);
+    var storedName = $"{Guid.NewGuid():N}.mp4";
     var absolutePath = Path.Combine(videoDir, storedName);
-    await using (var stream = File.Create(absolutePath))
+    try
     {
-        await file.CopyToAsync(stream, ct);
+        await using (var stream = File.Create(uploadTempPath))
+        {
+            await file.CopyToAsync(stream, ct);
+        }
+
+        var ffmpegArgs = new List<string>
+        {
+            "-y",
+            "-i", uploadTempPath,
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            absolutePath
+        };
+
+        var convert = await RunProcessAsync("ffmpeg", ffmpegArgs, ct, logger, "upload-video normalize");
+        if (!convert.Success || !File.Exists(absolutePath))
+        {
+            TryDeleteFile(absolutePath);
+            var error = string.IsNullOrWhiteSpace(convert.Error) ? "ffmpeg normalize failed" : convert.Error;
+            return Results.BadRequest(new { error });
+        }
+    }
+    finally
+    {
+        TryDeleteFile(uploadTempPath);
     }
 
-    var duration = await TryGetVideoDurationSecondsAsync(absolutePath, ct);
+    var duration = await TryGetVideoDurationSecondsAsync(absolutePath, ct, logger);
+    var outputSize = new FileInfo(absolutePath).Length;
 
     var createdAt = DateTimeOffset.UtcNow;
     var relativePath = $"video/{storedName}";
@@ -901,7 +942,7 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, Cancellat
         StoredName: storedName,
         OriginalName: file.FileName,
         CreatedAt: createdAt,
-        Size: file.Length,
+        Size: outputSize,
         RelativePath: relativePath,
         DurationSeconds: duration
     );
@@ -913,7 +954,7 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, Cancellat
         originalName = file.FileName,
         createdAt,
         relativePath,
-        size = file.Length,
+        size = outputSize,
         durationSeconds = duration
     });
 })
