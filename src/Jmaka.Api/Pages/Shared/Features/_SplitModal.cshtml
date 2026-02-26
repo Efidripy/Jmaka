@@ -1,0 +1,67 @@
+  <!-- Split -->
+  <div id="splitModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card split-card" role="dialog" aria-modal="true" aria-label="Split">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-title">Split (2 изображения → 16:9)</div>
+          <div class="modal-sub">
+            <span class="modal-subtext">Поле 1280×720. Перетаскивайте и масштабируйте изображения, пропорции сохраняются.</span>
+          </div>
+        </div>
+        <button id="splitClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="split-controls" aria-label="Выбор изображений">
+          <div class="split-label">Выберите слот, затем кликните по превью из списка загруженных изображений:</div>
+          <div class="split-targets">
+            <button id="splitPickTargetA" class="split-target is-active" type="button" aria-label="Выбор для картинки 1">
+              <div class="split-target-title">#1</div>
+              <img id="splitTargetImgA" class="split-target-img" alt="" />
+            </button>
+            <button id="splitPickTargetB" class="split-target" type="button" aria-label="Выбор для картинки 2">
+              <div class="split-target-title">#2</div>
+              <img id="splitTargetImgB" class="split-target-img" alt="" />
+            </button>
+          </div>
+          <div id="splitGallery" class="split-gallery" aria-label="Превью (1280)"></div>
+        </div>
+        <div id="splitStage" class="split-stage" aria-label="Поле 16:9">
+          <div id="splitHalfLeft" class="split-half left" aria-label="Левая половина">
+            <div id="splitItemA" class="split-item" data-i="a" hidden>
+              <img class="split-img" alt="" />
+              <div class="split-handle tl" data-h="tl"></div>
+              <div class="split-handle t" data-h="t"></div>
+              <div class="split-handle tr" data-h="tr"></div>
+              <div class="split-handle r" data-h="r"></div>
+              <div class="split-handle br" data-h="br"></div>
+              <div class="split-handle b" data-h="b"></div>
+              <div class="split-handle bl" data-h="bl"></div>
+              <div class="split-handle l" data-h="l"></div>
+            </div>
+          </div>
+          <div id="splitHalfRight" class="split-half right" aria-label="Правая половина">
+            <div id="splitItemB" class="split-item" data-i="b" hidden>
+              <img class="split-img" alt="" />
+              <div class="split-handle tl" data-h="tl"></div>
+              <div class="split-handle t" data-h="t"></div>
+              <div class="split-handle tr" data-h="tr"></div>
+              <div class="split-handle r" data-h="r"></div>
+              <div class="split-handle br" data-h="br"></div>
+              <div class="split-handle b" data-h="b"></div>
+              <div class="split-handle bl" data-h="bl"></div>
+              <div class="split-handle l" data-h="l"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div id="splitHint" class="modal-hint">Выберите две картинки из готового размера 1280.</div>
+        <div class="modal-actions">
+          <button id="splitCancel" class="btn" type="button">Отмена</button>
+          <button id="splitApply" class="btn primary" type="button">Склеить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+

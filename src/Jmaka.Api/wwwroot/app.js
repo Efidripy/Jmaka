@@ -1092,22 +1092,22 @@ const split3Hint = document.getElementById('split3Hint');
 // OknoFix elements
 // RU: Элементы модалки OknoFix (жёсткий PNG‑шаблон вертикальной карточки).
 // EN: Elements of the OknoFix modal that uses a fixed PNG card template.
-const trashToolBtn = document.getElementById('trashToolBtn');
-const trashFixToolBtn = document.getElementById('trashFixToolBtn');
-const trashModal = document.getElementById('trashModal');
-const trashCloseBtn = document.getElementById('trashClose');
-const trashCancelBtn = document.getElementById('trashCancel');
-const trashApplyBtn = document.getElementById('trashApply');
-const trashStage = document.getElementById('trashStage');
-const trashCard = document.getElementById('trashCard');
-const trashImgViewport = document.getElementById('trashImgViewport');
-const trashImg = document.getElementById('trashImg');
+const oknoScaleToolBtn = document.getElementById('oknoScaleToolBtn');
+const oknoFixToolBtn = document.getElementById('oknoFixToolBtn');
+const oknoFixModal = document.getElementById('oknoFixModal');
+const oknoFixCloseBtn = document.getElementById('oknoFixClose');
+const oknoFixCancelBtn = document.getElementById('oknoFixCancel');
+const oknoFixApplyBtn = document.getElementById('oknoFixApply');
+const oknoFixStage = document.getElementById('oknoFixStage');
+const oknoFixCard = document.getElementById('oknoFixCard');
+const oknoFixImgViewport = document.getElementById('oknoFixImgViewport');
+const oknoFixImg = document.getElementById('oknoFixImg');
 // Ручки изменения ширины окна больше не используются (окно фиксировано) для OknoFix
-const trashHandleLeft = null;
-const trashHandleRight = null;
-const trashHint = document.getElementById('trashHint');
-const trashZoomInBtn = document.getElementById('trashZoomIn');
-const trashZoomOutBtn = document.getElementById('trashZoomOut');
+const oknoFixHandleLeft = null;
+const oknoFixHandleRight = null;
+const oknoFixHint = document.getElementById('oknoFixHint');
+const oknoFixZoomInBtn = document.getElementById('oknoFixZoomIn');
+const oknoFixZoomOutBtn = document.getElementById('oknoFixZoomOut');
 
 // OknoScale elements (отдельная модалка)
 // RU: Элементы модалки OknoScale с изменяемой шириной окна.
@@ -2984,7 +2984,7 @@ function resetSizeButtons() {
 
 function setToolButtonsEnabled(hasItem) {
   if (!toolButtons) return;
-  const imageToolBtns = [cropToolBtn, splitToolBtn, split3ToolBtn, trashFixToolBtn, trashToolBtn, imageEditToolBtn]
+  const imageToolBtns = [cropToolBtn, splitToolBtn, split3ToolBtn, oknoFixToolBtn, oknoScaleToolBtn, imageEditToolBtn]
     .filter(Boolean);
 
   for (const btn of imageToolBtns) {
@@ -3947,7 +3947,7 @@ if (cropToolBtn) {
 wireCropUI();
 wireSplitUI();
 wireSplit3UI();
-wireTrashUI();
+wireOknoFixUI();
 wireOknoScaleUI();
 
 async function deleteComposite(relativePath, tr) {
@@ -4203,8 +4203,8 @@ function wireOknoScaleUI() {
   if (!oknoScaleModal || !oknoScaleStage || !oknoScaleCard) return;
 
   // Кнопка инструмента OknoScale
-  if (trashToolBtn) {
-    trashToolBtn.addEventListener('click', (e) => {
+  if (oknoScaleToolBtn) {
+    oknoScaleToolBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       openOknoScaleModal();
@@ -4524,35 +4524,35 @@ function wireOknoScaleUI() {
   });
 }
 
-function getPointerPosInTrashStage(e) {
-  if (!trashStage) return { x: 0, y: 0 };
-  const r = trashStage.getBoundingClientRect();
+function getPointerPosInOknoFixStage(e) {
+  if (!oknoFixStage) return { x: 0, y: 0 };
+  const r = oknoFixStage.getBoundingClientRect();
   return {
     x: e.clientX - r.left,
     y: e.clientY - r.top
   };
 }
 
-const TRASH_ASPECT = 16 / 9; // окно 1920x1080
-const TRASH_TEMPLATE_W = 1920;
-const TRASH_TEMPLATE_H = 1080;
-const TRASH_WINDOW_PX = { x: 593, y: 79, w: 735, h: 922 };
+const OKNOFIX_ASPECT = 16 / 9; // окно 1920x1080
+const OKNOFIX_TEMPLATE_W = 1920;
+const OKNOFIX_TEMPLATE_H = 1080;
+const OKNOFIX_WINDOW_PX = { x: 593, y: 79, w: 735, h: 922 };
 
-function getTrashWindowRectInCard() {
-  if (!trashCard) return { x: 0, y: 0, w: 0, h: 0 };
-  const cardRect = trashCard.getBoundingClientRect();
+function getOknoFixWindowRectInCard() {
+  if (!oknoFixCard) return { x: 0, y: 0, w: 0, h: 0 };
+  const cardRect = oknoFixCard.getBoundingClientRect();
   if (!cardRect.width || !cardRect.height) return { x: 0, y: 0, w: 0, h: 0 };
   // Для OknoFix окно задаётся по шаблону PNG (фиксированный режим).
-  // Вся карточка служит подложкой, а прозрачное окно берётся из TRASH_WINDOW_PX.
-  const sx = cardRect.width / TRASH_TEMPLATE_W;
-  const sy = cardRect.height / TRASH_TEMPLATE_H;
+  // Вся карточка служит подложкой, а прозрачное окно берётся из OKNOFIX_WINDOW_PX.
+  const sx = cardRect.width / OKNOFIX_TEMPLATE_W;
+  const sy = cardRect.height / OKNOFIX_TEMPLATE_H;
   const k = (sx + sy) / 2;
 
   return {
-    x: TRASH_WINDOW_PX.x * k,
-    y: TRASH_WINDOW_PX.y * k,
-    w: TRASH_WINDOW_PX.w * k,
-    h: TRASH_WINDOW_PX.h * k
+    x: OKNOFIX_WINDOW_PX.x * k,
+    y: OKNOFIX_WINDOW_PX.y * k,
+    w: OKNOFIX_WINDOW_PX.w * k,
+    h: OKNOFIX_WINDOW_PX.h * k
   };
 }
 
@@ -4583,19 +4583,19 @@ function clampImageToWindow(img, win) {
   return { ...img, x, y };
 }
 
-function layoutTrashWindowInitial() {
-  if (!trashStage || !trashCard) return;
-  const stageRect = trashStage.getBoundingClientRect();
+function layoutOknoFixWindowInitial() {
+  if (!oknoFixStage || !oknoFixCard) return;
+  const stageRect = oknoFixStage.getBoundingClientRect();
   if (!stageRect.width || !stageRect.height) return;
 
   const maxW = stageRect.width * 0.8;
   const maxH = stageRect.height * 0.8;
   // вписываем окно 16:9 в центр с небольшими отступами
   let w = maxW;
-  let h = w / TRASH_ASPECT;
+  let h = w / OKNOFIX_ASPECT;
   if (h > maxH) {
     h = maxH;
-    w = h * TRASH_ASPECT;
+    w = h * OKNOFIX_ASPECT;
   }
 
   const y = (stageRect.height - h) / 2;
@@ -4604,30 +4604,30 @@ function layoutTrashWindowInitial() {
   oknoFixState.window.h = h;
   oknoFixState.window.w = w;
 
-  updateTrashWindowLayout();
+  updateOknoFixWindowLayout();
 }
 
-function updateTrashWindowLayout() {
-  if (!trashStage || !trashCard) return;
-  const stageRect = trashStage.getBoundingClientRect();
+function updateOknoFixWindowLayout() {
+  if (!oknoFixStage || !oknoFixCard) return;
+  const stageRect = oknoFixStage.getBoundingClientRect();
   if (!stageRect.width) return;
   const h = oknoFixState.window.h;
   const w = oknoFixState.window.w;
   const left = (stageRect.width - w) / 2;
   const top = oknoFixState.window.y;
 
-  trashCard.style.width = `${w}px`;
-  trashCard.style.height = `${h}px`;
-  trashCard.style.left = `${left}px`;
-  trashCard.style.top = `${top}px`;
+  oknoFixCard.style.width = `${w}px`;
+  oknoFixCard.style.height = `${h}px`;
+  oknoFixCard.style.left = `${left}px`;
+  oknoFixCard.style.top = `${top}px`;
 }
 
 function openOknoFixModal(mode) {
-  if (!trashModal || !trashStage || !trashCard || !trashImgViewport || !trashImg) return;
+  if (!oknoFixModal || !oknoFixStage || !oknoFixCard || !oknoFixImgViewport || !oknoFixImg) return;
 
   if (!lastUpload || !lastUpload.storedName || !lastUpload.originalRelativePath) {
-    if (trashHint) {
-      trashHint.textContent = 'Сначала выберите строку в таблице файлов.';
+    if (oknoFixHint) {
+      oknoFixHint.textContent = 'Сначала выберите строку в таблице файлов.';
     }
     return;
   }
@@ -4639,29 +4639,29 @@ function openOknoFixModal(mode) {
   const rel = `upload-original/${lastUpload.storedName}`;
   oknoFixState.url = withCacheBust(rel, lastUpload.storedName);
 
-  trashModal.hidden = false;
-  if (trashApplyBtn) trashApplyBtn.disabled = true;
+  oknoFixModal.hidden = false;
+  if (oknoFixApplyBtn) oknoFixApplyBtn.disabled = true;
 
-  if (trashHint) {
-    trashHint.textContent = 'Двигайте и масштабируйте картинку под окном.';
+  if (oknoFixHint) {
+    oknoFixHint.textContent = 'Двигайте и масштабируйте картинку под окном.';
   }
 
-  layoutTrashWindowInitial();
+  layoutOknoFixWindowInitial();
 
-  trashImg.onload = () => {
-    oknoFixState.natW = trashImg.naturalWidth || 0;
-    oknoFixState.natH = trashImg.naturalHeight || 0;
-    layoutTrashImageCover();
-    if (trashApplyBtn) trashApplyBtn.disabled = false;
+  oknoFixImg.onload = () => {
+    oknoFixState.natW = oknoFixImg.naturalWidth || 0;
+    oknoFixState.natH = oknoFixImg.naturalHeight || 0;
+    layoutOknoFixImageCover();
+    if (oknoFixApplyBtn) oknoFixApplyBtn.disabled = false;
   };
 
-  trashImg.src = oknoFixState.url;
-  trashImg.alt = lastUpload.originalName || lastUpload.storedName || '';
+  oknoFixImg.src = oknoFixState.url;
+  oknoFixImg.alt = lastUpload.originalName || lastUpload.storedName || '';
 }
 
-function layoutTrashImageCover() {
-  if (!trashCard || !trashImg || !oknoFixState.natW || !oknoFixState.natH) return;
-  const win = getTrashWindowRectInCard();
+function layoutOknoFixImageCover() {
+  if (!oknoFixCard || !oknoFixImg || !oknoFixState.natW || !oknoFixState.natH) return;
+  const win = getOknoFixWindowRectInCard();
   const winW = win.w;
   const winH = win.h;
   if (!winW || !winH) return;
@@ -4669,7 +4669,7 @@ function layoutTrashImageCover() {
   // Вставляем пропорционально по высоте: высота окна = высота картинки.
   const scale = winH / oknoFixState.natH;
   const w = oknoFixState.natW * scale;
-  const h = winH; // === trashState.natH * scale
+  const h = winH; // === oknoFixState.natH * scale
 
   const centerX = win.x + winW / 2;
   const centerY = win.y + winH / 2;
@@ -4679,39 +4679,39 @@ function layoutTrashImageCover() {
   const clamped = clampImageToWindow({ x: x0, y: y0, w, h }, win);
   oknoFixState.img = clamped;
 
-  trashImg.style.width = `${clamped.w}px`;
-  trashImg.style.height = `${clamped.h}px`;
-  trashImg.style.left = `${clamped.x}px`;
-  trashImg.style.top = `${clamped.y}px`;
+  oknoFixImg.style.width = `${clamped.w}px`;
+  oknoFixImg.style.height = `${clamped.h}px`;
+  oknoFixImg.style.left = `${clamped.x}px`;
+  oknoFixImg.style.top = `${clamped.y}px`;
 }
 
-function closeTrashModal() {
-  if (!trashModal) return;
-  trashModal.hidden = true;
+function closeOknoFixModal() {
+  if (!oknoFixModal) return;
+  oknoFixModal.hidden = true;
   oknoFixState.open = false;
   oknoFixState.action = null;
-  if (trashImg) {
-    trashImg.removeAttribute('src');
-    trashImg.alt = '';
+  if (oknoFixImg) {
+    oknoFixImg.removeAttribute('src');
+    oknoFixImg.alt = '';
   }
 }
 
-function wireTrashUI() {
-  if (!trashModal || !trashStage || !trashCard) return;
+function wireOknoFixUI() {
+  if (!oknoFixModal || !oknoFixStage || !oknoFixCard) return;
 
   // Только OknoFix (фиксированный шаблон) живёт в этой модалке.
-  if (trashFixToolBtn) {
-    trashFixToolBtn.addEventListener('click', (e) => {
+  if (oknoFixToolBtn) {
+    oknoFixToolBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       openOknoFixModal('fix');
     });
   }
 
-  const trashZoomByFactor = (factor) => {
-    if (!oknoFixState.open || !trashCard || !trashImg || !oknoFixState.img) return;
-    const rect = trashCard.getBoundingClientRect();
-    const win = getTrashWindowRectInCard();
+  const oknoFixZoomByFactor = (factor) => {
+    if (!oknoFixState.open || !oknoFixCard || !oknoFixImg || !oknoFixState.img) return;
+    const rect = oknoFixCard.getBoundingClientRect();
+    const win = getOknoFixWindowRectInCard();
     const winW = win.w;
     const winH = win.h;
     if (!winW || !winH) return;
@@ -4741,10 +4741,10 @@ function wireTrashUI() {
 
     const img1 = clampImageToWindow({ x: x0, y: y0, w, h }, win);
     oknoFixState.img = img1;
-    trashImg.style.width = `${img1.w}px`;
-    trashImg.style.height = `${img1.h}px`;
-    trashImg.style.left = `${img1.x}px`;
-    trashImg.style.top = `${img1.y}px`;
+    oknoFixImg.style.width = `${img1.w}px`;
+    oknoFixImg.style.height = `${img1.h}px`;
+    oknoFixImg.style.left = `${img1.x}px`;
+    oknoFixImg.style.top = `${img1.y}px`;
   };
 
   // Ctrl+0 — сброс масштаба фона до "по высоте окна"
@@ -4752,7 +4752,7 @@ function wireTrashUI() {
     if (!oknoFixState.open) return;
     if ((e.key === '0' || e.code === 'Digit0') && e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
-      layoutTrashImageCover();
+      layoutOknoFixImageCover();
     }
   });
 
@@ -4761,54 +4761,54 @@ function wireTrashUI() {
       e.preventDefault();
       e.stopPropagation();
     }
-    closeTrashModal();
+    closeOknoFixModal();
   };
 
-  if (trashCloseBtn) trashCloseBtn.addEventListener('click', close);
-  if (trashCancelBtn) trashCancelBtn.addEventListener('click', close);
+  if (oknoFixCloseBtn) oknoFixCloseBtn.addEventListener('click', close);
+  if (oknoFixCancelBtn) oknoFixCancelBtn.addEventListener('click', close);
 
-  if (trashZoomInBtn) {
-    trashZoomInBtn.addEventListener('click', (e) => {
+  if (oknoFixZoomInBtn) {
+    oknoFixZoomInBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      trashZoomByFactor(1.12);
+      oknoFixZoomByFactor(1.12);
     });
   }
 
-  if (trashZoomOutBtn) {
-    trashZoomOutBtn.addEventListener('click', (e) => {
+  if (oknoFixZoomOutBtn) {
+    oknoFixZoomOutBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      trashZoomByFactor(0.9);
+      oknoFixZoomByFactor(0.9);
     });
   }
 
-  trashModal.addEventListener('click', (e) => {
+  oknoFixModal.addEventListener('click', (e) => {
     const t = e.target;
     if (t && t.dataset && t.dataset.close) {
-      closeTrashModal();
+      closeOknoFixModal();
     }
   });
 
   // Ручки изменения ширины окна больше не используются, окно фиксировано.
 
   // Перемещение/масштабирование изображения под окном (панорамирование + zoom)
-  if (trashImgViewport) {
-    trashImgViewport.addEventListener('wheel', (e) => {
+  if (oknoFixImgViewport) {
+    oknoFixImgViewport.addEventListener('wheel', (e) => {
       if (!oknoFixState.open) return;
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.08 : 0.93;
-      trashZoomByFactor(factor);
+      oknoFixZoomByFactor(factor);
     });
 
-    trashImgViewport.addEventListener('pointerdown', (e) => {
+    oknoFixImgViewport.addEventListener('pointerdown', (e) => {
       if (!oknoFixState.open) return;
       // не перехватываем, если клик по ручке окна
-      if (e.target === trashHandleLeft || e.target === trashHandleRight) return;
-      if (!trashCard) return;
+      if (e.target === oknoFixHandleLeft || e.target === oknoFixHandleRight) return;
+      if (!oknoFixCard) return;
 
-      const rect = trashCard.getBoundingClientRect();
-      const win = getTrashWindowRectInCard();
+      const rect = oknoFixCard.getBoundingClientRect();
+      const win = getOknoFixWindowRectInCard();
       const winW = win.w;
       const winH = win.h;
       const cx = rect.left + win.x + winW / 2;
@@ -4840,11 +4840,11 @@ function wireTrashUI() {
         };
       }
 
-      try { trashImgViewport.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      try { oknoFixImgViewport.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       e.preventDefault();
     });
 
-    trashImgViewport.addEventListener('pointermove', (e) => {
+    oknoFixImgViewport.addEventListener('pointermove', (e) => {
     if (!oknoFixState.open || !oknoFixState.action) return;
 
       const action = oknoFixState.action;
@@ -4853,7 +4853,7 @@ function wireTrashUI() {
         const dx = e.clientX - action.startPointerX;
         const dy = e.clientY - action.startPointerY;
 
-        const win = getTrashWindowRectInCard();
+        const win = getOknoFixWindowRectInCard();
         const img0 = oknoFixState.img;
         const tentative = {
           x: action.startX + dx,
@@ -4864,15 +4864,15 @@ function wireTrashUI() {
 
         const img1 = clampImageToWindow(tentative, win);
         oknoFixState.img = img1;
-        trashImg.style.left = `${img1.x}px`;
-        trashImg.style.top = `${img1.y}px`;
+        oknoFixImg.style.left = `${img1.x}px`;
+        oknoFixImg.style.top = `${img1.y}px`;
         return;
       }
 
       if (action.type === 'img-scale') {
-        if (!trashCard) return;
-        const rect = trashCard.getBoundingClientRect();
-        const win = getTrashWindowRectInCard();
+        if (!oknoFixCard) return;
+        const rect = oknoFixCard.getBoundingClientRect();
+        const win = getOknoFixWindowRectInCard();
         const winW = win.w;
         const winH = win.h;
         const img0 = action.startImg;
@@ -4902,10 +4902,10 @@ function wireTrashUI() {
 
         const img1 = clampImageToWindow({ x: x0, y: y0, w, h }, win);
         oknoFixState.img = img1;
-        trashImg.style.width = `${img1.w}px`;
-        trashImg.style.height = `${img1.h}px`;
-        trashImg.style.left = `${img1.x}px`;
-        trashImg.style.top = `${img1.y}px`;
+        oknoFixImg.style.width = `${img1.w}px`;
+        oknoFixImg.style.height = `${img1.h}px`;
+        oknoFixImg.style.left = `${img1.x}px`;
+        oknoFixImg.style.top = `${img1.y}px`;
         return;
       }
     });
@@ -4913,21 +4913,21 @@ function wireTrashUI() {
     const endImgMove = (e) => {
       if (!oknoFixState.action || (oknoFixState.action.type !== 'img-move' && oknoFixState.action.type !== 'img-scale')) return;
       oknoFixState.action = null;
-      try { trashImgViewport.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      try { oknoFixImgViewport.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     };
 
-    trashImgViewport.addEventListener('pointerup', endImgMove);
-    trashImgViewport.addEventListener('pointercancel', endImgMove);
+    oknoFixImgViewport.addEventListener('pointerup', endImgMove);
+    oknoFixImgViewport.addEventListener('pointercancel', endImgMove);
   }
 
-  if (trashApplyBtn) {
-    trashApplyBtn.addEventListener('click', async (e) => {
+  if (oknoFixApplyBtn) {
+    oknoFixApplyBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
       if (!oknoFixState.open || !oknoFixState.storedName) return;
-      if (!trashCard) return;
+      if (!oknoFixCard) return;
 
-      const win = getTrashWindowRectInCard();
+      const win = getOknoFixWindowRectInCard();
       const img = oknoFixState.img;
       if (!img || !oknoFixState.natW || !oknoFixState.natH || !win.w || !win.h) return;
 
@@ -4951,7 +4951,7 @@ function wireTrashUI() {
 
       try {
         setBusy(true);
-        if (trashHint) trashHint.textContent = 'Генерирую OknoFix...';
+        if (oknoFixHint) oknoFixHint.textContent = 'Генерирую OknoFix...';
 
         const res = await fetch(toAbsoluteUrl('oknofix'), {
           method: 'POST',
@@ -4964,17 +4964,17 @@ function wireTrashUI() {
         try { data = JSON.parse(text); } catch { data = text; }
 
         if (!res.ok) {
-          if (trashHint) trashHint.textContent = t('oknoFixError');
+          if (oknoFixHint) oknoFixHint.textContent = t('oknoFixError');
           showResult(data);
           return;
         }
 
         showResult(data);
         await loadComposites();
-        if (trashHint) trashHint.textContent = t('oknoFixCreated');
-        closeTrashModal();
+        if (oknoFixHint) oknoFixHint.textContent = t('oknoFixCreated');
+        closeOknoFixModal();
       } catch (err) {
-        if (trashHint) trashHint.textContent = t('oknoFixError');
+        if (oknoFixHint) oknoFixHint.textContent = t('oknoFixError');
         showResult(String(err));
       } finally {
         setBusy(false);
@@ -4984,8 +4984,8 @@ function wireTrashUI() {
 
   window.addEventListener('resize', () => {
     if (!oknoFixState.open) return;
-    layoutTrashWindowInitial();
-    layoutTrashImageCover();
+    layoutOknoFixWindowInitial();
+    layoutOknoFixImageCover();
   });
 }
 

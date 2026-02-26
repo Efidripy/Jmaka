@@ -1,0 +1,40 @@
+  <div id="cropModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card crop-card" role="dialog" aria-modal="true" aria-label="Кадрирование">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-title">Кадрирование</div>
+          <div class="modal-sub">
+            <span id="cropSourceLabel" class="modal-subtext"></span>
+            <a id="cropOpenOriginal" class="modal-sublink" href="#" target="_blank" rel="noreferrer" hidden>Открыть оригинал</a>
+          </div>
+        </div>
+        <button id="cropClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="cropStage" class="crop-stage">
+          <img id="cropImg" class="crop-img" alt="" />
+          <div id="cropRect" class="crop-rect">
+            <div class="crop-handle tl" data-h="tl"></div>
+            <div class="crop-handle tr" data-h="tr"></div>
+            <div class="crop-handle bl" data-h="bl"></div>
+            <div class="crop-handle br" data-h="br"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-hint">
+          Перетаскивайте рамку и её углы. Выберите пропорции:
+          <div class="aspect-buttons" aria-label="Пропорции кадрирования">
+            <button class="btn aspect-btn" type="button" data-aw="1" data-ah="1">1:1</button>
+            <button class="btn aspect-btn" type="button" data-aw="2" data-ah="3">2:3</button>
+            <button class="btn aspect-btn is-active" type="button" data-aw="16" data-ah="9">16:9</button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="cropCancel" class="btn" type="button">Отмена</button>
+          <button id="cropApply" class="btn primary" type="button">Обрезать</button>
+        </div>
+      </div>
+    </div>
+  </div>

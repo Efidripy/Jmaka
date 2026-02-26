@@ -422,18 +422,18 @@ html, body {
   fill: currentColor;
 }
 
-/* TrashImg template */
-.trash-modal-card {
+/* OknoFix template */
+.okno-modal-card {
   max-width: 720px;
 }
 
-.trash-stage-wrap {
+.okno-stage-wrap {
   display: flex;
   justify-content: center;
   padding: 12px 0 4px;
 }
 
-.trash-stage {
+.okno-stage {
   position: relative;
   width: min(640px, 100%);
   aspect-ratio: 16 / 9; /* jmaka-template-oknofix-001.png: 1920x1080 */
@@ -444,21 +444,21 @@ html, body {
   justify-content: center;
 }
 
-.trash-card {
+.okno-card {
   position: absolute;
   inset: 0;
   border-radius: 20px;
   overflow: hidden;
 }
 
-.trash-img-viewport {
+.okno-img-viewport {
   position: absolute;
   inset: 0;
   overflow: hidden;
   z-index: 0;
 }
 
-.trash-overlay {
+.oknofix-overlay {
   position: absolute;
   inset: 0;
   background-image: url('jmaka-template-oknofix-001.png');
@@ -469,14 +469,14 @@ html, body {
   z-index: 1;
 }
 
-.trash-img {
+.okno-img {
   position: absolute;
   left: 0;
   top: 0;
   /* размеры задаём через JS, чтобы контролировать zoom */
 }
 
-/* .trash-handle (старые ручки изменения ширины) больше не используются */
+/* .oknofix-handle (старые ручки изменения ширины) больше не используются */
 
 .oknoscale-handle {
   position: absolute;
@@ -499,18 +499,18 @@ html, body {
   right: -5px;
 }
 
-.trash-stage:hover .oknoscale-handle {
+.okno-stage:hover .oknoscale-handle {
   opacity: 1;
 }
 
-.trash-zoom-controls {
+.okno-zoom-controls {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin-right: auto;
 }
 
-.trash-zoom-btn {
+.okno-zoom-btn {
   min-width: 32px;
   padding-inline: 6px;
 }
