@@ -287,7 +287,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
 
         // x264 + yuv420p requires even frame dimensions.
         // Ultra-safe profile historically used 720x405 (16:9), which causes encoder failure.
-        var target = mode == EncodingMode.ULTRA_SAFE
+        var viewportTarget = mode == EncodingMode.ULTRA_SAFE
             ? (720, 404)
             : (lowRamBalancedProfile ? (shortClipQualityBoost ? (854, 480) : (640, 360)) : (1280, 720));
         var targetFps = lowRamBalancedProfile ? (shortClipQualityBoost ? 20 : 15) : 24;
@@ -387,29 +387,40 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             }
 
             // Match preview behavior: always fill 16:9 viewport and keep only the visible region.
-            var offsetPx = Math.Clamp(job.Request.VerticalOffsetPx, -target.Item2, target.Item2);
+            var offsetPx = Math.Clamp(job.Request.VerticalOffsetPx, -viewportTarget.Item2, viewportTarget.Item2);
             var offsetExprStr = $"(ih-oh)/2+{offsetPx.ToString(CultureInfo.InvariantCulture)}";
             // Escape commas for ffmpeg expression parser inside a filter option.
             var cropYExpr = $"max(0\\,min(ih-oh\\,{offsetExprStr}))";
-            filterParts.Add($"{sourceLabel}scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=increase:force_divisible_by=2,crop={target.Item1}:{target.Item2}:(iw-ow)/2:{cropYExpr}[vviewport]");
+            filterParts.Add($"{sourceLabel}scale={viewportTarget.Item1}:{viewportTarget.Item2}:force_original_aspect_ratio=increase:force_divisible_by=2,crop={viewportTarget.Item1}:{viewportTarget.Item2}:(iw-ow)/2:{cropYExpr}[vviewport]");
 
-            var cropWidthPx = Math.Clamp((int)Math.Round(target.Item1 * cropWNorm), 2, target.Item1);
+            var cropWidthPx = Math.Clamp((int)Math.Round(viewportTarget.Item1 * cropWNorm), 2, viewportTarget.Item1);
             if ((cropWidthPx & 1) != 0) cropWidthPx -= 1;
             if (cropWidthPx < 2) cropWidthPx = 2;
 
-            var cropHeightPx = Math.Clamp((int)Math.Round(target.Item2 * cropHNorm), 2, target.Item2);
+            var cropHeightPx = Math.Clamp((int)Math.Round(viewportTarget.Item2 * cropHNorm), 2, viewportTarget.Item2);
             if ((cropHeightPx & 1) != 0) cropHeightPx -= 1;
             if (cropHeightPx < 2) cropHeightPx = 2;
 
-            var cropLeftPx = (int)Math.Round((target.Item1 - cropWidthPx) * cropXNorm);
-            var cropTopPx = (int)Math.Round((target.Item2 - cropHeightPx) * cropYNorm);
-            cropLeftPx = Math.Clamp(cropLeftPx, 0, Math.Max(0, target.Item1 - cropWidthPx));
-            cropTopPx = Math.Clamp(cropTopPx, 0, Math.Max(0, target.Item2 - cropHeightPx));
+            var cropLeftPx = (int)Math.Round((viewportTarget.Item1 - cropWidthPx) * cropXNorm);
+            var cropTopPx = (int)Math.Round((viewportTarget.Item2 - cropHeightPx) * cropYNorm);
+            cropLeftPx = Math.Clamp(cropLeftPx, 0, Math.Max(0, viewportTarget.Item1 - cropWidthPx));
+            cropTopPx = Math.Clamp(cropTopPx, 0, Math.Max(0, viewportTarget.Item2 - cropHeightPx));
 
-            filterParts.Add($"[vviewport]crop={cropWidthPx}:{cropHeightPx}:{cropLeftPx}:{cropTopPx},scale={target.Item1}:{target.Item2}:flags=lanczos,fps={targetFps},format=yuv420p[vcrop]");
+            var cropApplied = cropWidthPx < viewportTarget.Item1 || cropHeightPx < viewportTarget.Item2 || cropLeftPx > 0 || cropTopPx > 0;
+            var outputTargetW = viewportTarget.Item1;
+            var outputTargetH = viewportTarget.Item2;
+            if (cropApplied)
+            {
+                var cropAspect = cropWidthPx / (double)cropHeightPx;
+                var standard = GetStandardCropOutput(cropAspect, lowRamBalancedProfile, shortClipQualityBoost, mode == EncodingMode.ULTRA_SAFE);
+                outputTargetW = standard.Width;
+                outputTargetH = standard.Height;
+            }
+
+            filterParts.Add($"[vviewport]crop={cropWidthPx}:{cropHeightPx}:{cropLeftPx}:{cropTopPx},scale={outputTargetW}:{outputTargetH}:flags=lanczos,fps={targetFps},format=yuv420p[vcrop]");
             if (!string.IsNullOrWhiteSpace(overlayAbsolutePath))
             {
-                filterParts.Add($"[1:v]scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=decrease[ovr]");
+                filterParts.Add($"[1:v]scale={outputTargetW}:{outputTargetH}:force_original_aspect_ratio=decrease[ovr]");
                 filterParts.Add($"[vcrop][ovr]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p[v]");
             }
             else
@@ -642,6 +653,32 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         var elapsed = hh * 3600 + mm * 60 + ss;
         var pct = (int)Math.Round(Math.Clamp((elapsed / job.DurationSeconds.Value) * 100.0, 0, 99));
         job.Progress = $"{pct}%";
+    }
+
+    private static (int Width, int Height) GetStandardCropOutput(double cropAspect, bool lowRam, bool shortClipBoost, bool ultraSafe)
+    {
+        // Canonical outputs by target aspect:
+        // 16:9 -> landscape
+        // 1:1  -> square
+        // 9:16 -> portrait
+        // For low-RAM/ultra-safe we use reduced, but still standard, dimensions.
+        var landscape = ultraSafe
+            ? (720, 404)
+            : (lowRam ? (shortClipBoost ? (854, 480) : (640, 360)) : (1280, 720));
+        var square = ultraSafe
+            ? (720, 720)
+            : (lowRam ? (shortClipBoost ? (854, 854) : (640, 640)) : (960, 960));
+        var portrait = ultraSafe
+            ? (404, 720)
+            : (lowRam ? (shortClipBoost ? (480, 854) : (360, 640)) : (720, 1280));
+
+        var d169 = Math.Abs(cropAspect - (16.0 / 9.0));
+        var d11 = Math.Abs(cropAspect - 1.0);
+        var d916 = Math.Abs(cropAspect - (9.0 / 16.0));
+
+        if (d11 <= d169 && d11 <= d916) return square;
+        if (d916 <= d169 && d916 <= d11) return portrait;
+        return landscape;
     }
 
     private (EncodingMode Mode, string Reason) ResolveMode(EncodingMode requested, double duration, int ramMb)

@@ -629,7 +629,7 @@ app.MapRazorPages();
 // Version API endpoint
 app.MapGet("/api/version", () =>
 {
-    var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.5.0";
+    var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.5.2";
     return Results.Ok(new { version });
 });
 

@@ -1,5 +1,5 @@
 (() => {
-  console.info('VideoEdit v0.5.0 loaded');
+  console.info('VideoEdit v0.5.2 loaded');
   
   const videoEditModal = document.getElementById('videoEditModal');
   if (!videoEditModal) return;
@@ -284,7 +284,10 @@
     }
     const flipX = state.flipH ? -1 : 1;
     const flipY = state.flipV ? -1 : 1;
-    videoEditPreview.style.transform = `translateY(${state.verticalOffsetPx}px) rotate(${state.rotateDeg}deg) scale(${flipX}, ${flipY})`;
+    // Shift visible content inside the fixed 16:9 viewport without moving the element box
+    // to avoid exposing empty background when panning tall/square videos.
+    videoEditPreview.style.objectPosition = `50% calc(50% + ${state.verticalOffsetPx.toFixed(2)}px)`;
+    videoEditPreview.style.transform = `rotate(${state.rotateDeg}deg) scale(${flipX}, ${flipY})`;
     videoEditPreview.playbackRate = state.speed;
     if (videoSpeedValue) videoSpeedValue.textContent = `${state.speed.toFixed(1)}x`;
     if (videoFlipH) videoFlipH.classList.toggle('is-active', state.flipH);
@@ -733,7 +736,7 @@
       let data;
       try { data = await res.json(); } catch { data = null; }
       if (!res.ok) {
-        throw new Error(data && data.error ? data.error : vt('Не удалось получить статус нормализации', 'Не удалось получить статус нормализации'));
+        throw new Error(data && data.error ? data.error : vt('videoNormalizeStatusError', 'Не удалось получить статус нормализации'));
       }
 
       const status = normalizeJobStatus(data && data.status);
@@ -748,7 +751,7 @@
       await new Promise((resolve) => setTimeout(resolve, Math.max(200, pollMs)));
     }
 
-    throw new Error(vt('Превышено время ожидания нормализации видео', 'Превышено время ожидания нормализации видео'));
+    throw new Error(vt('videoNormalizeTimeout', 'Превышено время ожидания нормализации видео'));
   }
 
   function renderVideoLists() {
@@ -1048,18 +1051,19 @@
     if (!Number.isFinite(rw) || !Number.isFinite(rh) || rw <= 0 || rh <= 0) return;
 
     const target = rw / rh;
-    const srcW = videoEditPreview ? (videoEditPreview.videoWidth || 0) : 0;
-    const srcH = videoEditPreview ? (videoEditPreview.videoHeight || 0) : 0;
-    const srcAspect = srcW > 0 && srcH > 0 ? (srcW / srcH) : 1;
+    const stageRect = videoPreviewStage ? videoPreviewStage.getBoundingClientRect() : null;
+    const baseAspect = stageRect && stageRect.width > 0 && stageRect.height > 0
+      ? (stageRect.width / stageRect.height)
+      : (16 / 9);
 
     let w;
     let h;
-    if (target > srcAspect) {
+    if (target > baseAspect) {
       w = 1;
-      h = srcAspect / target;
+      h = baseAspect / target;
     } else {
       h = 1;
-      w = target / srcAspect;
+      w = target / baseAspect;
     }
     w = clamp(w, 0.1, 1);
     h = clamp(h, 0.1, 1);
@@ -1407,10 +1411,10 @@
             const pct = Number.isFinite(p.progress) ? p.progress : null;
             const elapsedSec = (Date.now() - normalizeStartedAt) / 1000;
             const etaSec = pct != null && pct > 1 ? (elapsedSec * (100 - pct)) / pct : null;
-            const etaText = Number.isFinite(etaSec) ? ` • ~${formatEta(etaSec)} осталось` : '';
+            const etaText = Number.isFinite(etaSec) ? ` • ~${formatEta(etaSec)} ${vt('etaLeft', 'осталось')}` : '';
             const label = pct != null
-              ? `Нормализую формат для редактора... ${Math.round(pct)}%${etaText}`
-              : `Нормализую формат для редактора... прошло ${formatEta(elapsedSec)}`;
+              ? `${vt('videoNormalize', 'Нормализую формат для редактора...')} ${Math.round(pct)}%${etaText}`
+              : `${vt('videoNormalizeElapsed', 'Нормализую формат для редактора... прошло')} ${formatEta(elapsedSec)}`;
             setStatus(label, pct, { indeterminate: pct == null });
           }, 1000);
 
@@ -1435,7 +1439,7 @@
         await loadVideoHistory();
         renderOutputControls();
       } catch (err) {
-        setStatus(`Ошибка загрузки видео. ${String(err || '').trim()}`.trim(), 0, { indeterminate: false });
+        setStatus(`${vt('videoUploadErrorPrefix', 'Ошибка загрузки видео.')} ${String(err || '').trim()}`.trim(), 0, { indeterminate: false });
       }
     });
   }
@@ -1495,11 +1499,11 @@
           const pct = Number.isFinite(p.progress) ? p.progress : null;
           let label;
           if (p.status === 'QUEUED') {
-            label = 'В очереди...';
+            label = vt('videoQueue', 'В очереди...');
           } else if (pct != null) {
             const elapsedSec = (Date.now() - processingStartedAt) / 1000;
             const etaSec = pct > 1 ? (elapsedSec * (100 - pct)) / pct : null;
-            const etaText = Number.isFinite(etaSec) ? ` • ~${formatEta(etaSec)} осталось` : '';
+            const etaText = Number.isFinite(etaSec) ? ` • ~${formatEta(etaSec)} ${vt('etaLeft', 'осталось')}` : '';
             label = `${vt('videoProcessing', 'Обрабатываю видео...')} ${Math.round(pct)}%${etaText}`;
           } else {
             label = vt('videoProcessing', 'Обрабатываю видео...');
@@ -1525,7 +1529,7 @@
         await loadVideoHistory();
         console.info(`Results refreshed (${processed.length})`);
       } catch (err) {
-        setStatus(`Ошибка обработки видео. ${String(err || '').trim()}`.trim(), 0);
+        setStatus(`${vt('videoProcessErrorPrefix', 'Ошибка обработки видео.')} ${String(err || '').trim()}`.trim(), 0);
       } finally {
         setProcessing(false);
       }
