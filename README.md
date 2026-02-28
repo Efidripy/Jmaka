@@ -29,6 +29,9 @@
 - Image Edit: серверный редактор с параметрами Brightness/Contrast/Saturation/Hue/Exposure/Vibrance (результат сохраняется как новый файл).
 - Video Edit: загрузка видео с полным набором инструментов редактирования:
   - **Trim** — тримминг и вырезание сегментов из середины видео
+  - **Timeline Concat** — склейка 2+ оригиналов в один результат через добавление клипов кнопкой `+` в конце таймлайна
+  - **Per-Clip Segments** — для каждого добавленного клипа можно задать несколько сегментов (вырезок)
+  - **Per-Mode Vertical Offset Memory** — вертикальная позиция видео запоминается отдельно для режимов Vidcov и Episod
   - **Crop** — кадрирование видео (нормализованные координаты 0-1)
   - **Rotate** — поворот на 90°/180°/270°
   - **Flip** — отражение по горизонтали и вертикали
@@ -84,7 +87,7 @@
 - `GET /video/upload-jobs/{jobId}` (статус нормализации загруженного видео)
 - `GET /video/jobs/{jobId}` (статус задачи обработки видео)
 - `POST /video/jobs/{jobId}/cancel` (отмена задачи обработки)
-- `POST /video-process` (JSON `{ storedName, trimStartSec, trimEndSec, cutStartSec, cutEndSec, outputWidth, targetSizeMb, verticalOffsetPx, segments, cropX, cropY, cropW, cropH, rotateDeg, flipH, flipV, speed, muteAudio }`)
+- `POST /video-process` (JSON с поддержкой multi-source, например `{ storedName, sourceStoredNames, sourceClips, trimStartSec, trimEndSec, outputWidth, targetSizeMb, verticalOffsetPx, segments, cropX, cropY, cropW, cropH, rotateDeg, flipH, flipV, speed, muteAudio, encodingMode, overlayTemplateRelativePath }`, где `sourceClips` может содержать per-clip `trimStartSec/trimEndSec` и `segments[]`)
 - `GET /video-overlay-templates` (список доступных overlay-шаблонов)
 - `POST /upload-video-overlay-template` (multipart/form-data поле `file`, шаблон overlay)
 - `POST /resize` (JSON `{ storedName, width }`)
