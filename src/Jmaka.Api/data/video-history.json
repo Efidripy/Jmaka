@@ -295,5 +295,41 @@
     "Size": 852703,
     "RelativePath": "video-out/20260228-063434-035-caf024058b444993a1c3ca84cf07f76f.mp4",
     "DurationSeconds": 8.083333
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-063608-334-90bdb33b163e4c1a9dd0d27cbf43466b.mp4",
+    "OriginalName": "20260228-063608-334-90bdb33b163e4c1a9dd0d27cbf43466b.mp4",
+    "CreatedAt": "2026-02-28T06:36:11.3104191+00:00",
+    "Size": 829339,
+    "RelativePath": "video-out/20260228-063608-334-90bdb33b163e4c1a9dd0d27cbf43466b.mp4",
+    "DurationSeconds": 9.375
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-064246-138-9e7118ee09a84323a09387c9fd521b50.mp4",
+    "OriginalName": "20260228-064246-138-9e7118ee09a84323a09387c9fd521b50.mp4",
+    "CreatedAt": "2026-02-28T06:42:53.3542791+00:00",
+    "Size": 1211335,
+    "RelativePath": "video-out/20260228-064246-138-9e7118ee09a84323a09387c9fd521b50.mp4",
+    "DurationSeconds": 31.833333
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-064319-332-949d5e252ec14a9babaa673e216db9e9.mp4",
+    "OriginalName": "20260228-064319-332-949d5e252ec14a9babaa673e216db9e9.mp4",
+    "CreatedAt": "2026-02-28T06:43:32.7075599+00:00",
+    "Size": 4034631,
+    "RelativePath": "video-out/20260228-064319-332-949d5e252ec14a9babaa673e216db9e9.mp4",
+    "DurationSeconds": 32.1
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-064346-782-ff3aa34b61694914937631f155e67ba8.mp4",
+    "OriginalName": "20260228-064346-782-ff3aa34b61694914937631f155e67ba8.mp4",
+    "CreatedAt": "2026-02-28T06:43:57.3865009+00:00",
+    "Size": 3044794,
+    "RelativePath": "video-out/20260228-064346-782-ff3aa34b61694914937631f155e67ba8.mp4",
+    "DurationSeconds": 25.3
   }
 ]
