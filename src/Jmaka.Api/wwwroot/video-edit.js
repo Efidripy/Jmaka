@@ -37,9 +37,9 @@
   const videoCropOverlay = document.getElementById('videoCropOverlay');
   const videoCropRect = document.getElementById('videoCropRect');
   const videoProcessingOverlay = document.getElementById('videoProcessingOverlay');
-  const videoAddSegment = document.getElementById('videoAddSegment');
-  const videoRemoveSegment = document.getElementById('videoRemoveSegment');
-  const videoSegmentsInfo = document.getElementById('videoSegmentsInfo');
+  const videoTimelineClips = document.getElementById('videoTimelineClips');
+  const videoTimelineAddBtn = document.getElementById('videoTimelineAddBtn');
+  const videoTimelineAddMenu = document.getElementById('videoTimelineAddMenu');
   const videoMuteAudio = document.getElementById('videoMuteAudio');
   const videoMuteLabel = document.getElementById('videoMuteLabel');
   const videoResetBtn = document.getElementById('videoResetBtn');
@@ -71,6 +71,8 @@
     muteAudio: false,
     targetSizeMb: 10,
     selectedSizeLimit: '10mb',
+    timelineClips: [],
+    timelineClipTrims: {}
   };
 
   let originals = [];
@@ -114,6 +116,49 @@
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  function getProcessSourceNames() {
+    if (Array.isArray(state.timelineClips) && state.timelineClips.length > 0) {
+      return state.timelineClips.filter((name, idx, arr) => !!name && arr.indexOf(name) === idx);
+    }
+    return state.storedName ? [state.storedName] : [];
+  }
+
+  function isInTimeline(storedName) {
+    return !!storedName && Array.isArray(state.timelineClips) && state.timelineClips.includes(storedName);
+  }
+
+  function getClipDuration(storedName) {
+    const item = findOriginalByStoredName(storedName);
+    const duration = Number(item && item.durationSeconds);
+    return Number.isFinite(duration) && duration > 0 ? duration : 0;
+  }
+
+  function getClipTrim(storedName) {
+    if (!storedName) return null;
+    const duration = getClipDuration(storedName);
+    const saved = state.timelineClipTrims[storedName];
+    const rawStart = saved && Number.isFinite(saved.start) ? saved.start : 0;
+    const rawEnd = saved && Number.isFinite(saved.end) ? saved.end : duration;
+    if (!duration) return { start: 0, end: 0, duration: 0 };
+    const start = clamp(rawStart, 0, duration);
+    const end = clamp(rawEnd, 0, duration);
+    if (end - start >= 0.05) return { start, end, duration };
+    return { start: 0, end: duration, duration };
+  }
+
+  function saveActiveClipTrim() {
+    const storedName = state.storedName;
+    if (!storedName || !isInTimeline(storedName)) return;
+    const active = state.segments[state.activeSegmentIndex] || state.segments[0];
+    const clipTrim = getClipTrim(storedName);
+    const duration = clipTrim ? clipTrim.duration : getClipDuration(storedName);
+    if (!active || !duration) return;
+    state.timelineClipTrims[storedName] = {
+      start: clamp(active.start, 0, duration),
+      end: clamp(active.end, 0, duration)
+    };
+  }
+
   function normalizeSegments() {
     const duration = state.duration || 0;
     const minGap = 0.1;
@@ -148,17 +193,13 @@
 
   function setProcessing(isProcessing) {
     if (videoProcessingOverlay) videoProcessingOverlay.classList.toggle('is-active', !!isProcessing);
-    if (videoEditSave) videoEditSave.disabled = isProcessing || !state.storedName;
+    if (videoEditSave) videoEditSave.disabled = isProcessing || getProcessSourceNames().length === 0;
   }
 
   function renderToolState() {
     toolButtons.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.tool === state.tool));
     toolPanels.forEach((panel) => { panel.hidden = panel.dataset.toolPanel !== state.tool; });
     if (videoCropOverlay) videoCropOverlay.hidden = state.tool !== 'crop';
-    if (videoSegmentsInfo) {
-      const n = state.segments.length;
-      videoSegmentsInfo.textContent = `${n} segment${n === 1 ? '' : 's'}`;
-    }
   }
 
   function renderPlaybackState() {
@@ -329,7 +370,7 @@
   function renderOutputControls() {
     const isVidcovMode = state.outputMode === 'vidcov';
     if (videoTargetSize) videoTargetSize.value = String(state.targetSizeMb);
-    if (videoEditSave) videoEditSave.disabled = !state.storedName;
+    if (videoEditSave) videoEditSave.disabled = getProcessSourceNames().length === 0;
     if (videoMuteLabel) videoMuteLabel.textContent = state.muteAudio ? 'Unmute' : 'Mute';
     if (videoMuteAudio) {
       videoMuteAudio.checked = !!state.muteAudio;
@@ -358,6 +399,7 @@
     renderPlaybackState();
     renderCropRect();
     renderTimeline();
+    renderTimelineClipControls();
     renderOutputControls();
   }
 
@@ -375,7 +417,13 @@
       }
       originals = data.filter((item) => item && item.kind !== 'processed');
       processed = data.filter((item) => item && item.kind === 'processed');
+      const knownOriginals = new Set(originals.map((item) => item.storedName));
+      state.timelineClips = state.timelineClips.filter((storedName) => knownOriginals.has(storedName));
+      state.timelineClipTrims = Object.fromEntries(
+        Object.entries(state.timelineClipTrims).filter(([storedName]) => knownOriginals.has(storedName))
+      );
       renderVideoLists();
+      renderTimelineClipControls();
       if (processed.length === 0) {
         setHint(vt('Results пуст. Нажмите Refresh, если обработка завершилась только что.', 'Results пуст. Нажмите Refresh, если обработка завершилась только что.'));
       }
@@ -440,7 +488,8 @@
         }
         state.storedName = item.storedName;
         setHint(vt('Выберите отрезки на таймлайне и нажмите Сделать.', 'Выберите отрезки на таймлайне и нажмите Сделать.'));
-        if (videoEditSave) videoEditSave.disabled = false;
+        renderOutputControls();
+        renderTimelineClipControls();
         renderVideoLists();
       });
 
@@ -499,9 +548,11 @@
         if (item.storedName === state.storedName) {
           state.storedName = null;
           if (videoEditPreview) videoEditPreview.removeAttribute('src');
-          if (videoEditSave) videoEditSave.disabled = true;
         }
+        state.timelineClips = state.timelineClips.filter((name) => name !== item.storedName);
+        delete state.timelineClipTrims[item.storedName];
         await loadVideoHistory();
+        renderOutputControls();
       });
       actions.appendChild(del);
 
@@ -533,15 +584,159 @@
     else processed.forEach((item) => renderItem(item, videoProcessedList, true));
   }
 
+  function findOriginalByStoredName(storedName) {
+    return originals.find((item) => item && item.storedName === storedName) || null;
+  }
+
+  function setPreviewFromItem(item) {
+    if (!item || !item.relativePath || !videoEditPreview) return;
+    saveActiveClipTrim();
+    const url = withCacheBust ? withCacheBust(item.relativePath, item.storedName) : item.relativePath;
+    videoEditPreview.src = url;
+    timelinePreviewState.dirty = true;
+    state.storedName = item.storedName || state.storedName;
+    renderOutputControls();
+  }
+
+  function closeTimelineAddMenu() {
+    if (videoTimelineAddMenu) videoTimelineAddMenu.hidden = true;
+  }
+
+  function removeTimelineClip(storedName) {
+    saveActiveClipTrim();
+    const idx = state.timelineClips.findIndex((name) => name === storedName);
+    if (idx < 0) return;
+    state.timelineClips.splice(idx, 1);
+    delete state.timelineClipTrims[storedName];
+    if (state.timelineClips.length === 0 && state.storedName === storedName) {
+      state.storedName = null;
+      if (videoEditPreview) videoEditPreview.removeAttribute('src');
+    }
+    renderTimelineClipControls();
+    renderVideoLists();
+    renderOutputControls();
+  }
+
+  function addTimelineClip(storedName) {
+    if (!storedName || isInTimeline(storedName)) return;
+    const item = findOriginalByStoredName(storedName);
+    if (!item) return;
+    state.timelineClips.push(storedName);
+    const duration = Number(item.durationSeconds) || 0;
+    state.timelineClipTrims[storedName] = {
+      start: 0,
+      end: duration > 0 ? duration : 0
+    };
+    if (state.timelineClips.length === 1 || !state.storedName) {
+      setPreviewFromItem(item);
+    }
+    closeTimelineAddMenu();
+    renderTimelineClipControls();
+    renderVideoLists();
+    renderOutputControls();
+  }
+
+  function renderTimelineAddMenu() {
+    if (!videoTimelineAddMenu) return;
+    videoTimelineAddMenu.textContent = '';
+
+    if (originals.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'timeline-add-empty';
+      empty.textContent = 'Загрузите видео, чтобы добавить в склейку';
+      videoTimelineAddMenu.appendChild(empty);
+      return;
+    }
+
+    originals.forEach((item) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'timeline-add-item';
+      const used = isInTimeline(item.storedName);
+      if (used) {
+        option.classList.add('is-used');
+        option.disabled = true;
+      }
+
+      const thumb = document.createElement('div');
+      thumb.className = 'timeline-add-item-thumb';
+      if (item.relativePath) {
+        const videoThumb = document.createElement('video');
+        videoThumb.muted = true;
+        videoThumb.preload = 'metadata';
+        videoThumb.src = toAbsoluteUrl(item.relativePath);
+        videoThumb.playsInline = true;
+        thumb.appendChild(videoThumb);
+      }
+
+      const duration = document.createElement('div');
+      duration.className = 'timeline-add-item-duration';
+      duration.textContent = formatDurationCompact(item.durationSeconds);
+
+      option.appendChild(thumb);
+      option.appendChild(duration);
+      option.addEventListener('click', () => addTimelineClip(item.storedName));
+      videoTimelineAddMenu.appendChild(option);
+    });
+  }
+
+  function renderTimelineClipControls() {
+    if (!videoTimelineClips) return;
+    videoTimelineClips.textContent = '';
+    state.timelineClips.forEach((storedName) => {
+      const item = findOriginalByStoredName(storedName);
+      if (!item) return;
+
+      const node = document.createElement('div');
+      node.className = 'timeline-clip-item';
+      if (state.storedName === storedName) node.classList.add('is-active');
+
+      if (item.relativePath) {
+        const clipVideo = document.createElement('video');
+        clipVideo.muted = true;
+        clipVideo.preload = 'metadata';
+        clipVideo.src = toAbsoluteUrl(item.relativePath);
+        clipVideo.playsInline = true;
+        node.appendChild(clipVideo);
+      }
+
+      const duration = document.createElement('span');
+      duration.className = 'timeline-clip-duration';
+      const clipTrim = getClipTrim(storedName);
+      const clipDuration = clipTrim ? Math.max(0, clipTrim.end - clipTrim.start) : item.durationSeconds;
+      duration.textContent = formatDurationCompact(clipDuration);
+      node.appendChild(duration);
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'timeline-clip-remove';
+      remove.textContent = '×';
+      remove.title = 'Удалить клип';
+      remove.addEventListener('click', (event) => {
+        event.stopPropagation();
+        removeTimelineClip(storedName);
+      });
+      node.appendChild(remove);
+
+      node.addEventListener('click', () => setPreviewFromItem(item));
+      videoTimelineClips.appendChild(node);
+    });
+
+    renderTimelineAddMenu();
+  }
+
   function openModal() {
     videoEditModal.hidden = false;
     setHint(vt('videoUploadHint', 'Загрузите видео и перетащите границы на таймлайне.'));
     loadVideoHistory();
+    closeTimelineAddMenu();
     renderAll();
   }
 
   function closeModal() {
+    saveActiveClipTrim();
     videoEditModal.hidden = true;
+    closeTimelineAddMenu();
     if (videoEditPreview) videoEditPreview.pause();
   }
 
@@ -554,6 +749,7 @@
 
   function handleTimelinePointerDown(event) {
     if (!videoTimelineStrip || !videoTimelineSegments) return;
+    if (event.target && event.target.closest && event.target.closest('.timeline-strip-add')) return;
     const selection = event.target.closest('.timeline-selection');
     const index = selection ? Number(selection.dataset.index) : -1;
     if (index >= 0) state.activeSegmentIndex = index;
@@ -610,6 +806,8 @@
   }
 
   function handleTimelinePointerUp() {
+    saveActiveClipTrim();
+    renderTimelineClipControls();
     timelineDrag = null;
     window.removeEventListener('pointermove', handleTimelinePointerMove);
     window.removeEventListener('pointerup', handleTimelinePointerUp);
@@ -652,6 +850,9 @@
     state.targetSizeMb = 10;
     state.selectedSizeLimit = '10mb';
     state.tool = 'trim';
+    if (state.storedName && isInTimeline(state.storedName)) {
+      state.timelineClipTrims[state.storedName] = { start: 0, end: duration };
+    }
     
     // Update UI elements
     if (videoSpeedRange) videoSpeedRange.value = '1';
@@ -720,8 +921,32 @@
   });
 
   toolButtons.forEach((btn) => btn.addEventListener('click', () => { state.tool = btn.dataset.tool; renderToolState(); }));
-  if (videoAddSegment) videoAddSegment.addEventListener('click', addSegment);
-  if (videoRemoveSegment) videoRemoveSegment.addEventListener('click', removeSegment);
+  const toggleTimelineAddMenu = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!videoTimelineAddMenu) return;
+    renderTimelineAddMenu();
+    videoTimelineAddMenu.hidden = !videoTimelineAddMenu.hidden;
+  };
+  if (videoTimelineAddBtn) {
+    videoTimelineAddBtn.addEventListener('pointerdown', toggleTimelineAddMenu);
+    videoTimelineAddBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  }
+  if (videoTimelineAddMenu) {
+    videoTimelineAddMenu.addEventListener('pointerdown', (event) => event.stopPropagation());
+    videoTimelineAddMenu.addEventListener('click', (event) => event.stopPropagation());
+  }
+  document.addEventListener('pointerdown', (event) => {
+    if (!videoTimelineAddMenu || videoTimelineAddMenu.hidden) return;
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (videoTimelineAddMenu.contains(target)) return;
+    if (videoTimelineAddBtn && videoTimelineAddBtn.contains(target)) return;
+    closeTimelineAddMenu();
+  });
 
   if (videoRotateCw) videoRotateCw.addEventListener('click', () => { state.rotateDeg = (state.rotateDeg + 90) % 360; renderPlaybackState(); });
   if (videoRotateCcw) videoRotateCcw.addEventListener('click', () => { state.rotateDeg = (state.rotateDeg - 90 + 360) % 360; renderPlaybackState(); });
@@ -795,9 +1020,17 @@
   if (videoEditPreview) {
     videoEditPreview.addEventListener('loadedmetadata', () => {
       state.duration = Number(videoEditPreview.duration) || 0;
-      state.segments = [{ start: 0, end: state.duration }];
+      const activeClip = state.storedName && isInTimeline(state.storedName)
+        ? getClipTrim(state.storedName)
+        : null;
+      const start = activeClip ? activeClip.start : 0;
+      const end = activeClip ? activeClip.end : state.duration;
+      state.segments = [{ start, end }];
       state.activeSegmentIndex = 0;
       state.trim = { ...state.segments[0] };
+      if (state.storedName && isInTimeline(state.storedName)) {
+        state.timelineClipTrims[state.storedName] = { start, end };
+      }
       timelinePreviewState.dirty = true;
       renderTimeline();
       queueFilmstripRender(true);
@@ -845,14 +1078,27 @@
 
   if (videoEditSave) {
     videoEditSave.addEventListener('click', async () => {
-      if (!state.storedName) return;
+      const processSourceNames = getProcessSourceNames();
+      if (processSourceNames.length === 0) return;
+      const primaryStoredName = processSourceNames[0];
       normalizeSegments();
       const isVidcovMode = state.outputMode === 'vidcov';
       const targetSizeMb = isVidcovMode ? 1.5 : state.targetSizeMb;
       const muteAudio = isVidcovMode ? true : state.muteAudio;
+      saveActiveClipTrim();
+      const sourceClips = processSourceNames.map((storedName) => {
+        const clipTrim = getClipTrim(storedName);
+        return {
+          storedName,
+          trimStartSec: clipTrim ? clipTrim.start : 0,
+          trimEndSec: clipTrim ? clipTrim.end : getClipDuration(storedName)
+        };
+      });
 
       const payload = {
-        storedName: state.storedName,
+        storedName: primaryStoredName,
+        sourceStoredNames: processSourceNames,
+        sourceClips,
         trimStartSec: state.segments[0]?.start ?? 0,
         trimEndSec: state.segments[state.segments.length - 1]?.end ?? 0,
         cutStartSec: null,

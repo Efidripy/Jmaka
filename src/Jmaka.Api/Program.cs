@@ -2169,16 +2169,87 @@ app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, ImagePipel
 // --- Video processing endpoint ---
 app.MapPost("/video-process", (VideoProcessRequest req, HttpContext http, IFfmpegJobQueue queue) =>
 {
-    var storedName = Path.GetFileName(req.StoredName ?? string.Empty);
-    if (string.IsNullOrWhiteSpace(storedName) || !string.Equals(storedName, req.StoredName, StringComparison.Ordinal))
+    var clipByStoredName = new Dictionary<string, VideoProcessClip>(StringComparer.Ordinal);
+    if (req.SourceClips is not null)
     {
-        return Results.BadRequest(new { error = "invalid storedName" });
+        foreach (var rawClip in req.SourceClips)
+        {
+            if (rawClip is null)
+            {
+                return Results.BadRequest(new { error = "invalid sourceClips" });
+            }
+
+            var clipStoredName = Path.GetFileName(rawClip.StoredName ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(clipStoredName) || !string.Equals(clipStoredName, rawClip.StoredName, StringComparison.Ordinal))
+            {
+                return Results.BadRequest(new { error = "invalid sourceClips" });
+            }
+
+            if (clipByStoredName.ContainsKey(clipStoredName))
+            {
+                continue;
+            }
+
+            clipByStoredName[clipStoredName] = rawClip with { StoredName = clipStoredName };
+        }
     }
 
-    var inputPath = Path.Combine(videoDir, storedName);
-    if (!File.Exists(inputPath))
+    var sourceStoredNames = new List<string>();
+    var sourceSeen = new HashSet<string>(StringComparer.Ordinal);
+    if (req.SourceStoredNames is not null)
     {
-        return Results.NotFound(new { error = "video not found" });
+        foreach (var raw in req.SourceStoredNames)
+        {
+            var candidate = Path.GetFileName(raw ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(candidate) || !string.Equals(candidate, raw, StringComparison.Ordinal))
+            {
+                return Results.BadRequest(new { error = "invalid sourceStoredNames" });
+            }
+
+            if (sourceSeen.Add(candidate))
+            {
+                sourceStoredNames.Add(candidate);
+            }
+        }
+    }
+
+    if (sourceStoredNames.Count == 0 && clipByStoredName.Count > 0)
+    {
+        sourceStoredNames.AddRange(clipByStoredName.Keys);
+    }
+
+    if (sourceStoredNames.Count == 0)
+    {
+        var storedName = Path.GetFileName(req.StoredName ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(storedName) || !string.Equals(storedName, req.StoredName, StringComparison.Ordinal))
+        {
+            return Results.BadRequest(new { error = "invalid storedName" });
+        }
+
+        sourceStoredNames.Add(storedName);
+    }
+
+    var normalizedSourceClips = sourceStoredNames
+        .Select(name =>
+        {
+            if (clipByStoredName.TryGetValue(name, out var clip))
+            {
+                return clip;
+            }
+            return new VideoProcessClip(name, null, null, null);
+        })
+        .ToArray();
+
+    var inputPaths = new List<string>(sourceStoredNames.Count);
+    foreach (var sourceStoredName in sourceStoredNames)
+    {
+        var inputPath = Path.Combine(videoDir, sourceStoredName);
+        if (!File.Exists(inputPath))
+        {
+            return Results.NotFound(new { error = "video not found", storedName = sourceStoredName });
+        }
+
+        inputPaths.Add(inputPath);
     }
 
     var createdAt = DateTimeOffset.UtcNow;
@@ -2211,8 +2282,14 @@ app.MapPost("/video-process", (VideoProcessRequest req, HttpContext http, IFfmpe
     }
 
     var correlationId = http.TraceIdentifier;
-    var reqForJob = req with { OverlayTemplateRelativePath = overlayRelativePath };
-    var enqueue = queue.Enqueue(reqForJob, inputPath, outPath, correlationId);
+    var reqForJob = req with
+    {
+        StoredName = sourceStoredNames[0],
+        SourceStoredNames = sourceStoredNames.ToArray(),
+        SourceClips = normalizedSourceClips,
+        OverlayTemplateRelativePath = overlayRelativePath
+    };
+    var enqueue = queue.Enqueue(reqForJob, inputPaths, outPath, correlationId);
     if (!enqueue.Accepted && enqueue.QueueFull)
     {
         return Results.Json(new { error = "Queue is full" }, statusCode: StatusCodes.Status429TooManyRequests);
@@ -3231,6 +3308,8 @@ record OverlayRenameRequest(string DisplayName);
 
 public record VideoProcessRequest(
     string StoredName,
+    string[]? SourceStoredNames,
+    VideoProcessClip[]? SourceClips,
     double? TrimStartSec,
     double? TrimEndSec,
     double? CutStartSec,
@@ -3255,6 +3334,13 @@ public record VideoProcessRequest(
 public record VideoProcessSegment(
     double StartSec,
     double EndSec
+);
+
+public record VideoProcessClip(
+    string StoredName,
+    double? TrimStartSec,
+    double? TrimEndSec,
+    VideoProcessSegment[]? Segments
 );
 
 enum UploadNormalizeJobStatus { QUEUED, RUNNING, SUCCEEDED, FAILED }
