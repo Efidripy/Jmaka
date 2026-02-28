@@ -74,10 +74,22 @@
           </div>
 
           <div class="video-timeline">
+            <div class="timeline-zoom-row">
+              <div class="timeline-zoom-controls">
+                <button id="videoTimelineZoomOut" class="btn small" type="button" title="Zoom out">-</button>
+                <button id="videoTimelineZoomIn" class="btn small" type="button" title="Zoom in">+</button>
+                <button id="videoTimelineZoomFit" class="btn small" type="button" title="Fit">Fit</button>
+                <span id="videoTimelineZoomLabel" class="timeline-zoom-label">1.0x</span>
+              </div>
+              <div class="timeline-zoom-hint">Wheel: zoom, Shift+wheel: pan</div>
+            </div>
             <div class="timeline-strip" id="videoTimelineStrip">
               <canvas id="videoTimelineCanvas"></canvas>
               <div id="videoTimelineSegments" class="timeline-segments"></div>
               <div id="videoTimelinePlayhead" class="timeline-playhead"></div>
+            </div>
+            <div class="timeline-overview" id="videoTimelineOverview" title="Timeline overview">
+              <div class="timeline-overview-window" id="videoTimelineOverviewWindow"></div>
             </div>
             <div class="timeline-meta">
               <div class="timeline-range">IN <span id="videoTrimStartLabel">00:00</span> - OUT <span id="videoTrimEndLabel">00:00</span></div>
