@@ -474,7 +474,10 @@ if (app.Environment.IsDevelopment())
 }
 
 // Web UI (static files)
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseRouting();
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -634,6 +637,8 @@ app.MapGet("/api/version", () =>
     var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.5.2";
     return Results.Ok(new { version });
 });
+
+app.MapGet("/favicon.ico", () => Results.NoContent());
 
 // PNG-шаблон для OknoFix (готовая карточка с рамкой/тенью)
 var oknoFixOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "jmaka-template-oknofix-001.png");
@@ -1177,6 +1182,49 @@ app.MapPost("/video-overlay-templates/{fileName}/rename", async Task<IResult> (s
 })
 .DisableAntiforgery()
 .Accepts<OverlayRenameRequest>("application/json")
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
+
+app.MapDelete("/video-overlay-templates/{fileName}", async Task<IResult> (string fileName, CancellationToken ct) =>
+{
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(safeFileName, fileName, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "invalid fileName" });
+    }
+
+    var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".png", ".webp", ".jpg", ".jpeg" };
+    var ext = Path.GetExtension(safeFileName);
+    if (string.IsNullOrWhiteSpace(ext) || !allowed.Contains(ext))
+    {
+        return Results.BadRequest(new { error = "invalid overlay file type" });
+    }
+
+    var absolutePath = Path.Combine(videoOverlayDir, safeFileName);
+    if (!File.Exists(absolutePath))
+    {
+        return Results.NotFound(new { error = "overlay not found" });
+    }
+
+    try
+    {
+        File.Delete(absolutePath);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = $"failed to delete overlay: {ex.Message}" });
+    }
+
+    var names = await ReadOverlayNamesAsync(overlayNamesPath, overlayNamesLock, ct);
+    if (names.Remove(safeFileName))
+    {
+        await WriteOverlayNamesAsync(overlayNamesPath, overlayNamesLock, names, ct);
+    }
+
+    return Results.Ok(new { deleted = true, fileName = safeFileName });
+})
+.DisableAntiforgery()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);

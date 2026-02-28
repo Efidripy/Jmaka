@@ -303,10 +303,21 @@ html, body {
   align-items: center;
   justify-content: center;
   white-space: nowrap;
+  transition: transform 110ms ease, border-color 110ms ease, background-color 110ms ease, box-shadow 110ms ease;
 }
 
 .tool-btn:hover {
   border-color: rgba(96, 165, 250, 0.6);
+}
+
+.tool-btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.tool-btn:focus-visible {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.9);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24);
 }
 
 .tool-btn[disabled] {
@@ -332,10 +343,21 @@ html, body {
   cursor: pointer;
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  transition: transform 110ms ease, border-color 110ms ease, background-color 110ms ease, box-shadow 110ms ease;
 }
 
 .size-btn:hover {
   border-color: rgba(96, 165, 250, 0.6);
+}
+
+.size-btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.size-btn:focus-visible {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.9);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24);
 }
 
 .size-btn[disabled] {
@@ -404,12 +426,23 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: transform 90ms ease, border-color 110ms ease, background-color 110ms ease, box-shadow 110ms ease;
 }
 
 .download-btn:hover {
   border-color: rgba(96, 165, 250, 0.9);
   background: rgba(37, 99, 235, 0.25);
   color: var(--accent);
+}
+
+.download-btn:active {
+  transform: scale(0.96);
+}
+
+.download-btn:focus-visible {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.95);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24);
 }
 
 .download-btn svg {
@@ -763,11 +796,22 @@ html, body {
   cursor: pointer;
   display: grid;
   place-items: center;
+  transition: transform 90ms ease, border-color 110ms ease, color 110ms ease, box-shadow 110ms ease;
 }
 
 .del-btn:hover {
   border-color: rgba(239, 68, 68, 0.7);
   color: rgba(239, 68, 68, 0.9);
+}
+
+.del-btn:active {
+  transform: scale(0.96);
+}
+
+.del-btn:focus-visible {
+  outline: none;
+  border-color: rgba(239, 68, 68, 0.9);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.22);
 }
 
 .del-btn svg {
@@ -996,6 +1040,21 @@ html, body {
   background: rgba(17, 24, 39, 0.65);
   color: var(--text);
   cursor: pointer;
+  transition: transform 110ms ease, border-color 110ms ease, background-color 110ms ease, box-shadow 110ms ease;
+}
+
+.btn:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+.btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.btn:focus-visible {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.92);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24);
 }
 
 .btn.primary {
@@ -1128,10 +1187,21 @@ html, body {
   color: var(--text);
   cursor: pointer;
   text-align: left;
+  transition: transform 110ms ease, border-color 110ms ease, background-color 110ms ease, box-shadow 110ms ease;
 }
 
 .split-target:hover {
   border-color: rgba(96, 165, 250, 0.6);
+}
+
+.split-target:active {
+  transform: scale(0.99);
+}
+
+.split-target:focus-visible {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.9);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24);
 }
 
 .split-target.is-active {
@@ -1175,10 +1245,21 @@ html, body {
   background: rgba(17, 24, 39, 0.45);
   cursor: pointer;
   overflow: hidden;
+  transition: transform 90ms ease, border-color 110ms ease, box-shadow 110ms ease;
 }
 
 .split-thumb:hover {
   border-color: rgba(96, 165, 250, 0.6);
+}
+
+.split-thumb:active {
+  transform: scale(0.98);
+}
+
+.split-thumb:focus-visible {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.92);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24);
 }
 
 .split-thumb.is-selected {
@@ -2002,10 +2083,21 @@ html, body {
   font-size: 12px;
   cursor: pointer;
   text-align: left;
+  transition: transform 110ms ease, border-color 110ms ease, background-color 110ms ease, box-shadow 110ms ease;
 }
 
 .lang-btn:hover {
   border-color: rgba(96, 165, 250, 0.6);
+}
+
+.lang-btn:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.lang-btn:focus-visible {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.9);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24);
 }
 
 .lang-btn.is-active {

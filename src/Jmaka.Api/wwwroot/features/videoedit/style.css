@@ -78,6 +78,20 @@
   font-size: 13px;
 }
 
+.video-overlay-delete-btn {
+  min-width: 36px;
+  width: 36px;
+  padding: 0 !important;
+  justify-content: center;
+  font-size: 18px !important;
+  line-height: 1;
+}
+
+.video-overlay-delete-btn:hover {
+  border-color: #ef4444 !important;
+  color: #fca5a5 !important;
+}
+
 .video-tool-group .tool-btn {
   min-height: 36px;
   display: inline-flex;

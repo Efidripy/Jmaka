@@ -30,6 +30,20 @@ const imageEditState = {
   pending: null
 };
 
+function split3RememberViewSize(which, viewW, viewH) {
+  const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
+  if (!st) return;
+  st.viewW = viewW;
+  st.viewH = viewH;
+}
+
+function split3GetRememberedViewSize(st, which) {
+  if (st && Number.isFinite(st.viewW) && Number.isFinite(st.viewH) && st.viewW > 0 && st.viewH > 0) {
+    return { w: st.viewW, h: st.viewH };
+  }
+  return split3GetPanelSize(which);
+}
+
 function split3ShowItem(which) {
   const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
   const el = which === 'a' ? split3ItemA : (which === 'b' ? split3ItemB : split3ItemC);
@@ -52,26 +66,57 @@ function split3ClampMove(which, st, w, h) {
 
 function split3LayoutDefaults() {
   for (const which of ['a', 'b', 'c']) {
+    split3LayoutDefaultFor(which);
+  }
+}
+
+function split3LayoutDefaultFor(which) {
+  const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
+  if (!st.url || !st.natW || !st.natH) return;
+
+  const { w: panelW, h: panelH } = split3GetPanelSize(which);
+  if (!panelW || !panelH) return;
+
+  const aspect = st.natW / st.natH;
+  const targetW = panelW * 1.15;
+  st.w = targetW;
+  st.h = st.w / aspect;
+
+  if (st.h > panelH * 0.9) {
+    st.h = panelH * 0.9;
+    st.w = st.h * aspect;
+  }
+
+  st.x = (panelW - st.w) / 2;
+  st.y = (panelH - st.h) / 2;
+
+  split3ClampMove(which, st, panelW, panelH);
+  split3RememberViewSize(which, panelW, panelH);
+  split3ShowItem(which);
+}
+
+function split3ReflowOnResize() {
+  for (const which of ['a', 'b', 'c']) {
     const st = which === 'a' ? split3State.a : (which === 'b' ? split3State.b : split3State.c);
     if (!st.url || !st.natW || !st.natH) continue;
 
     const { w: panelW, h: panelH } = split3GetPanelSize(which);
     if (!panelW || !panelH) continue;
 
-    const aspect = st.natW / st.natH;
-    const targetW = panelW * 1.15;
-    st.w = targetW;
-    st.h = st.w / aspect;
-
-    if (st.h > panelH * 0.9) {
-      st.h = panelH * 0.9;
-      st.w = st.h * aspect;
+    const prev = split3GetRememberedViewSize(st, which);
+    if (!prev.w || !prev.h || !st.w || !st.h) {
+      split3LayoutDefaultFor(which);
+      continue;
     }
 
-    st.x = (panelW - st.w) / 2;
-    st.y = (panelH - st.h) / 2;
-
+    const sx = panelW / prev.w;
+    const sy = panelH / prev.h;
+    st.x *= sx;
+    st.y *= sy;
+    st.w *= sx;
+    st.h *= sy;
     split3ClampMove(which, st, panelW, panelH);
+    split3RememberViewSize(which, panelW, panelH);
     split3ShowItem(which);
   }
 }
@@ -140,11 +185,12 @@ function split3SetItemFromStoredName(which, storedName) {
   img.onload = () => {
     st.natW = img.naturalWidth || 0;
     st.natH = img.naturalHeight || 0;
-    split3LayoutDefaults();
+    // Replacing one slot should not reset neighboring slot transforms.
+    split3LayoutDefaultFor(which);
   };
 
   img.onerror = () => {
-    if (split3Hint) split3Hint.textContent = 'Не удалось загрузить картинку для Split3.';
+    if (split3Hint) split3Hint.textContent = t('Не удалось загрузить картинку для Split3.');
   };
 
   img.src = url;
@@ -162,7 +208,7 @@ async function openSplit3Modal() {
   if (split3PickTargetB) split3PickTargetB.classList.remove('is-active');
   if (split3PickTargetC) split3PickTargetC.classList.remove('is-active');
 
-  if (split3Hint) split3Hint.textContent = 'Загружаю список...';
+  if (split3Hint) split3Hint.textContent = t('Загружаю список...');
 
   split3State.history = await fetchHistoryRaw();
   const candidates = split3State.history.filter(it => !!(it && it.originalRelativePath && it.imageWidth && it.imageHeight));
@@ -226,8 +272,8 @@ async function openSplit3Modal() {
 
   if (split3Hint) {
     split3Hint.textContent = candidates.length > 0
-      ? 'Выберите слот (#1/#2/#3), затем кликните по превью. Дальше перетаскивайте/масштабируйте.'
-      : 'Нет загруженных изображений.';
+      ? t('Выберите слот (#1/#2/#3), затем кликните по превью. Дальше перетаскивайте/масштабируйте.')
+      : t('Нет загруженных изображений.');
   }
 
   if (split3ApplyBtn) {
@@ -267,7 +313,7 @@ async function applySplit3() {
   const c = split3State.c;
 
   if (!a || !a.storedName || !b || !b.storedName || !c || !c.storedName) {
-    if (split3Hint) split3Hint.textContent = 'Выберите три картинки.';
+    if (split3Hint) split3Hint.textContent = t('Выберите три картинки.');
     return;
   }
 
@@ -276,7 +322,7 @@ async function applySplit3() {
   const panelC = split3GetPanelSize('c');
 
   if (!panelA.w || !panelA.h || !panelB.w || !panelB.h || !panelC.w || !panelC.h) {
-    if (split3Hint) split3Hint.textContent = 'Не удалось определить размер поля.';
+    if (split3Hint) split3Hint.textContent = t('Не удалось определить размер поля.');
     return;
   }
 
@@ -292,7 +338,7 @@ async function applySplit3() {
   try {
     if (split3ApplyBtn) split3ApplyBtn.disabled = true;
     setBusy(true);
-    if (split3Hint) split3Hint.textContent = 'Склеиваю...';
+    if (split3Hint) split3Hint.textContent = t('Склеиваю...');
 
     const res = await fetch(toAbsoluteUrl('split3'), {
       method: 'POST',
@@ -305,7 +351,7 @@ async function applySplit3() {
     try { data = JSON.parse(text); } catch { data = text; }
 
     if (!res.ok) {
-      if (split3Hint) split3Hint.textContent = 'Ошибка split3.';
+      if (split3Hint) split3Hint.textContent = t('Ошибка split3.');
       showResult(data);
       return;
     }
@@ -318,10 +364,10 @@ async function applySplit3() {
     cacheBust.set(c.storedName, Date.now());
     await loadComposites();
 
-    hint.textContent = 'Split3 создан.';
+    hint.textContent = t('Split3 создан.');
     closeSplit3Modal();
   } catch (e) {
-    if (split3Hint) split3Hint.textContent = 'Ошибка split3.';
+    if (split3Hint) split3Hint.textContent = t('Ошибка split3.');
     showResult(String(e));
   } finally {
     setBusy(false);
@@ -448,6 +494,7 @@ function wireSplit3UI() {
         st.x = p.x - split3State.action.offsetX;
         st.y = p.y - split3State.action.offsetY;
         split3ClampMove(which, st, panelW, panelH);
+        split3RememberViewSize(which, panelW, panelH);
         split3ShowItem(which);
         return;
       }
@@ -491,6 +538,7 @@ function wireSplit3UI() {
       st.h = newH;
 
       split3ClampMove(which, st, panelW, panelH);
+      split3RememberViewSize(which, panelW, panelH);
       split3ShowItem(which);
     });
 
@@ -560,6 +608,7 @@ function wireSplit3UI() {
     st.h = newH;
 
     split3ClampMove(which, st, panelW, panelH);
+    split3RememberViewSize(which, panelW, panelH);
     split3ShowItem(which);
   });
 
@@ -573,7 +622,12 @@ function wireSplit3UI() {
 
   window.addEventListener('resize', () => {
     if (!split3State.open) return;
-    split3LayoutDefaults();
+    split3ReflowOnResize();
   });
 }
 
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', wireSplit3UI, { once: true });
+} else {
+  wireSplit3UI();
+}

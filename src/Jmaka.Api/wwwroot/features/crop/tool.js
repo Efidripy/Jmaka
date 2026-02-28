@@ -1449,10 +1449,6 @@ if (cropToolBtn) {
 }
 
 wireCropUI();
-wireSplitUI();
-wireSplit3UI();
-wireOknoFixUI();
-wireOknoScaleUI();
 
 async function deleteComposite(relativePath, tr) {
   if (!relativePath) return;
@@ -1569,4 +1565,3 @@ document.addEventListener('DOMContentLoaded', () => {
   loadHistory();
   loadComposites();
 });
-

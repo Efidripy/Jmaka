@@ -15,6 +15,7 @@
   const videoProcessedRefresh = document.getElementById('videoProcessedRefresh');
   const videoOverlayUploadBtn = document.getElementById('videoOverlayUploadBtn');
   const videoOverlayRenameBtn = document.getElementById('videoOverlayRenameBtn');
+  const videoOverlayDeleteBtn = document.getElementById('videoOverlayDeleteBtn');
   const videoOverlaySelect = document.getElementById('videoOverlaySelect');
   const videoOverlayInput = document.getElementById('videoOverlayInput');
   const videoOverlayPreview = document.getElementById('videoOverlayPreview');
@@ -264,6 +265,9 @@
     videoOverlaySelect.value = selected;
     if (videoOverlayRenameBtn) {
       videoOverlayRenameBtn.disabled = !selected;
+    }
+    if (videoOverlayDeleteBtn) {
+      videoOverlayDeleteBtn.disabled = !selected;
     }
   }
 
@@ -1394,6 +1398,7 @@
       state.overlayTemplateRelativePath = value;
       renderOverlayPreview();
       if (videoOverlayRenameBtn) videoOverlayRenameBtn.disabled = !value;
+      if (videoOverlayDeleteBtn) videoOverlayDeleteBtn.disabled = !value;
     });
   }
 
@@ -1424,6 +1429,35 @@
         setStatus('Overlay renamed', 100);
       } catch (err) {
         setStatus(`Overlay rename failed: ${String(err || '').trim()}`.trim(), 0);
+      }
+    });
+  }
+
+  if (videoOverlayDeleteBtn) {
+    videoOverlayDeleteBtn.addEventListener('click', async () => {
+      const selected = getSelectedOverlayTemplate();
+      if (!selected || !selected.fileName) return;
+      const name = selected.displayName || selected.fileName;
+      if (!window.confirm(`Delete overlay "${name}" permanently?`)) return;
+
+      setStatus('Deleting overlay...', null, { indeterminate: true });
+      try {
+        const res = await fetch(toAbsoluteUrl(`video-overlay-templates/${encodeURIComponent(selected.fileName)}`), {
+          method: 'DELETE'
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(data && data.error ? data.error : `delete failed (${res.status})`);
+        }
+        if (state.overlayTemplateRelativePath === selected.relativePath) {
+          state.overlayTemplateRelativePath = null;
+        }
+        await loadOverlayTemplates();
+        renderOverlayTemplates();
+        renderOverlayPreview();
+        setStatus('Overlay deleted', 100);
+      } catch (err) {
+        setStatus(`Overlay delete failed: ${String(err || '').trim()}`.trim(), 0);
       }
     });
   }
@@ -1506,7 +1540,9 @@
         cutEndSec: null,
         outputWidth: 1280,
         targetSizeMb,
-        verticalOffsetPx: offsetOutPx,
+        // Frontend drag direction is opposite of FFmpeg crop Y offset sign.
+        // Invert it to match preview and final output.
+        verticalOffsetPx: -offsetOutPx,
         segments: state.segments.map((x) => ({ startSec: x.start, endSec: x.end })),
         cropX: state.crop.x,
         cropY: state.crop.y,

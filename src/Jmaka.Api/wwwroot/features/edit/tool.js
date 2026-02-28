@@ -766,7 +766,9 @@ updatePanelCollapsing();
 // Load version from API and update all UI elements
 async function loadVersion() {
   try {
-    const res = await fetch('/api/version');
+    const res = (typeof fetchWithFallback === 'function')
+      ? await fetchWithFallback('api/version', { cache: 'no-store' })
+      : await fetch(toAbsoluteUrl('api/version'), { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       if (data.version) {
