@@ -9,10 +9,10 @@ const defaultImageEditParams = () => ({
 
 const presetValues = {
   Auto: {
-    color: { vibrance: 10, saturation: 5, temperature: 0, tint: 0, hue: 0 },
-    light: { brightness: 5, exposure: 3, contrast: 8, black: 0, white: 0, highlights: -5, shadows: 8 },
-    details: { sharpen: 5, clarity: 8, smooth: 0, blur: 0, grain: 0 },
-    scene: { vignette: 0, glamour: 0, bloom: 0, dehaze: 5 }
+    color: { vibrance: 8, saturation: 4, temperature: 0, tint: 0, hue: 0 },
+    light: { brightness: 2, exposure: 2, contrast: 7, black: 0, white: 0, highlights: -4, shadows: 6 },
+    details: { sharpen: 4, clarity: 8, smooth: 0, blur: 0, grain: 0 },
+    scene: { vignette: 0, glamour: 0, bloom: 0, dehaze: 4 }
   },
   BW: {
     color: { vibrance: 0, saturation: -100, temperature: 0, tint: 0, hue: 0 },
@@ -21,12 +21,153 @@ const presetValues = {
     scene: { vignette: 10, glamour: 0, bloom: 0, dehaze: 0 }
   },
   Pop: {
-    color: { vibrance: 18, saturation: 12, temperature: 0, tint: 0, hue: 0 },
-    light: { brightness: 3, exposure: 2, contrast: 14, black: 0, white: 6, highlights: 0, shadows: 4 },
-    details: { sharpen: 8, clarity: 12, smooth: 0, blur: 0, grain: 0 },
-    scene: { vignette: 6, glamour: 0, bloom: 4, dehaze: 6 }
+    color: { vibrance: 24, saturation: 14, temperature: 0, tint: 0, hue: 0 },
+    light: { brightness: 0, exposure: 0, contrast: 14, black: 2, white: 4, highlights: -4, shadows: 5 },
+    details: { sharpen: 10, clarity: 15, smooth: 0, blur: 0, grain: 0 },
+    scene: { vignette: 8, glamour: 0, bloom: 2, dehaze: 8 }
   }
 };
+
+function clampPresetValue(value, min, max) {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function analyzeImageStats(imageData) {
+  const data = imageData.data;
+  const totalPixels = imageData.width * imageData.height;
+  const targetSamples = 20000;
+  const step = Math.max(1, Math.floor(totalPixels / targetSamples));
+
+  let sumLuma = 0;
+  let sumLumaSq = 0;
+  let satSum = 0;
+  let highClip = 0;
+  let lowClip = 0;
+  let samples = 0;
+
+  for (let i = 0; i < data.length; i += 4 * step) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const sat = maxC > 0 ? (maxC - minC) / maxC : 0;
+
+    sumLuma += luma;
+    sumLumaSq += luma * luma;
+    satSum += sat;
+    if (luma > 245) highClip += 1;
+    if (luma < 10) lowClip += 1;
+    samples += 1;
+  }
+
+  if (!samples) {
+    return {
+      meanLuma: 128,
+      contrastStd: 48,
+      meanSaturation: 0.32,
+      highClipRatio: 0,
+      lowClipRatio: 0
+    };
+  }
+
+  const meanLuma = sumLuma / samples;
+  const variance = Math.max(0, (sumLumaSq / samples) - (meanLuma * meanLuma));
+  return {
+    meanLuma,
+    contrastStd: Math.sqrt(variance),
+    meanSaturation: satSum / samples,
+    highClipRatio: highClip / samples,
+    lowClipRatio: lowClip / samples
+  };
+}
+
+function buildAdaptiveAutoPreset(stats) {
+  const lumaError = 126 - stats.meanLuma;
+  const contrastError = 52 - stats.contrastStd;
+  const satError = 0.34 - stats.meanSaturation;
+  const clipBias = stats.highClipRatio - stats.lowClipRatio;
+
+  return {
+    color: {
+      vibrance: clampPresetValue(8 + satError * 80 - clipBias * 12, -100, 100),
+      saturation: clampPresetValue(4 + satError * 55 - clipBias * 8, -100, 100),
+      temperature: 0,
+      tint: 0,
+      hue: 0
+    },
+    light: {
+      brightness: clampPresetValue(lumaError * 0.35, -100, 100),
+      exposure: clampPresetValue(lumaError * 0.28, -100, 100),
+      contrast: clampPresetValue(contrastError * 0.55, -100, 100),
+      black: clampPresetValue(stats.lowClipRatio * 120 - 2, -100, 100),
+      white: clampPresetValue(stats.highClipRatio * 120 - 2, -100, 100),
+      highlights: clampPresetValue(-stats.highClipRatio * 260 + lumaError * 0.08, -100, 100),
+      shadows: clampPresetValue(stats.lowClipRatio * 240 + lumaError * 0.14, -100, 100)
+    },
+    details: {
+      sharpen: clampPresetValue(3 + Math.max(0, 56 - stats.contrastStd) * 0.10, -100, 100),
+      clarity: clampPresetValue(6 + Math.max(0, 55 - stats.contrastStd) * 0.18, -100, 100),
+      smooth: 0,
+      blur: 0,
+      grain: 0
+    },
+    scene: {
+      vignette: 0,
+      glamour: 0,
+      bloom: clampPresetValue(Math.max(0, 118 - stats.meanLuma) * 0.08, -100, 100),
+      dehaze: clampPresetValue(Math.max(0, 56 - stats.contrastStd) * 0.22, -100, 100)
+    }
+  };
+}
+
+function buildAdaptivePopPreset(stats) {
+  const lowSatBoost = Math.max(0, 0.46 - stats.meanSaturation);
+  const lowContrastBoost = Math.max(0, 58 - stats.contrastStd);
+  const protectHighlights = stats.highClipRatio * 1.0;
+
+  return {
+    color: {
+      vibrance: clampPresetValue(20 + lowSatBoost * 90, -100, 100),
+      saturation: clampPresetValue(10 + lowSatBoost * 55, -100, 100),
+      temperature: 0,
+      tint: 0,
+      hue: 0
+    },
+    light: {
+      brightness: clampPresetValue((120 - stats.meanLuma) * 0.12, -100, 100),
+      exposure: clampPresetValue((122 - stats.meanLuma) * 0.10, -100, 100),
+      contrast: clampPresetValue(12 + lowContrastBoost * 0.16 - protectHighlights * 8, -100, 100),
+      black: clampPresetValue(2 + lowContrastBoost * 0.05, -100, 100),
+      white: clampPresetValue(4 - protectHighlights * 20, -100, 100),
+      highlights: clampPresetValue(-4 - protectHighlights * 45, -100, 100),
+      shadows: clampPresetValue(4 + Math.max(0, 0.03 - stats.lowClipRatio) * 150, -100, 100)
+    },
+    details: {
+      sharpen: clampPresetValue(8 + lowContrastBoost * 0.09, -100, 100),
+      clarity: clampPresetValue(14 + lowContrastBoost * 0.12, -100, 100),
+      smooth: 0,
+      blur: 0,
+      grain: 0
+    },
+    scene: {
+      vignette: clampPresetValue(7 + lowContrastBoost * 0.03, -100, 100),
+      glamour: 0,
+      bloom: clampPresetValue(Math.max(0, 115 - stats.meanLuma) * 0.08, -100, 100),
+      dehaze: clampPresetValue(8 + lowContrastBoost * 0.16, -100, 100)
+    }
+  };
+}
+
+function getAdaptivePresetValues(presetKey) {
+  const source = imageEditState && imageEditState.originalImageData;
+  if (!source) return presetValues[presetKey] || null;
+  const stats = analyzeImageStats(source);
+  if (presetKey === 'Auto') return buildAdaptiveAutoPreset(stats);
+  if (presetKey === 'Pop') return buildAdaptivePopPreset(stats);
+  return presetValues[presetKey] || null;
+}
 
 function cloneParams(params) {
   return JSON.parse(JSON.stringify(params));
@@ -118,7 +259,7 @@ function initImageEditSliders() {
 }
 
 function applyPreset(presetKey) {
-  const preset = presetValues[presetKey];
+  const preset = getAdaptivePresetValues(presetKey);
   if (!preset) return;
   imageEditState.params = {
     preset: presetKey,

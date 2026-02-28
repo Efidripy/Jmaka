@@ -3,7 +3,6 @@ using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Metadata.Profiles.Icc;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
-using System.Reflection;
 
 namespace Jmaka.Api.Services;
 
@@ -43,14 +42,6 @@ public class ImagePipelineService
         Quality = 92,
         Interleaved = true
     };
-
-    private static readonly MethodInfo[] VignetteMethods = typeof(IImageProcessingContext)
-        .Assembly
-        .GetTypes()
-        .Where(t => t.IsSealed && t.IsAbstract && t.Name == "VignetteExtensions")
-        .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
-        .Where(m => m.Name == "Vignette")
-        .ToArray();
 
     public ImagePipelineService(ILogger<ImagePipelineService> logger)
     {
@@ -182,24 +173,37 @@ public class ImagePipelineService
         var details = request.Details ?? new ImageEditDetailsParams(0, 0, 0, 0, 0);
         var scene = request.Scene ?? new ImageEditSceneParams(0, 0, 0, 0);
 
-        var brightnessBoost = (light.Brightness + light.Exposure * 0.7f + scene.Bloom * 0.4f) / 100f;
-        var contrastBoost = (light.Contrast + details.Clarity * 0.5f + scene.Dehaze * 0.4f) / 100f;
-        var saturationBoost = (color.Saturation + color.Vibrance * 0.6f) / 100f;
+        var brightness = light.Brightness / 100f;
+        var exposure = light.Exposure / 100f;
+        var contrast = light.Contrast / 100f;
+        var saturation = color.Saturation / 100f;
+        var vibrance = color.Vibrance / 100f;
+        var temperature = color.Temperature / 100f;
+        var tint = color.Tint / 100f;
         var hue = color.Hue;
-        var blur = Math.Max(details.Blur, details.Smooth) / 100f;
-        var sharpen = Math.Max(details.Sharpen, 0) / 100f;
+        var highlights = light.Highlights / 100f;
+        var shadows = light.Shadows / 100f;
+        var black = light.Black / 100f;
+        var white = light.White / 100f;
+        var clarity = details.Clarity / 100f;
+        var grain = details.Grain / 100f;
         var vignette = scene.Vignette / 100f;
+        var dehaze = scene.Dehaze / 100f;
+        var glamour = scene.Glamour / 100f;
+        var bloom = scene.Bloom / 100f;
+
+        var blur = Math.Max(Math.Max(details.Blur, details.Smooth), scene.Glamour > 0 ? 8f : 0f) / 100f;
+        var sharpen = Math.Max(details.Sharpen, 0) / 100f;
+
+        var contrastFactor = Math.Max(0.05f, 1f + contrast + clarity * 0.3f + dehaze * 0.2f);
+        var brightnessOffset = brightness * 40f + exposure * 60f + bloom * 25f;
+        var hueShift = (hue / 180f) * MathF.PI;
+        var cosH = MathF.Cos(hueShift);
+        var sinH = MathF.Sin(hueShift);
+        var glamourLift = glamour >= 0 ? glamour * 6f : glamour * 3f;
 
         image.Mutate(ctx =>
         {
-            // Note: AutoOrient is now handled in NormalizeToSrgb
-            ctx.Brightness(1 + brightnessBoost);
-            ctx.Contrast(1 + contrastBoost);
-            ctx.Saturate(1 + saturationBoost);
-            if (Math.Abs(hue) > 0.01f)
-            {
-                ctx.Hue(hue);
-            }
             if (blur > 0)
             {
                 ctx.GaussianBlur(blur * 6);
@@ -208,38 +212,128 @@ public class ImagePipelineService
             {
                 ctx.GaussianSharpen(sharpen * 3);
             }
-            if (Math.Abs(vignette) > 0.01f)
+        });
+
+        using var rgba = image.CloneAs<Rgba32>();
+        var width = rgba.Width;
+        var height = rgba.Height;
+        rgba.ProcessPixelRows(accessor =>
+        {
+            for (var y = 0; y < height; y++)
             {
-                ApplyVignetteCompat(ctx, Math.Abs(vignette) * 0.6f);
+                var row = accessor.GetRowSpan(y);
+                for (var x = 0; x < width; x++)
+                {
+                    var px = row[x];
+                    var r = (float)px.R;
+                    var g = (float)px.G;
+                    var b = (float)px.B;
+
+                    // Temperature and tint shifts.
+                    r += temperature * 18f;
+                    b -= temperature * 18f;
+                    g += tint * 12f;
+                    r -= tint * 6f;
+                    b -= tint * 6f;
+
+                    // Contrast/brightness blend with exposure and scene boosts.
+                    r = (r - 128f) * contrastFactor + 128f + brightnessOffset;
+                    g = (g - 128f) * contrastFactor + 128f + brightnessOffset;
+                    b = (b - 128f) * contrastFactor + 128f + brightnessOffset;
+
+                    // Black/white and highlight/shadow tuning by luma region.
+                    var luma = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+                    if (luma < 128f)
+                    {
+                        var shadowBoost = (shadows + black * 0.6f) * (1f - luma / 128f);
+                        r += shadowBoost * 55f;
+                        g += shadowBoost * 55f;
+                        b += shadowBoost * 55f;
+                    }
+                    else
+                    {
+                        var highlightBoost = (highlights + white * 0.6f) * ((luma - 128f) / 127f);
+                        r += highlightBoost * 55f;
+                        g += highlightBoost * 55f;
+                        b += highlightBoost * 55f;
+                    }
+
+                    // Hue rotation matrix.
+                    var rPrime = r * (0.299f + 0.701f * cosH + 0.168f * sinH)
+                        + g * (0.587f - 0.587f * cosH + 0.330f * sinH)
+                        + b * (0.114f - 0.114f * cosH - 0.497f * sinH);
+                    var gPrime = r * (0.299f - 0.299f * cosH - 0.328f * sinH)
+                        + g * (0.587f + 0.413f * cosH + 0.035f * sinH)
+                        + b * (0.114f - 0.114f * cosH + 0.292f * sinH);
+                    var bPrime = r * (0.299f - 0.300f * cosH + 1.250f * sinH)
+                        + g * (0.587f - 0.588f * cosH - 1.050f * sinH)
+                        + b * (0.114f + 0.886f * cosH - 0.203f * sinH);
+
+                    r = rPrime;
+                    g = gPrime;
+                    b = bPrime;
+
+                    // Saturation and vibrance.
+                    var avg = (r + g + b) / 3f;
+                    var vibranceWeight = 1f - MathF.Min(1f, MathF.Abs(avg - 128f) / 128f);
+                    var satFactor = MathF.Max(0f, 1f + saturation + vibrance * vibranceWeight);
+                    r = avg + (r - avg) * satFactor;
+                    g = avg + (g - avg) * satFactor;
+                    b = avg + (b - avg) * satFactor;
+
+                    // Glamour soft-lift.
+                    r += glamourLift;
+                    g += glamourLift;
+                    b += glamourLift;
+
+                    // Grain uses deterministic coordinate noise for stable exports.
+                    if (grain != 0)
+                    {
+                        var noise = DeterministicNoise(x, y) * grain * 18f;
+                        r += noise;
+                        g += noise;
+                        b += noise;
+                    }
+
+                    if (vignette != 0)
+                    {
+                        var dx = (x / (float)width) - 0.5f;
+                        var dy = (y / (float)height) - 0.5f;
+                        var dist = MathF.Sqrt(dx * dx + dy * dy);
+                        var vig = 1f - MathF.Min(1f, dist * 1.6f) * MathF.Abs(vignette);
+                        r *= vig;
+                        g *= vig;
+                        b *= vig;
+                    }
+
+                    row[x] = new Rgba32(
+                        ClampByte(r),
+                        ClampByte(g),
+                        ClampByte(b),
+                        px.A);
+                }
             }
         });
+
+        image.Mutate(ctx => ctx.DrawImage(rgba, 1f));
     }
 
-    private static void ApplyVignetteCompat(IImageProcessingContext ctx, float strength)
+    private static float DeterministicNoise(int x, int y)
     {
-        // ImageSharp API has differed between versions/build agents.
-        // We resolve and invoke a compatible overload dynamically to avoid CI compile failures.
-        foreach (var method in VignetteMethods)
+        unchecked
         {
-            var ps = method.GetParameters();
-            if (ps.Length == 2 && ps[1].ParameterType == typeof(float))
-            {
-                method.Invoke(null, [ctx, strength]);
-                return;
-            }
-
-            if (ps.Length == 3 && ps[1].ParameterType == typeof(float) && ps[2].ParameterType == typeof(Color))
-            {
-                method.Invoke(null, [ctx, strength, Color.Black]);
-                return;
-            }
-
-            if (ps.Length == 3 && ps[1].ParameterType == typeof(Color) && ps[2].ParameterType == typeof(float))
-            {
-                method.Invoke(null, [ctx, Color.Black, strength]);
-                return;
-            }
+            uint h = (uint)(x * 374761393 + y * 668265263);
+            h = (h ^ (h >> 13)) * 1274126177;
+            h ^= h >> 16;
+            return ((h & 0xFFFF) / 65535f) - 0.5f;
         }
+    }
+
+    private static byte ClampByte(float value)
+    {
+        if (value <= 0f) return 0;
+        if (value >= 255f) return 255;
+        return (byte)MathF.Round(value);
     }
 
     public async Task SaveJpegAsync(Image image, string outputPath, CancellationToken ct)
