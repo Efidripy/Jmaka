@@ -14,6 +14,7 @@
   const videoHistoryRefresh = document.getElementById('videoHistoryRefresh');
   const videoProcessedRefresh = document.getElementById('videoProcessedRefresh');
   const videoOverlayUploadBtn = document.getElementById('videoOverlayUploadBtn');
+  const videoOverlayRenameBtn = document.getElementById('videoOverlayRenameBtn');
   const videoOverlaySelect = document.getElementById('videoOverlaySelect');
   const videoOverlayInput = document.getElementById('videoOverlayInput');
   const videoOverlayPreview = document.getElementById('videoOverlayPreview');
@@ -257,10 +258,18 @@
     overlayTemplates.forEach((item) => {
       const opt = document.createElement('option');
       opt.value = item.relativePath;
-      opt.textContent = item.fileName || item.relativePath;
+      opt.textContent = item.displayName || item.fileName || item.relativePath;
       videoOverlaySelect.appendChild(opt);
     });
     videoOverlaySelect.value = selected;
+    if (videoOverlayRenameBtn) {
+      videoOverlayRenameBtn.disabled = !selected;
+    }
+  }
+
+  function getSelectedOverlayTemplate() {
+    if (!state.overlayTemplateRelativePath) return null;
+    return overlayTemplates.find((x) => x && x.relativePath === state.overlayTemplateRelativePath) || null;
   }
 
   function renderOverlayPreview() {
@@ -1384,6 +1393,38 @@
       const value = videoOverlaySelect.value || null;
       state.overlayTemplateRelativePath = value;
       renderOverlayPreview();
+      if (videoOverlayRenameBtn) videoOverlayRenameBtn.disabled = !value;
+    });
+  }
+
+  if (videoOverlayRenameBtn) {
+    videoOverlayRenameBtn.addEventListener('click', async () => {
+      const selected = getSelectedOverlayTemplate();
+      if (!selected || !selected.fileName) return;
+      const currentName = selected.displayName || selected.fileName;
+      const nextName = window.prompt('Overlay name', currentName);
+      if (nextName === null) return;
+      const normalized = String(nextName || '').trim();
+      if (!normalized) return;
+      setStatus('Renaming overlay...', null, { indeterminate: true });
+      try {
+        const res = await fetch(toAbsoluteUrl(`video-overlay-templates/${encodeURIComponent(selected.fileName)}/rename`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ displayName: normalized })
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(data && data.error ? data.error : `rename failed (${res.status})`);
+        }
+        await loadOverlayTemplates();
+        state.overlayTemplateRelativePath = data && data.relativePath ? data.relativePath : state.overlayTemplateRelativePath;
+        renderOverlayTemplates();
+        renderOverlayPreview();
+        setStatus('Overlay renamed', 100);
+      } catch (err) {
+        setStatus(`Overlay rename failed: ${String(err || '').trim()}`.trim(), 0);
+      }
     });
   }
 

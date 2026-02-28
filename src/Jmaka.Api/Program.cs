@@ -91,6 +91,7 @@ var dataDir = Path.Combine(storageRoot, "data");
 var historyPath = Path.Combine(dataDir, "history.json");
 var compositesPath = Path.Combine(dataDir, "composites.json");
 var videoHistoryPath = Path.Combine(dataDir, "video-history.json");
+var overlayNamesPath = Path.Combine(dataDir, "video-overlay-names.json");
 Directory.CreateDirectory(uploadDir);
 Directory.CreateDirectory(uploadOriginalDir);
 Directory.CreateDirectory(resizedDir);
@@ -113,6 +114,7 @@ foreach (var w in resizeWidths)
 var historyLock = new SemaphoreSlim(1, 1);
 var compositesLock = new SemaphoreSlim(1, 1);
 var videoHistoryLock = new SemaphoreSlim(1, 1);
+var overlayNamesLock = new SemaphoreSlim(1, 1);
 var uploadNormalizeJobs = new ConcurrentDictionary<Guid, UploadNormalizeJobState>();
 
 // Retention: delete entries/files older than N hours (default 48h)
@@ -1045,18 +1047,23 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, ILogger<P
 .Produces(StatusCodes.Status400BadRequest);
 
 // --- Video overlay templates ---
-app.MapGet("/video-overlay-templates", () =>
+app.MapGet("/video-overlay-templates", async Task<IResult> (CancellationToken ct) =>
 {
     var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".png", ".webp", ".jpg", ".jpeg" };
+    var names = await ReadOverlayNamesAsync(overlayNamesPath, overlayNamesLock, ct);
     var items = Directory.EnumerateFiles(videoOverlayDir, "*.*", SearchOption.TopDirectoryOnly)
         .Where(path => allowed.Contains(Path.GetExtension(path)))
         .Select(path =>
         {
             var info = new FileInfo(path);
             var fileName = info.Name;
+            var displayName = names.TryGetValue(fileName, out var customName) && !string.IsNullOrWhiteSpace(customName)
+                ? customName
+                : Path.GetFileNameWithoutExtension(fileName);
             return new
             {
                 fileName,
+                displayName,
                 relativePath = $"video-overlays/{fileName}",
                 createdAt = new DateTimeOffset(info.CreationTimeUtc, TimeSpan.Zero),
                 size = info.Length
@@ -1105,9 +1112,15 @@ app.MapPost("/upload-video-overlay-template", async Task<IResult> (HttpRequest r
         await file.CopyToAsync(stream, ct);
     }
 
+    var names = await ReadOverlayNamesAsync(overlayNamesPath, overlayNamesLock, ct);
+    var baseDisplayName = Path.GetFileNameWithoutExtension(file.FileName);
+    names[storedName] = string.IsNullOrWhiteSpace(baseDisplayName) ? Path.GetFileNameWithoutExtension(storedName) : baseDisplayName.Trim();
+    await WriteOverlayNamesAsync(overlayNamesPath, overlayNamesLock, names, ct);
+
     return Results.Ok(new
     {
         fileName = storedName,
+        displayName = names[storedName],
         relativePath = $"video-overlays/{storedName}",
         originalName = file.FileName,
         size = file.Length,
@@ -1118,6 +1131,55 @@ app.MapPost("/upload-video-overlay-template", async Task<IResult> (HttpRequest r
 .Accepts<IFormFile>("multipart/form-data")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
+
+app.MapPost("/video-overlay-templates/{fileName}/rename", async Task<IResult> (string fileName, OverlayRenameRequest req, CancellationToken ct) =>
+{
+    if (req is null || string.IsNullOrWhiteSpace(req.DisplayName))
+    {
+        return Results.BadRequest(new { error = "displayName is required" });
+    }
+
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(safeFileName, fileName, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { error = "invalid fileName" });
+    }
+
+    var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".png", ".webp", ".jpg", ".jpeg" };
+    var ext = Path.GetExtension(safeFileName);
+    if (string.IsNullOrWhiteSpace(ext) || !allowed.Contains(ext))
+    {
+        return Results.BadRequest(new { error = "invalid overlay file type" });
+    }
+
+    var absolutePath = Path.Combine(videoOverlayDir, safeFileName);
+    if (!File.Exists(absolutePath))
+    {
+        return Results.NotFound(new { error = "overlay not found" });
+    }
+
+    var displayName = req.DisplayName.Trim();
+    if (displayName.Length > 80)
+    {
+        displayName = displayName[..80];
+    }
+
+    var names = await ReadOverlayNamesAsync(overlayNamesPath, overlayNamesLock, ct);
+    names[safeFileName] = displayName;
+    await WriteOverlayNamesAsync(overlayNamesPath, overlayNamesLock, names, ct);
+
+    return Results.Ok(new
+    {
+        fileName = safeFileName,
+        displayName,
+        relativePath = $"video-overlays/{safeFileName}"
+    });
+})
+.DisableAntiforgery()
+.Accepts<OverlayRenameRequest>("application/json")
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status400BadRequest)
+.Produces(StatusCodes.Status404NotFound);
 
 // --- Image edit endpoints ---
 app.MapGet("/images", async Task<IResult> (CancellationToken ct) =>
@@ -2899,6 +2961,61 @@ static async Task<VideoHistoryItem?> RemoveVideoHistoryEntryAsync(string history
     return removed;
 }
 
+static async Task<Dictionary<string, string>> ReadOverlayNamesAsync(string namesPath, SemaphoreSlim namesLock, CancellationToken ct)
+{
+    await namesLock.WaitAsync(ct);
+    try
+    {
+        if (!File.Exists(namesPath))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var json = await File.ReadAllTextAsync(namesPath, ct);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(json)
+            ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        return new Dictionary<string, string>(parsed, StringComparer.OrdinalIgnoreCase);
+    }
+    catch
+    {
+        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    }
+    finally
+    {
+        namesLock.Release();
+    }
+}
+
+static async Task WriteOverlayNamesAsync(string namesPath, SemaphoreSlim namesLock, Dictionary<string, string> names, CancellationToken ct)
+{
+    await namesLock.WaitAsync(ct);
+    try
+    {
+        var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in names)
+        {
+            var key = Path.GetFileName(pair.Key ?? string.Empty);
+            var value = (pair.Value ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+            normalized[key] = value.Length > 80 ? value[..80] : value;
+        }
+        var json = JsonSerializer.Serialize(normalized, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(namesPath, json, ct);
+    }
+    finally
+    {
+        namesLock.Release();
+    }
+}
+
 static void DeleteVideoFilesForEntry(VideoHistoryItem entry, string videoDir, string videoOutDir)
 {
     var safeName = Path.GetFileName(entry.StoredName ?? string.Empty);
@@ -3062,6 +3179,7 @@ record UploadHistoryItem(
 
 record CompositeDeleteRequest(string RelativePath);
 record VideoDeleteRequest(string StoredName);
+record OverlayRenameRequest(string DisplayName);
 
 public record VideoProcessRequest(
     string StoredName,
