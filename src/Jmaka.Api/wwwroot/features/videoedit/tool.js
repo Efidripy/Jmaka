@@ -13,6 +13,12 @@
   const videoUploadBtn = document.getElementById('videoUploadBtn');
   const videoHistoryRefresh = document.getElementById('videoHistoryRefresh');
   const videoProcessedRefresh = document.getElementById('videoProcessedRefresh');
+  const videoOverlayUploadBtn = document.getElementById('videoOverlayUploadBtn');
+  const videoOverlaySelect = document.getElementById('videoOverlaySelect');
+  const videoOverlayInput = document.getElementById('videoOverlayInput');
+  const videoOverlayPreview = document.getElementById('videoOverlayPreview');
+  const videoStatusText = document.getElementById('videoStatusText');
+  const videoStatusBar = document.getElementById('videoStatusBar');
   const videoOriginalsList = document.getElementById('videoOriginalsList');
   const videoProcessedList = document.getElementById('videoProcessedList');
   const videoTimelineStrip = document.getElementById('videoTimelineStrip');
@@ -25,6 +31,7 @@
   const videoDuration = document.getElementById('videoDuration');
   const videoPlayToggle = document.getElementById('videoPlayToggle');
   const videoEditSave = document.getElementById('videoEditSave');
+  const videoPreviewStage = videoEditModal.querySelector('.video-preview-stage');
   const videoRotateCw = document.getElementById('videoRotateCw');
   const videoRotateCcw = document.getElementById('videoRotateCcw');
   const videoRotateReset = document.getElementById('videoRotateReset');
@@ -45,6 +52,7 @@
   const videoResetBtn = document.getElementById('videoResetBtn');
   const videoModeVidcov = document.getElementById('videoModeVidcov');
   const sizeLimitButtons = Array.from(videoEditModal.querySelectorAll('[data-size-limit]'));
+  const cropRatioButtons = Array.from(videoEditModal.querySelectorAll('[data-crop-ratio]'));
 
   const timelinePreviewState = {
     dirty: true,
@@ -68,6 +76,9 @@
     flipH: false,
     flipV: false,
     speed: 1,
+    cropRatio: null,
+    verticalOffsetPx: 0,
+    overlayTemplateRelativePath: null,
     muteAudio: false,
     targetSizeMb: 10,
     selectedSizeLimit: '10mb',
@@ -75,7 +86,9 @@
 
   let originals = [];
   let processed = [];
+  let overlayTemplates = [];
   let timelineDrag = null;
+  let verticalDrag = null;
 
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -114,6 +127,16 @@
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  function formatEta(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '00:00';
+    const total = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
   function normalizeSegments() {
     const duration = state.duration || 0;
     const minGap = 0.1;
@@ -144,6 +167,48 @@
 
   function setHint(text) {
     if (videoEditHint) videoEditHint.textContent = text;
+    setStatus(text, null);
+  }
+
+  function setStatus(text, percent, options = {}) {
+    const indeterminate = !!options.indeterminate;
+    if (videoStatusText) videoStatusText.textContent = text || 'Ready';
+    if (videoStatusBar) {
+      videoStatusBar.classList.toggle('is-indeterminate', indeterminate);
+      const pct = Number.isFinite(percent) ? clamp(percent, 0, 100) : 0;
+      videoStatusBar.style.width = indeterminate ? '55%' : `${pct}%`;
+    }
+  }
+
+  function parseProgressPercent(raw) {
+    if (typeof raw === 'number' && Number.isFinite(raw)) return clamp(raw, 0, 100);
+    const m = String(raw || '').match(/(\d+(?:\.\d+)?)\s*%?/);
+    if (!m) return null;
+    const value = Number(m[1]);
+    return Number.isFinite(value) ? clamp(value, 0, 100) : null;
+  }
+
+  function uploadFormWithProgress(url, formData, onProgress, onUploadComplete) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', toAbsoluteUrl(url), true);
+      xhr.responseType = 'json';
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable || typeof onProgress !== 'function') return;
+        onProgress((event.loaded / event.total) * 100);
+      };
+      xhr.upload.onload = () => {
+        if (typeof onUploadComplete === 'function') onUploadComplete();
+      };
+      xhr.onload = () => {
+        const payload = xhr.response || (() => {
+          try { return JSON.parse(xhr.responseText || '{}'); } catch { return null; }
+        })();
+        resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: payload });
+      };
+      xhr.onerror = () => reject(new Error('network error'));
+      xhr.send(formData);
+    });
   }
 
   function setProcessing(isProcessing) {
@@ -154,22 +219,74 @@
   function renderToolState() {
     toolButtons.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.tool === state.tool));
     toolPanels.forEach((panel) => { panel.hidden = panel.dataset.toolPanel !== state.tool; });
+    cropRatioButtons.forEach((btn) => btn.classList.toggle('is-active', state.cropRatio === btn.dataset.cropRatio));
     if (videoCropOverlay) videoCropOverlay.hidden = state.tool !== 'crop';
+    if (videoPreviewStage) {
+      const hasVideo = videoEditPreview && videoEditPreview.videoWidth && videoEditPreview.videoHeight;
+      videoPreviewStage.classList.toggle('is-draggable', !!hasVideo);
+    }
     if (videoSegmentsInfo) {
       const n = state.segments.length;
       videoSegmentsInfo.textContent = `${n} segment${n === 1 ? '' : 's'}`;
     }
   }
 
+  function renderOverlayTemplates() {
+    if (!videoOverlaySelect) return;
+    const selected = state.overlayTemplateRelativePath || '';
+    videoOverlaySelect.innerHTML = '';
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = 'No overlay';
+    videoOverlaySelect.appendChild(empty);
+    overlayTemplates.forEach((item) => {
+      const opt = document.createElement('option');
+      opt.value = item.relativePath;
+      opt.textContent = item.fileName || item.relativePath;
+      videoOverlaySelect.appendChild(opt);
+    });
+    videoOverlaySelect.value = selected;
+  }
+
+  function renderOverlayPreview() {
+    if (!videoOverlayPreview) return;
+    if (!state.overlayTemplateRelativePath) {
+      videoOverlayPreview.hidden = true;
+      videoOverlayPreview.removeAttribute('src');
+      return;
+    }
+    videoOverlayPreview.hidden = false;
+    videoOverlayPreview.src = toAbsoluteUrl(state.overlayTemplateRelativePath);
+  }
+
   function renderPlaybackState() {
     if (!videoEditPreview) return;
+    const maxOffset = getMaxVerticalOffsetPx();
+    if (Number.isFinite(maxOffset)) {
+      state.verticalOffsetPx = clamp(state.verticalOffsetPx, -maxOffset, maxOffset);
+    } else {
+      state.verticalOffsetPx = 0;
+    }
     const flipX = state.flipH ? -1 : 1;
     const flipY = state.flipV ? -1 : 1;
-    videoEditPreview.style.transform = `rotate(${state.rotateDeg}deg) scale(${flipX}, ${flipY})`;
+    videoEditPreview.style.transform = `translateY(${state.verticalOffsetPx}px) rotate(${state.rotateDeg}deg) scale(${flipX}, ${flipY})`;
     videoEditPreview.playbackRate = state.speed;
     if (videoSpeedValue) videoSpeedValue.textContent = `${state.speed.toFixed(1)}x`;
     if (videoFlipH) videoFlipH.classList.toggle('is-active', state.flipH);
     if (videoFlipV) videoFlipV.classList.toggle('is-active', state.flipV);
+  }
+
+  function getMaxVerticalOffsetPx() {
+    if (!videoPreviewStage || !videoEditPreview) return 0;
+    const stageRect = videoPreviewStage.getBoundingClientRect();
+    if (!stageRect.width || !stageRect.height) return 0;
+    const vw = videoEditPreview.videoWidth || 0;
+    const vh = videoEditPreview.videoHeight || 0;
+    if (!vw || !vh) return 0;
+    const scale = Math.max(stageRect.width / vw, stageRect.height / vh);
+    const renderedH = vh * scale;
+    const extra = Math.max(0, renderedH - stageRect.height);
+    return extra / 2;
   }
 
   function renderCropRect() {
@@ -359,6 +476,8 @@
     renderCropRect();
     renderTimeline();
     renderOutputControls();
+    renderOverlayTemplates();
+    renderOverlayPreview();
   }
 
   async function loadVideoHistory() {
@@ -385,6 +504,23 @@
     }
   }
 
+  async function loadOverlayTemplates() {
+    if (!videoOverlaySelect) return;
+    try {
+      const res = await fetch(toAbsoluteUrl('video-overlay-templates'), { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || !Array.isArray(data)) return;
+      overlayTemplates = data;
+      if (state.overlayTemplateRelativePath && !overlayTemplates.some((x) => x.relativePath === state.overlayTemplateRelativePath)) {
+        state.overlayTemplateRelativePath = null;
+      }
+      renderOverlayTemplates();
+      renderOverlayPreview();
+    } catch {
+      // keep current state silently
+    }
+  }
+
   function normalizeJobStatus(rawStatus) {
     if (typeof rawStatus === 'string') return rawStatus.toUpperCase();
     const enumMap = ['QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED', 'EXPIRED'];
@@ -394,7 +530,7 @@
     return String(rawStatus || '').toUpperCase();
   }
 
-  async function waitForJobCompletion(jobId, timeoutMs = 180000) {
+  async function waitForJobCompletion(jobId, timeoutMs = 180000, onProgress, pollMs = 1000) {
     const started = Date.now();
     const terminal = new Set(['SUCCEEDED', 'FAILED', 'CANCELED', 'EXPIRED']);
 
@@ -407,14 +543,48 @@
       }
 
       const status = normalizeJobStatus(data && data.status);
+      if (typeof onProgress === 'function') {
+        onProgress({
+          status,
+          progress: parseProgressPercent(data && data.progress),
+          rawProgress: data && data.progress
+        });
+      }
       if (terminal.has(status)) {
         return { ...data, status };
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await new Promise((resolve) => setTimeout(resolve, Math.max(150, pollMs)));
     }
 
     throw new Error(vt('Превышено время ожидания завершения задачи', 'Превышено время ожидания завершения задачи'));
+  }
+
+  async function waitForUploadNormalizeCompletion(jobId, timeoutMs = 1800000, onProgress, pollMs = 1000) {
+    const started = Date.now();
+    const terminal = new Set(['SUCCEEDED', 'FAILED']);
+
+    while (Date.now() - started < timeoutMs) {
+      const res = await fetch(toAbsoluteUrl(`video/upload-jobs/${jobId}`), { cache: 'no-store' });
+      let data;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok) {
+        throw new Error(data && data.error ? data.error : vt('Не удалось получить статус нормализации', 'Не удалось получить статус нормализации'));
+      }
+
+      const status = normalizeJobStatus(data && data.status);
+      const progress = parseProgressPercent(data && data.progress);
+      if (typeof onProgress === 'function') {
+        onProgress({ status, progress, raw: data });
+      }
+      if (terminal.has(status)) {
+        return { ...data, status };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, Math.max(200, pollMs)));
+    }
+
+    throw new Error(vt('Превышено время ожидания нормализации видео', 'Превышено время ожидания нормализации видео'));
   }
 
   function renderVideoLists() {
@@ -536,7 +706,9 @@
   function openModal() {
     videoEditModal.hidden = false;
     setHint(vt('videoUploadHint', 'Загрузите видео и перетащите границы на таймлайне.'));
+    setStatus('Ready', 0);
     loadVideoHistory();
+    loadOverlayTemplates();
     renderAll();
   }
 
@@ -615,6 +787,21 @@
     window.removeEventListener('pointerup', handleTimelinePointerUp);
   }
 
+  function handleVerticalDrag(event) {
+    if (!verticalDrag) return;
+    const delta = event.clientY - verticalDrag.startY;
+    const maxOffset = getMaxVerticalOffsetPx();
+    state.verticalOffsetPx = clamp(verticalDrag.startOffset + delta, -maxOffset, maxOffset);
+    renderPlaybackState();
+    renderCropRect();
+  }
+
+  function stopVerticalDrag() {
+    verticalDrag = null;
+    if (videoPreviewStage) videoPreviewStage.classList.remove('is-dragging');
+    window.removeEventListener('pointermove', handleVerticalDrag);
+  }
+
   function addSegment() {
     const duration = state.duration || 0;
     if (!duration) return;
@@ -637,12 +824,52 @@
     renderTimeline();
   }
 
+  function applyCropRatio(rawRatio) {
+    const ratio = String(rawRatio || '').trim();
+    const parts = ratio.split(':');
+    if (parts.length !== 2) return;
+    const rw = Number(parts[0]);
+    const rh = Number(parts[1]);
+    if (!Number.isFinite(rw) || !Number.isFinite(rh) || rw <= 0 || rh <= 0) return;
+
+    const target = rw / rh;
+    const srcW = videoEditPreview ? (videoEditPreview.videoWidth || 0) : 0;
+    const srcH = videoEditPreview ? (videoEditPreview.videoHeight || 0) : 0;
+    const srcAspect = srcW > 0 && srcH > 0 ? (srcW / srcH) : 1;
+
+    let w;
+    let h;
+    if (target > srcAspect) {
+      w = 1;
+      h = srcAspect / target;
+    } else {
+      h = 1;
+      w = target / srcAspect;
+    }
+    w = clamp(w, 0.1, 1);
+    h = clamp(h, 0.1, 1);
+
+    const cx = state.crop.x + state.crop.w / 2;
+    const cy = state.crop.y + state.crop.h / 2;
+    const x = clamp(cx - w / 2, 0, 1 - w);
+    const y = clamp(cy - h / 2, 0, 1 - h);
+
+    state.crop = { x, y, w, h };
+    state.cropRatio = ratio;
+    state.verticalOffsetPx = clamp(state.verticalOffsetPx, -getMaxVerticalOffsetPx(), getMaxVerticalOffsetPx());
+    renderCropRect();
+    renderPlaybackState();
+    renderToolState();
+  }
+
   function resetAllEdits() {
     const duration = state.duration || 0;
     state.segments = [{ start: 0, end: duration }];
     state.activeSegmentIndex = 0;
     state.trim = { start: 0, end: duration };
     state.crop = { x: 0, y: 0, w: 1, h: 1 };
+    state.cropRatio = null;
+    state.verticalOffsetPx = 0;
     state.rotateDeg = 0;
     state.flipH = false;
     state.flipV = false;
@@ -699,6 +926,7 @@
         }
         state.crop = { x: nextX, y: nextY, w: nextW, h: nextH };
       }
+      state.cropRatio = null;
       renderCropRect();
     };
 
@@ -743,6 +971,22 @@
     state.flipV = false;
     renderPlaybackState();
   });
+  if (videoPreviewStage) {
+    videoPreviewStage.addEventListener('pointerdown', (event) => {
+      if (event.target && event.target.closest && event.target.closest('.video-crop-rect')) return;
+      if (!videoEditPreview || !videoEditPreview.videoWidth || !videoEditPreview.videoHeight) return;
+      verticalDrag = { startY: event.clientY, startOffset: state.verticalOffsetPx };
+      videoPreviewStage.classList.add('is-dragging');
+      event.preventDefault();
+      window.addEventListener('pointermove', handleVerticalDrag);
+      window.addEventListener('pointerup', stopVerticalDrag, { once: true });
+    });
+  }
+  if (cropRatioButtons.length > 0) {
+    cropRatioButtons.forEach((btn) => {
+      btn.addEventListener('click', () => applyCropRatio(btn.dataset.cropRatio || ''));
+    });
+  }
 
   if (videoMuteAudio) videoMuteAudio.addEventListener('change', () => {
     if (state.outputMode === 'vidcov' && !videoMuteAudio.checked) {
@@ -798,10 +1042,12 @@
       state.segments = [{ start: 0, end: state.duration }];
       state.activeSegmentIndex = 0;
       state.trim = { ...state.segments[0] };
+      state.verticalOffsetPx = 0;
       timelinePreviewState.dirty = true;
       renderTimeline();
       queueFilmstripRender(true);
       renderCropRect();
+      renderPlaybackState();
     });
     videoEditPreview.addEventListener('timeupdate', renderPlayhead);
   }
@@ -816,29 +1062,95 @@
     });
   }
 
+  if (videoOverlayUploadBtn && videoOverlayInput) {
+    videoOverlayUploadBtn.addEventListener('click', () => videoOverlayInput.click());
+  }
+
+  if (videoOverlayInput) {
+    videoOverlayInput.addEventListener('change', async () => {
+      const file = videoOverlayInput.files && videoOverlayInput.files[0];
+      if (!file) return;
+      const form = new FormData();
+      form.append('file', file);
+      setStatus('Uploading overlay template... 0%', 0);
+      try {
+        const res = await uploadFormWithProgress('upload-video-overlay-template', form, (pct) => {
+          setStatus(`Uploading overlay template... ${Math.round(pct)}%`, pct);
+        });
+        const data = res.data;
+        if (!res.ok) throw new Error(data && data.error ? data.error : `overlay upload failed (${res.status})`);
+        state.overlayTemplateRelativePath = data && data.relativePath ? data.relativePath : null;
+        await loadOverlayTemplates();
+        setStatus('Overlay uploaded', 100);
+      } catch (err) {
+        setStatus(`Overlay upload failed: ${String(err || '').trim()}`.trim(), 0);
+      } finally {
+        videoOverlayInput.value = '';
+      }
+    });
+  }
+
+  if (videoOverlaySelect) {
+    videoOverlaySelect.addEventListener('change', () => {
+      const value = videoOverlaySelect.value || null;
+      state.overlayTemplateRelativePath = value;
+      renderOverlayPreview();
+    });
+  }
+
   if (videoUploadInput) {
     videoUploadInput.addEventListener('change', async () => {
       const file = videoUploadInput.files && videoUploadInput.files[0];
       if (!file) return;
       const form = new FormData();
       form.append('file', file);
-      setHint(vt('videoUploading', 'Загружаю видео...'));
+      setStatus(vt('videoUploading', 'Загружаю видео... 0%'), 0);
       try {
-        const res = await fetchWithFallback('upload-video', { method: 'POST', body: form });
-        let data;
-        try { data = await res.json(); } catch { data = null; }
-        if (!res.ok) throw new Error(data && data.error ? data.error : 'upload failed');
-        state.storedName = data.storedName;
-        if (videoEditPreview && data.relativePath) {
-          const url = withCacheBust ? withCacheBust(data.relativePath, data.storedName) : data.relativePath;
-          videoEditPreview.src = url;
-          timelinePreviewState.dirty = true;
+        const res = await uploadFormWithProgress('upload-video', form, (pct) => {
+          setStatus(`${vt('videoUploading', 'Загружаю видео...')} ${Math.round(pct)}%`, pct);
+        });
+        const data = res.data;
+        if (!res.ok) {
+          const msg = data && data.error ? data.error : `upload failed (${res.status})`;
+          if (res.status === 413) throw new Error('Payload too large. Increase reverse-proxy body limit (e.g. nginx client_max_body_size).');
+          throw new Error(msg);
         }
-        setHint(vt('videoUploaded', 'Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.'));
+
+        if (data && data.jobId) {
+          const normalizeStartedAt = Date.now();
+          const normalizeJob = await waitForUploadNormalizeCompletion(data.jobId, 1800000, (p) => {
+            const pct = Number.isFinite(p.progress) ? p.progress : null;
+            const elapsedSec = (Date.now() - normalizeStartedAt) / 1000;
+            const etaSec = pct != null && pct > 1 ? (elapsedSec * (100 - pct)) / pct : null;
+            const etaText = Number.isFinite(etaSec) ? ` • ~${formatEta(etaSec)} осталось` : '';
+            const label = pct != null
+              ? `Нормализую формат для редактора... ${Math.round(pct)}%${etaText}`
+              : `Нормализую формат для редактора... прошло ${formatEta(elapsedSec)}`;
+            setStatus(label, pct, { indeterminate: pct == null });
+          }, 1000);
+
+          if (normalizeJob.status !== 'SUCCEEDED') {
+            throw new Error(normalizeJob.error || 'normalize failed');
+          }
+          state.storedName = normalizeJob.storedName || state.storedName;
+          if (videoEditPreview && normalizeJob.relativePath) {
+            const url = withCacheBust ? withCacheBust(normalizeJob.relativePath, normalizeJob.storedName || normalizeJob.jobId) : normalizeJob.relativePath;
+            videoEditPreview.src = url;
+            timelinePreviewState.dirty = true;
+          }
+        } else {
+          state.storedName = data.storedName;
+          if (videoEditPreview && data.relativePath) {
+            const url = withCacheBust ? withCacheBust(data.relativePath, data.storedName) : data.relativePath;
+            videoEditPreview.src = url;
+            timelinePreviewState.dirty = true;
+          }
+        }
+        setStatus(vt('videoUploaded', 'Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.'), 100, { indeterminate: false });
         await loadVideoHistory();
         renderOutputControls();
       } catch (err) {
-        setHint(`Ошибка загрузки видео. ${String(err || '').trim()}`.trim());
+        setStatus(`Ошибка загрузки видео. ${String(err || '').trim()}`.trim(), 0, { indeterminate: false });
       }
     });
   }
@@ -848,6 +1160,11 @@
       if (!state.storedName) return;
       normalizeSegments();
       const isVidcovMode = state.outputMode === 'vidcov';
+      const stageRect = videoPreviewStage ? videoPreviewStage.getBoundingClientRect() : null;
+      const outputHeight = isVidcovMode ? 404 : 720;
+      const offsetOutPx = stageRect && stageRect.height
+        ? (state.verticalOffsetPx / stageRect.height) * outputHeight
+        : 0;
       const targetSizeMb = isVidcovMode ? 1.5 : state.targetSizeMb;
       const muteAudio = isVidcovMode ? true : state.muteAudio;
 
@@ -859,7 +1176,7 @@
         cutEndSec: null,
         outputWidth: 1280,
         targetSizeMb,
-        verticalOffsetPx: 0,
+        verticalOffsetPx: offsetOutPx,
         segments: state.segments.map((x) => ({ startSec: x.start, endSec: x.end })),
         cropX: state.crop.x,
         cropY: state.crop.y,
@@ -870,11 +1187,14 @@
         flipV: state.flipV,
         speed: state.speed,
         muteAudio,
-        encodingMode: isVidcovMode ? 'VIDCOV' : 'BALANCED'
+        encodingMode: isVidcovMode ? 'VIDCOV' : 'BALANCED',
+        overlayTemplateRelativePath: state.overlayTemplateRelativePath
       };
 
       setProcessing(true);
-      setHint(vt('videoProcessing', 'Обрабатываю видео...'));
+      setStatus(vt('videoProcessing', 'Обрабатываю видео... 0%'), 0);
+      const processingStartedAt = Date.now();
+      const minVisualProcessMs = 1200;
       try {
         const res = await fetch(toAbsoluteUrl('video-process'), {
           method: 'POST',
@@ -886,7 +1206,26 @@
         if (!res.ok) throw new Error(data && data.error ? data.error : 'process failed');
 
         if (!data || !data.jobId) throw new Error(vt('Сервер не вернул jobId', 'Сервер не вернул jobId'));
-        const job = await waitForJobCompletion(data.jobId);
+        const job = await waitForJobCompletion(data.jobId, 180000, (p) => {
+          const pct = Number.isFinite(p.progress) ? p.progress : null;
+          let label;
+          if (p.status === 'QUEUED') {
+            label = 'В очереди...';
+          } else if (pct != null) {
+            const elapsedSec = (Date.now() - processingStartedAt) / 1000;
+            const etaSec = pct > 1 ? (elapsedSec * (100 - pct)) / pct : null;
+            const etaText = Number.isFinite(etaSec) ? ` • ~${formatEta(etaSec)} осталось` : '';
+            label = `${vt('videoProcessing', 'Обрабатываю видео...')} ${Math.round(pct)}%${etaText}`;
+          } else {
+            label = vt('videoProcessing', 'Обрабатываю видео...');
+          }
+          setStatus(label, pct ?? 0);
+        }, 1000);
+
+        const spentMs = Date.now() - processingStartedAt;
+        if (spentMs < minVisualProcessMs) {
+          await new Promise((resolve) => setTimeout(resolve, minVisualProcessMs - spentMs));
+        }
         if (job.status !== 'SUCCEEDED') {
           const statusMsg = vt('Задача завершилась со статусом', 'Задача завершилась со статусом');
           throw new Error(job.error || `${statusMsg} ${job.status}`);
@@ -897,11 +1236,11 @@
           timelinePreviewState.dirty = true;
         }
 
-        setHint(vt('videoDone', 'Готово. Результат появился в Processed.'));
+        setStatus(vt('videoDone', 'Готово. Результат появился в Processed.'), 100);
         await loadVideoHistory();
         console.info(`Results refreshed (${processed.length})`);
       } catch (err) {
-        setHint(`Ошибка обработки видео. ${String(err || '').trim()}`.trim());
+        setStatus(`Ошибка обработки видео. ${String(err || '').trim()}`.trim(), 0);
       } finally {
         setProcessing(false);
       }

@@ -46,6 +46,12 @@
             <span>Speed</span>
           </button>
         </div>
+        <div class="video-tool-group video-tool-group-right">
+          <button id="videoOverlayUploadBtn" class="tool-btn" type="button" title="Upload overlay">Overlay Upload</button>
+          <select id="videoOverlaySelect" class="video-overlay-select" aria-label="Overlay template">
+            <option value="">No overlay</option>
+          </select>
+        </div>
       </div>
 
       <div class="video-helper-text">Use timeline below to select video segments</div>
@@ -55,6 +61,7 @@
           <div class="video-preview-wrap">
             <div class="video-preview-stage">
               <video id="videoEditPreview" class="video-preview" playsinline></video>
+              <img id="videoOverlayPreview" class="video-overlay-preview" alt="" hidden />
               <div id="videoCropOverlay" class="video-crop-overlay" hidden>
                 <div id="videoCropRect" class="video-crop-rect" role="presentation">
                   <span class="crop-handle tl" data-handle="tl"></span>
@@ -83,38 +90,43 @@
             </div>
           </div>
 
-          <div class="video-tool-panels">
-            <div class="video-tool-panel" data-tool-panel="trim"></div>
-            <div class="video-tool-panel" data-tool-panel="crop" hidden></div>
-            <div class="video-tool-panel" data-tool-panel="rotate" hidden>
-              <div class="panel-controls">
-                <button id="videoRotateCw" class="btn small" type="button">↻ 90°</button>
-                <button id="videoRotateCcw" class="btn small" type="button">↺ 90°</button>
-                <button id="videoRotateReset" class="btn small" type="button">Reset</button>
-              </div>
-            </div>
-            <div class="video-tool-panel" data-tool-panel="flip" hidden>
-              <div class="panel-controls">
-                <button id="videoFlipH" class="btn small" type="button">↔ Flip H</button>
-                <button id="videoFlipV" class="btn small" type="button">↕ Flip V</button>
-                <button id="videoFlipReset" class="btn small" type="button">Reset</button>
-              </div>
-            </div>
-            <div class="video-tool-panel" data-tool-panel="speed" hidden>
-              <div class="panel-controls">
-                <label class="video-speed-label">Speed <span id="videoSpeedValue">1.0x</span>
-                  <input id="videoSpeedRange" type="range" min="0.25" max="2" step="0.25" value="1" />
-                </label>
-              </div>
-            </div>
-          </div>
-
           <div class="video-edit-controls">
             <div class="video-controls-left">
               <button id="videoPlayToggle" class="btn icon-btn" type="button">▶</button>
               <div class="video-timecode"><span id="videoCurrentTime">00:00</span> / <span id="videoDuration">00:00</span></div>
             </div>
             <div class="video-controls-right">
+              <div class="video-tool-panels">
+                <div class="video-tool-panel" data-tool-panel="trim"></div>
+                <div class="video-tool-panel" data-tool-panel="crop" hidden>
+                  <div class="panel-controls">
+                    <button class="btn small video-crop-ratio-btn" type="button" data-crop-ratio="16:9">16:9</button>
+                    <button class="btn small video-crop-ratio-btn" type="button" data-crop-ratio="1:1">1:1</button>
+                    <button class="btn small video-crop-ratio-btn" type="button" data-crop-ratio="9:16">9:16</button>
+                  </div>
+                </div>
+                <div class="video-tool-panel" data-tool-panel="rotate" hidden>
+                  <div class="panel-controls">
+                    <button id="videoRotateCw" class="btn small" type="button">↻ 90°</button>
+                    <button id="videoRotateCcw" class="btn small" type="button">↺ 90°</button>
+                    <button id="videoRotateReset" class="btn small" type="button">Reset</button>
+                  </div>
+                </div>
+                <div class="video-tool-panel" data-tool-panel="flip" hidden>
+                  <div class="panel-controls">
+                    <button id="videoFlipH" class="btn small" type="button">↔ Flip H</button>
+                    <button id="videoFlipV" class="btn small" type="button">↕ Flip V</button>
+                    <button id="videoFlipReset" class="btn small" type="button">Reset</button>
+                  </div>
+                </div>
+                <div class="video-tool-panel" data-tool-panel="speed" hidden>
+                  <div class="panel-controls">
+                    <label class="video-speed-label">Speed <span id="videoSpeedValue">1.0x</span>
+                      <input id="videoSpeedRange" type="range" min="0.25" max="2" step="0.25" value="1" />
+                    </label>
+                  </div>
+                </div>
+              </div>
               <label class="btn video-bottom-mute" title="Mute / Unmute">
                 <input id="videoMuteAudio" type="checkbox" hidden />
                 <span id="videoMuteLabel">Mute</span>
@@ -149,7 +161,8 @@
             </div>
           </div>
         </aside>
-        <input id="videoUploadInput" type="file" accept="video/*" hidden />
+        <input id="videoUploadInput" type="file" hidden />
+        <input id="videoOverlayInput" type="file" accept="image/png,image/webp,image/jpeg" hidden />
         <div id="videoProcessingOverlay" class="video-processing-overlay" hidden>Processing…</div>
       </div>
       <div class="modal-footer video-footer">
@@ -161,6 +174,10 @@
             </svg>
             <span>Reset</span>
           </button>
+        </div>
+        <div id="videoStatusLine" class="video-status-line" aria-live="polite">
+          <div id="videoStatusText" class="video-status-text">Ready</div>
+          <div class="video-status-track"><div id="videoStatusBar" class="video-status-bar"></div></div>
         </div>
         <div class="video-footer-right">
           <button id="videoEditSave" class="btn primary video-process-btn" type="button" disabled>Process</button>

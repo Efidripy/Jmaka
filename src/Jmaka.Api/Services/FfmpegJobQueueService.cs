@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -63,6 +64,8 @@ internal interface IFfmpegJobQueue
 
 internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
 {
+    private static readonly Regex FfmpegTimeRegex = new(@"time=(\d+):(\d+):(\d+(?:\.\d+)?)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex FfmpegOutTimeMsRegex = new(@"out_time_ms=(\d+)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private readonly ILogger<FfmpegJobQueueService> _logger;
     private readonly FfmpegQueueOptions _opts;
     private readonly string _jobsPath;
@@ -72,6 +75,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
     private readonly SemaphoreSlim _signal = new(0);
     private readonly SemaphoreSlim _concurrency;
     private readonly object _persistLock = new();
+    private readonly string _videoOverlayDir;
 
     public FfmpegJobQueueService(ILogger<FfmpegJobQueueService> logger, IOptions<FfmpegQueueOptions> opts, IWebHostEnvironment env)
     {
@@ -81,7 +85,9 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         var storageRoot = Environment.GetEnvironmentVariable("JMAKA_STORAGE_ROOT");
         if (string.IsNullOrWhiteSpace(storageRoot)) storageRoot = env.ContentRootPath;
         var videoOut = Path.Combine(storageRoot, "video-out");
+        _videoOverlayDir = Path.Combine(storageRoot, "video-overlays");
         Directory.CreateDirectory(videoOut);
+        Directory.CreateDirectory(_videoOverlayDir);
         _jobsPath = Path.Combine(videoOut, "jobs.json");
         LoadJobs();
     }
@@ -176,7 +182,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
                 try
                 {
                     job.Status = FfmpegJobStatus.RUNNING;
-                    job.Progress = "starting";
+                    job.Progress = "0%";
                     PersistJobs();
                     _logger.LogInformation("Queue start: jobId={id}", job.JobId);
                     await ExecuteJobAsync(job, stoppingToken);
@@ -206,34 +212,38 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         if (!File.Exists(job.InputPath)) throw new InvalidOperationException("video not found");
         if (!HasCommand("ffmpeg") || !HasCommand("ffprobe")) throw new InvalidOperationException("ffmpeg/ffprobe not found");
 
-        var duration = await TryGetVideoDurationSecondsAsync(job.InputPath, ct);
-        if (duration <= 0) throw new InvalidOperationException("unable to detect duration");
-        job.DurationSeconds = duration;
+        var sourceDuration = await TryGetVideoDurationSecondsAsync(job.InputPath, ct);
+        if (sourceDuration <= 0) throw new InvalidOperationException("unable to detect duration");
+        job.DurationSeconds = sourceDuration;
 
         var isVidcovMode = job.RequestedMode == EncodingMode.VIDCOV;
-        var (mode, reason) = ResolveMode(job.RequestedMode, duration, ReadAvailableRamMb());
+        var availableRamMb = ReadAvailableRamMb();
+        var effectiveRamMb = Math.Max(0, availableRamMb - _opts.RamSafetyMarginMb);
+        var (mode, reason) = ResolveMode(job.RequestedMode, sourceDuration, availableRamMb);
         job.ResolvedMode = mode;
         job.RamDecision = reason;
-
-        // x264 + yuv420p requires even frame dimensions.
-        // Ultra-safe profile historically used 720x405 (16:9), which causes encoder failure.
-        var target = mode == EncodingMode.ULTRA_SAFE ? (720, 404) : (1280, 720);
 
         var selectedSegments = (job.Request.Segments ?? Array.Empty<VideoProcessSegment>())
             .Where(x => x is not null)
             .Select(x =>
             {
-                var start = Math.Clamp(x.StartSec, 0, duration);
-                var end = Math.Clamp(x.EndSec, 0, duration);
+                var start = Math.Clamp(x.StartSec, 0, sourceDuration);
+                var end = Math.Clamp(x.EndSec, 0, sourceDuration);
                 return (Start: start, End: end);
             })
             .Where(x => x.End - x.Start >= 0.05)
             .OrderBy(x => x.Start)
             .ToList();
+        var segmentCount = Math.Max(1, selectedSegments.Count);
 
         var effectiveDuration = selectedSegments.Count > 0
             ? selectedSegments.Sum(x => Math.Max(0, x.End - x.Start))
-            : duration;
+            : sourceDuration;
+        if (effectiveDuration > 0)
+        {
+            // Progress should reflect effective rendered timeline, not full source length.
+            job.DurationSeconds = effectiveDuration;
+        }
 
         var cropXNorm = Math.Clamp(job.Request.CropX ?? 0d, 0d, 1d);
         var cropYNorm = Math.Clamp(job.Request.CropY ?? 0d, 0d, 1d);
@@ -242,94 +252,183 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         if (cropXNorm + cropWNorm > 1d) cropXNorm = Math.Max(0d, 1d - cropWNorm);
         if (cropYNorm + cropHNorm > 1d) cropYNorm = Math.Max(0d, 1d - cropHNorm);
 
-        var targetMb = Math.Clamp(job.Request.TargetSizeMb, 0.1, 2048);
-        var desiredTargetMb = isVidcovMode ? 1.2 : targetMb;
-        var sourceHasAudio = await TryHasAudioStreamAsync(job.InputPath, ct);
-        var includeAudio = !(job.Request.MuteAudio ?? false) && !isVidcovMode && sourceHasAudio;
-        var audioKbps = includeAudio ? (mode == EncodingMode.MAX_QUALITY ? 128 : 96) : 0;
-        var desiredTotalKbps = (desiredTargetMb * 8192.0) / Math.Max(1, effectiveDuration);
-        var desiredVideoKbps = (int)Math.Round(Math.Max(80, desiredTotalKbps - audioKbps) * 0.98);
-
-        int minKbps;
-        int maxKbps;
-        if (isVidcovMode)
+        string? overlayAbsolutePath = null;
+        if (!string.IsNullOrWhiteSpace(job.Request.OverlayTemplateRelativePath))
         {
-            // Vidcov should stay compact (~0.8-1.5 MB) even with many short segments.
-            var minTargetKbps = (int)Math.Floor((0.8 * 8192.0 / Math.Max(1, effectiveDuration)) * 0.96);
-            var maxTargetKbps = (int)Math.Ceiling((1.5 * 8192.0 / Math.Max(1, effectiveDuration)) * 0.99);
-            minKbps = Math.Clamp(minTargetKbps, 60, 1800);
-            maxKbps = Math.Clamp(maxTargetKbps, Math.Max(minKbps, 90), 1800);
-        }
-        else
-        {
-            minKbps = mode == EncodingMode.ULTRA_SAFE ? 120 : 180;
-            maxKbps = mode == EncodingMode.ULTRA_SAFE ? 1800 : 12000;
-        }
-
-        var videoKbps = Math.Clamp(desiredVideoKbps, minKbps, maxKbps);
-        var bitrate = $"{videoKbps}k";
-
-        string sourceLabel;
-        string? audioSourceLabel = null;
-        var filterParts = new List<string>();
-        if (selectedSegments.Count > 0)
-        {
-            var concatVideoInputs = new StringBuilder();
-            var concatAudioInputs = new StringBuilder();
-            for (var i = 0; i < selectedSegments.Count; i++)
+            var fileName = Path.GetFileName(job.Request.OverlayTemplateRelativePath.Replace('\\', '/'));
+            if (!string.IsNullOrWhiteSpace(fileName))
             {
-                var seg = selectedSegments[i];
-                filterParts.Add($"[0:v]trim=start={seg.Start.ToString(CultureInfo.InvariantCulture)}:end={seg.End.ToString(CultureInfo.InvariantCulture)},setpts=PTS-STARTPTS,settb=AVTB[v{i}]");
-                concatVideoInputs.Append($"[v{i}]");
-                if (includeAudio)
+                var candidate = Path.Combine(_videoOverlayDir, fileName);
+                if (File.Exists(candidate))
                 {
-                    filterParts.Add($"[0:a]atrim=start={seg.Start.ToString(CultureInfo.InvariantCulture)}:end={seg.End.ToString(CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS[a{i}]");
-                    concatAudioInputs.Append($"[a{i}]");
+                    overlayAbsolutePath = candidate;
                 }
             }
+        }
 
-            if (includeAudio)
+        var isHeavyTimelineJob = segmentCount >= 3 || !string.IsNullOrWhiteSpace(overlayAbsolutePath);
+        var forceLowRamForMultiSegment = mode == EncodingMode.BALANCED && segmentCount >= 3;
+        var lowRamBalancedProfile = mode == EncodingMode.BALANCED
+            && (forceLowRamForMultiSegment || effectiveRamMb <= 2200 || (effectiveRamMb <= 2800 && isHeavyTimelineJob));
+        // For short final outputs we can keep safer memory limits but noticeably improve visual quality.
+        var shortClipQualityBoost = lowRamBalancedProfile && effectiveDuration <= 90;
+        if (lowRamBalancedProfile)
+        {
+            job.RamDecision = string.IsNullOrWhiteSpace(job.RamDecision)
+                ? (forceLowRamForMultiSegment ? "forced_low_ram_multisegment" : "low_ram_balanced_profile")
+                : $"{job.RamDecision}|{(forceLowRamForMultiSegment ? "forced_low_ram_multisegment" : "low_ram_balanced_profile")}";
+            _logger.LogInformation(
+                "Low-RAM profile enabled: jobId={jobId}, effectiveRam={effectiveRam}MB, segments={segments}, overlay={overlay}",
+                job.JobId,
+                effectiveRamMb,
+                segmentCount,
+                !string.IsNullOrWhiteSpace(overlayAbsolutePath));
+        }
+
+        // x264 + yuv420p requires even frame dimensions.
+        // Ultra-safe profile historically used 720x405 (16:9), which causes encoder failure.
+        var target = mode == EncodingMode.ULTRA_SAFE
+            ? (720, 404)
+            : (lowRamBalancedProfile ? (shortClipQualityBoost ? (854, 480) : (640, 360)) : (1280, 720));
+        var targetFps = lowRamBalancedProfile ? (shortClipQualityBoost ? 20 : 15) : 24;
+        var workerThreads = lowRamBalancedProfile || segmentCount >= 3 ? 1 : 2;
+
+        var processingInputPath = job.InputPath;
+        string? tempWorkDir = null;
+        try
+        {
+            if (lowRamBalancedProfile && selectedSegments.Count > 1)
             {
-                filterParts.Add($"{concatVideoInputs}{concatAudioInputs}concat=n={selectedSegments.Count}:v=1:a=1:unsafe=1[vsrc][asrc]");
-                audioSourceLabel = "[asrc]";
+                tempWorkDir = Path.Combine(Path.GetDirectoryName(job.OutputPath) ?? ".", $"tmp-{job.JobId:N}");
+                Directory.CreateDirectory(tempWorkDir);
+                processingInputPath = await BuildConcatInputFromSegmentsAsync(job, job.InputPath, selectedSegments, tempWorkDir, workerThreads, ct);
+                selectedSegments = new List<(double Start, double End)>();
+                var stitchedDuration = await TryGetVideoDurationSecondsAsync(processingInputPath, ct);
+                if (stitchedDuration > 0)
+                {
+                    effectiveDuration = stitchedDuration;
+                    job.DurationSeconds = stitchedDuration;
+                }
+                _logger.LogInformation(
+                    "Low-RAM preconcat enabled: jobId={jobId}, input={input}",
+                    job.JobId,
+                    processingInputPath);
+            }
+
+            var targetMb = Math.Clamp(job.Request.TargetSizeMb, 0.1, 2048);
+            var desiredTargetMb = isVidcovMode ? 1.2 : targetMb;
+            var sourceHasAudio = await TryHasAudioStreamAsync(processingInputPath, ct);
+            var includeAudio = !(job.Request.MuteAudio ?? false) && !isVidcovMode && sourceHasAudio;
+            var audioKbps = includeAudio
+                ? (mode == EncodingMode.MAX_QUALITY ? 128 : (lowRamBalancedProfile ? (shortClipQualityBoost ? 96 : 80) : 96))
+                : 0;
+            var capTotalKbps = (desiredTargetMb * 8192.0) / Math.Max(1, effectiveDuration);
+            var capVideoKbps = Math.Max(80, capTotalKbps - audioKbps);
+            // Prefer smaller files while keeping a sane quality floor for 720p.
+            var qualityVideoKbps = mode switch
+            {
+                EncodingMode.ULTRA_SAFE => 700,
+                EncodingMode.MAX_QUALITY => 1600,
+                _ => lowRamBalancedProfile ? (shortClipQualityBoost ? 900 : 550) : 1100
+            };
+            var desiredVideoKbps = (int)Math.Round(Math.Min(capVideoKbps, qualityVideoKbps) * 0.98);
+
+            int minKbps;
+            int maxKbps;
+            if (isVidcovMode)
+            {
+                // Vidcov should stay compact (~0.8-1.5 MB) even with many short segments.
+                var minTargetKbps = (int)Math.Floor((0.8 * 8192.0 / Math.Max(1, effectiveDuration)) * 0.96);
+                var maxTargetKbps = (int)Math.Ceiling((1.5 * 8192.0 / Math.Max(1, effectiveDuration)) * 0.99);
+                minKbps = Math.Clamp(minTargetKbps, 60, 1800);
+                maxKbps = Math.Clamp(maxTargetKbps, Math.Max(minKbps, 90), 1800);
             }
             else
             {
-                filterParts.Add($"{concatVideoInputs}concat=n={selectedSegments.Count}:v=1:a=0:unsafe=1[vsrc]");
+                minKbps = mode == EncodingMode.ULTRA_SAFE ? 120 : 180;
+                maxKbps = mode == EncodingMode.ULTRA_SAFE ? 1800 : 12000;
             }
-            sourceLabel = "[vsrc]";
-        }
-        else
-        {
-            sourceLabel = "[0:v]";
-        }
 
-        // Match preview behavior: always fill 16:9 viewport and keep only the visible region.
-        filterParts.Add($"{sourceLabel}scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=increase:force_divisible_by=2,crop={target.Item1}:{target.Item2}:(iw-ow)/2:(ih-oh)/2[vviewport]");
+            var videoKbps = Math.Clamp(desiredVideoKbps, minKbps, maxKbps);
+            var bitrate = $"{videoKbps}k";
 
-        var cropWidthPx = Math.Clamp((int)Math.Round(target.Item1 * cropWNorm), 2, target.Item1);
-        if ((cropWidthPx & 1) != 0) cropWidthPx -= 1;
-        if (cropWidthPx < 2) cropWidthPx = 2;
+            string sourceLabel;
+            string? audioSourceLabel = null;
+            var filterParts = new List<string>();
+            if (selectedSegments.Count > 0)
+            {
+                var concatInputs = new StringBuilder();
+                for (var i = 0; i < selectedSegments.Count; i++)
+                {
+                    var seg = selectedSegments[i];
+                    filterParts.Add($"[0:v]trim=start={seg.Start.ToString(CultureInfo.InvariantCulture)}:end={seg.End.ToString(CultureInfo.InvariantCulture)},setpts=PTS-STARTPTS,settb=AVTB[v{i}]");
+                    concatInputs.Append($"[v{i}]");
+                    if (includeAudio)
+                    {
+                        filterParts.Add($"[0:a]atrim=start={seg.Start.ToString(CultureInfo.InvariantCulture)}:end={seg.End.ToString(CultureInfo.InvariantCulture)},asetpts=PTS-STARTPTS[a{i}]");
+                        concatInputs.Append($"[a{i}]");
+                    }
+                }
 
-        var cropHeightPx = Math.Clamp((int)Math.Round(target.Item2 * cropHNorm), 2, target.Item2);
-        if ((cropHeightPx & 1) != 0) cropHeightPx -= 1;
-        if (cropHeightPx < 2) cropHeightPx = 2;
+                if (includeAudio)
+                {
+                    filterParts.Add($"{concatInputs}concat=n={selectedSegments.Count}:v=1:a=1:unsafe=1[vsrc][asrc]");
+                    audioSourceLabel = "[asrc]";
+                }
+                else
+                {
+                    filterParts.Add($"{concatInputs}concat=n={selectedSegments.Count}:v=1:a=0:unsafe=1[vsrc]");
+                }
+                sourceLabel = "[vsrc]";
+            }
+            else
+            {
+                sourceLabel = "[0:v]";
+            }
 
-        var cropLeftPx = (int)Math.Round((target.Item1 - cropWidthPx) * cropXNorm);
-        var cropTopPx = (int)Math.Round((target.Item2 - cropHeightPx) * cropYNorm);
-        cropLeftPx = Math.Clamp(cropLeftPx, 0, Math.Max(0, target.Item1 - cropWidthPx));
-        cropTopPx = Math.Clamp(cropTopPx, 0, Math.Max(0, target.Item2 - cropHeightPx));
+            // Match preview behavior: always fill 16:9 viewport and keep only the visible region.
+            var offsetPx = Math.Clamp(job.Request.VerticalOffsetPx, -target.Item2, target.Item2);
+            var offsetExprStr = $"(ih-oh)/2+{offsetPx.ToString(CultureInfo.InvariantCulture)}";
+            // Escape commas for ffmpeg expression parser inside a filter option.
+            var cropYExpr = $"max(0\\,min(ih-oh\\,{offsetExprStr}))";
+            filterParts.Add($"{sourceLabel}scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=increase:force_divisible_by=2,crop={target.Item1}:{target.Item2}:(iw-ow)/2:{cropYExpr}[vviewport]");
 
-        filterParts.Add($"[vviewport]crop={cropWidthPx}:{cropHeightPx}:{cropLeftPx}:{cropTopPx},scale={target.Item1}:{target.Item2}:flags=lanczos,fps=24,format=yuv420p[v]");
-        var filter = string.Join(';', filterParts);
+            var cropWidthPx = Math.Clamp((int)Math.Round(target.Item1 * cropWNorm), 2, target.Item1);
+            if ((cropWidthPx & 1) != 0) cropWidthPx -= 1;
+            if (cropWidthPx < 2) cropWidthPx = 2;
 
-        var passlog = Path.Combine(Path.GetDirectoryName(job.OutputPath) ?? ".", $"pass-{job.JobId:N}");
+            var cropHeightPx = Math.Clamp((int)Math.Round(target.Item2 * cropHNorm), 2, target.Item2);
+            if ((cropHeightPx & 1) != 0) cropHeightPx -= 1;
+            if (cropHeightPx < 2) cropHeightPx = 2;
 
-        if (mode == EncodingMode.MAX_QUALITY)
-        {
-            var nullOutput = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
-            var pass1 = new List<string>{"-y","-threads","1","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-an","-c:v","libx264","-b:v",bitrate,"-pass","1","-passlogfile",passlog,"-f","mp4",nullOutput};
-            var pass2 = new List<string>{"-y","-threads","1","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-c:v","libx264","-b:v",bitrate,"-pass","2","-passlogfile",passlog};
+            var cropLeftPx = (int)Math.Round((target.Item1 - cropWidthPx) * cropXNorm);
+            var cropTopPx = (int)Math.Round((target.Item2 - cropHeightPx) * cropYNorm);
+            cropLeftPx = Math.Clamp(cropLeftPx, 0, Math.Max(0, target.Item1 - cropWidthPx));
+            cropTopPx = Math.Clamp(cropTopPx, 0, Math.Max(0, target.Item2 - cropHeightPx));
+
+            filterParts.Add($"[vviewport]crop={cropWidthPx}:{cropHeightPx}:{cropLeftPx}:{cropTopPx},scale={target.Item1}:{target.Item2}:flags=lanczos,fps={targetFps},format=yuv420p[vcrop]");
+            if (!string.IsNullOrWhiteSpace(overlayAbsolutePath))
+            {
+                filterParts.Add($"[1:v]scale={target.Item1}:{target.Item2}:force_original_aspect_ratio=decrease[ovr]");
+                filterParts.Add($"[vcrop][ovr]overlay=(W-w)/2:(H-h)/2:format=auto,format=yuv420p[v]");
+            }
+            else
+            {
+                filterParts.Add("[vcrop]null[v]");
+            }
+            var filter = string.Join(';', filterParts);
+
+            var passlog = Path.Combine(Path.GetDirectoryName(job.OutputPath) ?? ".", $"pass-{job.JobId:N}");
+
+            if (mode == EncodingMode.MAX_QUALITY)
+            {
+                var nullOutput = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
+                var pass1 = new List<string>{"-y","-threads",workerThreads.ToString(CultureInfo.InvariantCulture),"-filter_threads","1","-filter_complex_threads","1","-i",processingInputPath};
+            if (!string.IsNullOrWhiteSpace(overlayAbsolutePath)) pass1.AddRange(new []{"-i", overlayAbsolutePath});
+            pass1.AddRange(new []{"-filter_complex",filter,"-map","[v]","-an","-c:v","libx264","-b:v",bitrate,"-pass","1","-passlogfile",passlog,"-f","mp4",nullOutput});
+                var pass2 = new List<string>{"-y","-threads",workerThreads.ToString(CultureInfo.InvariantCulture),"-filter_threads","1","-filter_complex_threads","1","-i",processingInputPath};
+            if (!string.IsNullOrWhiteSpace(overlayAbsolutePath)) pass2.AddRange(new []{"-i", overlayAbsolutePath});
+            pass2.AddRange(new []{"-filter_complex",filter,"-map","[v]","-c:v","libx264","-b:v",bitrate,"-pass","2","-passlogfile",passlog});
             if (includeAudio)
             {
                 if (!string.IsNullOrWhiteSpace(audioSourceLabel))
@@ -345,14 +444,16 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             {
                 pass2.Add("-an");
             }
-            pass2.Add(job.OutputPath);
-            await RunProcessAsync(job, "ffmpeg", pass1, ct);
-            await RunProcessAsync(job, "ffmpeg", pass2, ct);
-            CleanupPassLogs(passlog);
-        }
-        else
-        {
-            var args = new List<string>{"-y","-threads","1","-i",job.InputPath,"-filter_complex",filter,"-map","[v]","-c:v","libx264","-pix_fmt","yuv420p","-b:v",bitrate};
+                pass2.Add(job.OutputPath);
+                await RunProcessAsync(job, "ffmpeg", pass1, ct);
+                await RunProcessAsync(job, "ffmpeg", pass2, ct);
+                CleanupPassLogs(passlog);
+            }
+            else
+            {
+                var args = new List<string>{"-y","-threads",workerThreads.ToString(CultureInfo.InvariantCulture),"-filter_threads","1","-filter_complex_threads","1","-i",processingInputPath};
+            if (!string.IsNullOrWhiteSpace(overlayAbsolutePath)) args.AddRange(new []{"-i", overlayAbsolutePath});
+            args.AddRange(new []{"-filter_complex",filter,"-map","[v]","-c:v","libx264","-pix_fmt","yuv420p","-b:v",bitrate});
             if (isVidcovMode)
             {
                 // Keep VIDCOV output size predictable even with many stitched segments.
@@ -363,48 +464,184 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             else
             {
                 // Stable default for episod 10/20/30 on constrained hosts.
-                args.AddRange(new[] { "-preset", "veryfast", "-movflags", "+faststart" });
-            }
-            if (includeAudio)
-            {
-                if (!string.IsNullOrWhiteSpace(audioSourceLabel))
+                if (lowRamBalancedProfile)
                 {
-                    args.AddRange(new []{"-map",audioSourceLabel,"-c:a","aac","-b:a",$"{audioKbps}k"});
+                    if (shortClipQualityBoost)
+                    {
+                        args.AddRange(new[] { "-preset", "superfast", "-x264-params", "threads=1:rc-lookahead=0:sync-lookahead=0:ref=2:bframes=0:scenecut=0", "-movflags", "+faststart" });
+                    }
+                    else
+                    {
+                        args.AddRange(new[] { "-preset", "ultrafast", "-tune", "zerolatency", "-x264-params", "threads=1:rc-lookahead=0:sync-lookahead=0:ref=1:bframes=0:scenecut=0:subme=0:me=dia:trellis=0:aq-mode=0:partitions=none:8x8dct=0", "-movflags", "+faststart" });
+                    }
                 }
                 else
                 {
-                    args.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a",$"{audioKbps}k"});
+                    args.AddRange(new[] { "-preset", "veryfast", "-x264-params", $"threads={workerThreads}", "-movflags", "+faststart" });
                 }
             }
-            else
-            {
-                args.Add("-an");
+                if (includeAudio)
+                {
+                    if (!string.IsNullOrWhiteSpace(audioSourceLabel))
+                    {
+                        args.AddRange(new []{"-map",audioSourceLabel,"-c:a","aac","-b:a",$"{audioKbps}k"});
+                    }
+                    else
+                    {
+                        args.AddRange(new []{"-map","0:a?","-c:a","aac","-b:a",$"{audioKbps}k"});
+                    }
+                }
+                else
+                {
+                    args.Add("-an");
+                }
+                args.Add(job.OutputPath);
+                await RunProcessAsync(job, "ffmpeg", args, ct);
             }
-            args.Add(job.OutputPath);
-            await RunProcessAsync(job, "ffmpeg", args, ct);
+
+            job.RelativeOutputPath = $"video-out/{Path.GetFileName(job.OutputPath)}";
+            job.Progress = "100%";
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(tempWorkDir))
+            {
+                TryDeleteDirectory(tempWorkDir);
+            }
+        }
+    }
+
+    private async Task<string> BuildConcatInputFromSegmentsAsync(
+        FfmpegJob job,
+        string inputPath,
+        List<(double Start, double End)> segments,
+        string tempDir,
+        int workerThreads,
+        CancellationToken ct)
+    {
+        var partPaths = new List<string>(segments.Count);
+        for (var i = 0; i < segments.Count; i++)
+        {
+            var seg = segments[i];
+            var partPath = Path.Combine(tempDir, $"part-{i:000}.ts");
+            partPaths.Add(partPath);
+            var cutArgs = new List<string>
+            {
+                "-y",
+                "-threads", workerThreads.ToString(CultureInfo.InvariantCulture),
+                "-ss", seg.Start.ToString(CultureInfo.InvariantCulture),
+                "-to", seg.End.ToString(CultureInfo.InvariantCulture),
+                "-i", inputPath,
+                "-map", "0:v:0",
+                "-map", "0:a?",
+                "-c", "copy",
+                "-avoid_negative_ts", "make_zero",
+                "-fflags", "+genpts",
+                "-f", "mpegts",
+                partPath
+            };
+            await RunProcessAsync(job, "ffmpeg", cutArgs, ct);
         }
 
-        job.RelativeOutputPath = $"video-out/{Path.GetFileName(job.OutputPath)}";
-        job.Progress = "done";
+        var listPath = Path.Combine(tempDir, "concat-list.txt");
+        var listLines = partPaths.Select(p => $"file '{p.Replace("'", "'\\''")}'").ToArray();
+        await File.WriteAllLinesAsync(listPath, listLines, ct);
+
+        var concatPath = Path.Combine(tempDir, "concat.ts");
+        var concatArgs = new List<string>
+        {
+            "-y",
+            "-threads", workerThreads.ToString(CultureInfo.InvariantCulture),
+            "-f", "concat",
+            "-safe", "0",
+            "-i", listPath,
+            "-c", "copy",
+            "-f", "mpegts",
+            concatPath
+        };
+        await RunProcessAsync(job, "ffmpeg", concatArgs, ct);
+        if (!File.Exists(concatPath))
+        {
+            throw new InvalidOperationException("failed to build preconcat input");
+        }
+
+        return concatPath;
     }
 
     private async Task RunProcessAsync(FfmpegJob job, string fileName, List<string> args, CancellationToken ct)
     {
+        if (string.Equals(fileName, "ffmpeg", StringComparison.OrdinalIgnoreCase) && !args.Contains("-progress"))
+        {
+            // Force machine-readable progress lines (out_time_ms, progress=continue/end).
+            args.Insert(0, "pipe:2");
+            args.Insert(0, "-progress");
+            args.Insert(2, "-nostats");
+        }
+
         var psi = new ProcessStartInfo { FileName = fileName, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var process = new Process { StartInfo = psi };
         if (!process.Start()) throw new InvalidOperationException("failed to start process");
         _runningProcesses[job.JobId] = process;
         var outputTask = process.StandardOutput.ReadToEndAsync(ct);
-        var errorTask = process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
+        var stderrBuilder = new StringBuilder();
+        var errorTask = Task.Run(async () =>
+        {
+            while (true)
+            {
+                var line = await process.StandardError.ReadLineAsync();
+                if (line is null) break;
+                stderrBuilder.AppendLine(line);
+                TryUpdateProgressFromFfmpegLine(job, line);
+            }
+        }, ct);
+        var waitExit = process.WaitForExitAsync(ct);
+        while (!waitExit.IsCompleted)
+        {
+            await Task.WhenAny(waitExit, Task.Delay(1000, ct));
+            if (waitExit.IsCompleted) break;
+
+            // Emergency guard to avoid whole-host freeze on low-RAM VMs.
+            var memMb = ReadAvailableRamMb();
+            if (memMb > 0 && memMb < 700)
+            {
+                _logger.LogWarning("Emergency stop: low available RAM during ffmpeg (jobId={jobId}, memAvailable={memMb}MB)", job.JobId, memMb);
+                try { process.Kill(entireProcessTree: true); } catch { }
+                throw new InvalidOperationException($"aborted_low_memory: available RAM dropped to {memMb}MB");
+            }
+        }
+        await waitExit;
+        await errorTask;
         _runningProcesses.TryRemove(job.JobId, out _);
-        var err = await errorTask;
+        var err = stderrBuilder.ToString();
         if (process.ExitCode != 0)
         {
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(err) ? $"process failed: {process.ExitCode}" : err);
         }
         _ = await outputTask;
+    }
+
+    private static void TryUpdateProgressFromFfmpegLine(FfmpegJob job, string line)
+    {
+        if (job.DurationSeconds is null || job.DurationSeconds <= 0 || string.IsNullOrWhiteSpace(line)) return;
+        var outTimeMs = FfmpegOutTimeMsRegex.Match(line);
+        if (outTimeMs.Success && long.TryParse(outTimeMs.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var elapsedUs))
+        {
+            var elapsedSecFromMs = elapsedUs / 1_000_000.0;
+            var pctFromMs = (int)Math.Round(Math.Clamp((elapsedSecFromMs / job.DurationSeconds.Value) * 100.0, 0, 99));
+            job.Progress = $"{pctFromMs}%";
+            return;
+        }
+
+        var m = FfmpegTimeRegex.Match(line);
+        if (!m.Success) return;
+
+        if (!double.TryParse(m.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var hh)) return;
+        if (!double.TryParse(m.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var mm)) return;
+        if (!double.TryParse(m.Groups[3].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var ss)) return;
+        var elapsed = hh * 3600 + mm * 60 + ss;
+        var pct = (int)Math.Round(Math.Clamp((elapsed / job.DurationSeconds.Value) * 100.0, 0, 99));
+        job.Progress = $"{pct}%";
     }
 
     private (EncodingMode Mode, string Reason) ResolveMode(EncodingMode requested, double duration, int ramMb)
@@ -525,6 +762,18 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
     private static void TryDeleteFile(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch { }
     }
 
     private void ExpireQueuedJobs()
