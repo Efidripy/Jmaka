@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Jmaka.Api/Jmaka.Api.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Jmaka.Api.Tests/Jmaka.Api.Tests.csproj" />
+  </Folder>
 </Solution>
