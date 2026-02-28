@@ -25,6 +25,12 @@
   const videoTimelineCanvas = document.getElementById('videoTimelineCanvas');
   const videoTimelineSegments = document.getElementById('videoTimelineSegments');
   const videoTimelinePlayhead = document.getElementById('videoTimelinePlayhead');
+  const videoTimelineOverview = document.getElementById('videoTimelineOverview');
+  const videoTimelineOverviewWindow = document.getElementById('videoTimelineOverviewWindow');
+  const videoTimelineZoomOut = document.getElementById('videoTimelineZoomOut');
+  const videoTimelineZoomIn = document.getElementById('videoTimelineZoomIn');
+  const videoTimelineZoomFit = document.getElementById('videoTimelineZoomFit');
+  const videoTimelineZoomLabel = document.getElementById('videoTimelineZoomLabel');
   const videoTrimStartLabel = document.getElementById('videoTrimStartLabel');
   const videoTrimEndLabel = document.getElementById('videoTrimEndLabel');
   const videoCurrentTime = document.getElementById('videoCurrentTime');
@@ -57,7 +63,13 @@
   const timelinePreviewState = {
     dirty: true,
     sourceToken: '',
-    frameCount: 0
+    frameCount: 0,
+    baseToken: '',
+    windowStart: 0,
+    windowEnd: 0,
+    renderNonce: 0,
+    renderTimerId: 0,
+    cachedCanvas: null
   };
 
   const toolButtons = Array.from(videoEditModal.querySelectorAll('[data-tool]'));
@@ -82,12 +94,15 @@
     muteAudio: false,
     targetSizeMb: 10,
     selectedSizeLimit: '10mb',
+    timelineZoom: 1,
+    timelineStartSec: 0
   };
 
   let originals = [];
   let processed = [];
   let overlayTemplates = [];
   let timelineDrag = null;
+  let timelineOverviewDrag = null;
   let verticalDrag = null;
 
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -302,21 +317,104 @@
     videoCropRect.style.height = `${state.crop.h * bounds.height}px`;
   }
 
+  function getTimelineWindowDurationSec() {
+    const duration = state.duration || 0;
+    if (!duration) return 0;
+    return clamp(duration / Math.max(1, state.timelineZoom || 1), Math.min(1, duration), duration);
+  }
+
+  function clampTimelineStart() {
+    const duration = state.duration || 0;
+    if (!duration) {
+      state.timelineStartSec = 0;
+      return;
+    }
+    const windowDur = getTimelineWindowDurationSec();
+    state.timelineStartSec = clamp(state.timelineStartSec || 0, 0, Math.max(0, duration - windowDur));
+  }
+
+  function getTimelineWindow() {
+    const duration = state.duration || 0;
+    const windowDur = getTimelineWindowDurationSec();
+    clampTimelineStart();
+    const start = clamp(state.timelineStartSec || 0, 0, Math.max(0, duration - windowDur));
+    const end = clamp(start + windowDur, 0, duration);
+    return { start, end, duration: Math.max(0.0001, end - start) };
+  }
+
+  function timelineTimeToX(timeSec, widthPx) {
+    const window = getTimelineWindow();
+    const rel = (timeSec - window.start) / window.duration;
+    return clamp(rel, 0, 1) * widthPx;
+  }
+
+  function timelineXToTime(xPx, widthPx) {
+    const window = getTimelineWindow();
+    const rel = widthPx > 0 ? clamp(xPx / widthPx, 0, 1) : 0;
+    return clamp(window.start + rel * window.duration, 0, state.duration || 0);
+  }
+
+  function setTimelineZoom(nextZoom, anchorTimeSec = null) {
+    const duration = state.duration || 0;
+    if (!duration) {
+      state.timelineZoom = 1;
+      state.timelineStartSec = 0;
+      return;
+    }
+    const minZoom = 1;
+    const maxZoom = clamp(duration / Math.min(0.5, duration), 1, 400);
+    const prevZoom = clamp(state.timelineZoom || 1, minZoom, maxZoom);
+    const prevWindowDur = duration / prevZoom;
+    const zoom = clamp(nextZoom, minZoom, maxZoom);
+    const nextWindowDur = duration / zoom;
+    const anchor = Number.isFinite(anchorTimeSec) ? clamp(anchorTimeSec, 0, duration) : (state.timelineStartSec + prevWindowDur / 2);
+    const anchorRel = prevWindowDur > 0 ? (anchor - state.timelineStartSec) / prevWindowDur : 0.5;
+    state.timelineZoom = zoom;
+    state.timelineStartSec = anchor - anchorRel * nextWindowDur;
+    clampTimelineStart();
+  }
+
+  function panTimelineBy(deltaSec) {
+    state.timelineStartSec += deltaSec;
+    clampTimelineStart();
+  }
+
+  function renderTimelineOverview() {
+    if (!videoTimelineOverview || !videoTimelineOverviewWindow) return;
+    const duration = state.duration || 0;
+    if (!duration) {
+      videoTimelineOverviewWindow.style.left = '0px';
+      videoTimelineOverviewWindow.style.width = '100%';
+      return;
+    }
+    const rect = videoTimelineOverview.getBoundingClientRect();
+    if (!rect.width) return;
+    const window = getTimelineWindow();
+    const left = (window.start / duration) * rect.width;
+    const width = Math.max(10, (window.duration / duration) * rect.width);
+    videoTimelineOverviewWindow.style.left = `${left}px`;
+    videoTimelineOverviewWindow.style.width = `${width}px`;
+  }
+
   function renderTimeline() {
     if (!videoTimelineStrip || !videoTimelineSegments) return;
     const rect = videoTimelineStrip.getBoundingClientRect();
     const duration = state.duration || 0;
+    const timelineWindow = getTimelineWindow();
     videoTimelineSegments.innerHTML = '';
     if (rect.width > 0 && duration > 0) {
       state.segments.forEach((seg, index) => {
-        const startPct = seg.start / duration;
-        const endPct = seg.end / duration;
+        const visStart = Math.max(seg.start, timelineWindow.start);
+        const visEnd = Math.min(seg.end, timelineWindow.end);
+        if (visEnd <= visStart) return;
+        const startX = timelineTimeToX(visStart, rect.width);
+        const endX = timelineTimeToX(visEnd, rect.width);
         const node = document.createElement('div');
         node.className = 'timeline-selection';
         if (index === state.activeSegmentIndex) node.classList.add('is-active');
         node.dataset.index = String(index);
-        node.style.left = `${startPct * rect.width}px`;
-        node.style.width = `${Math.max(0, (endPct - startPct) * rect.width)}px`;
+        node.style.left = `${startX}px`;
+        node.style.width = `${Math.max(0, endX - startX)}px`;
         node.innerHTML = '<span class="timeline-handle start" data-handle="start"></span><span class="timeline-handle end" data-handle="end"></span>';
         videoTimelineSegments.appendChild(node);
       });
@@ -326,9 +424,11 @@
     if (videoTrimStartLabel) videoTrimStartLabel.textContent = formatTime(active.start);
     if (videoTrimEndLabel) videoTrimEndLabel.textContent = formatTime(active.end);
     if (videoDuration) videoDuration.textContent = formatTime(duration);
+    if (videoTimelineZoomLabel) videoTimelineZoomLabel.textContent = `${(state.timelineZoom || 1).toFixed(1)}x`;
 
     queueFilmstripRender(false);
     renderPlayhead();
+    renderTimelineOverview();
     renderToolState();
   }
 
@@ -358,44 +458,57 @@
     }
   }
 
-  function queueFilmstripRender(force) {
-    if (!videoEditPreview || !videoTimelineCanvas || !state.duration) {
-      drawFilmstripPlaceholder();
-      return;
-    }
+  function drawFilmstripFromCache(baseToken, window, width, height) {
+    const cached = timelinePreviewState.cachedCanvas;
+    if (!cached || !timelinePreviewState.baseToken || timelinePreviewState.baseToken !== baseToken) return false;
+    const oldStart = timelinePreviewState.windowStart;
+    const oldEnd = timelinePreviewState.windowEnd;
+    const oldDur = oldEnd - oldStart;
+    const newDur = window.end - window.start;
+    if (!oldDur || !newDur) return false;
+    const overlapStart = Math.max(oldStart, window.start);
+    const overlapEnd = Math.min(oldEnd, window.end);
+    const ctx = videoTimelineCanvas && videoTimelineCanvas.getContext('2d');
+    if (!ctx || overlapEnd <= overlapStart) return false;
 
+    drawFilmstripPlaceholder();
+    const sx = ((overlapStart - oldStart) / oldDur) * cached.width;
+    const sw = ((overlapEnd - overlapStart) / oldDur) * cached.width;
+    const dx = ((overlapStart - window.start) / newDur) * width;
+    const dw = ((overlapEnd - overlapStart) / newDur) * width;
+    const y = 6;
+    const h = height - 12;
+    ctx.drawImage(cached, sx, y, sw, h, dx, y, dw, h);
+    return true;
+  }
+
+  async function renderFilmstripAsync(opts) {
+    const { width, height, frameCount, timelineWindow, baseToken, nonce, src } = opts;
     const canvas = videoTimelineCanvas;
-    const width = canvas.width || Math.floor(videoTimelineStrip.getBoundingClientRect().width || 0);
-    const height = canvas.height || Math.floor(videoTimelineStrip.getBoundingClientRect().height || 0);
-    if (!width || !height) {
-      drawFilmstripPlaceholder();
-      return;
-    }
-
-    const frameWidth = Math.max(48, Math.floor(width / 14));
-    const frameCount = Math.max(6, Math.ceil(width / frameWidth));
-    const sourceToken = `${videoEditPreview.currentSrc || videoEditPreview.src || ''}|${state.duration}|${width}x${height}`;
-    if (!force && !timelinePreviewState.dirty && timelinePreviewState.sourceToken === sourceToken && timelinePreviewState.frameCount === frameCount) {
-      return;
-    }
-
-    timelinePreviewState.dirty = false;
-    timelinePreviewState.sourceToken = sourceToken;
-    timelinePreviewState.frameCount = frameCount;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
     const captureVideo = document.createElement('video');
     captureVideo.crossOrigin = 'anonymous';
     captureVideo.muted = true;
     captureVideo.preload = 'auto';
-    captureVideo.src = videoEditPreview.currentSrc || videoEditPreview.src;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    captureVideo.src = src;
 
     const frameCanvas = document.createElement('canvas');
     const frameCtx = frameCanvas.getContext('2d');
     if (!frameCtx) return;
 
+    await new Promise((resolve) => {
+      const done = () => resolve();
+      captureVideo.addEventListener('loadedmetadata', done, { once: true });
+      captureVideo.addEventListener('error', done, { once: true });
+    });
+    if (nonce !== timelinePreviewState.renderNonce) return;
+    if (!captureVideo.videoWidth || !captureVideo.videoHeight) return;
+
+    frameCanvas.width = captureVideo.videoWidth;
+    frameCanvas.height = captureVideo.videoHeight;
     drawFilmstripPlaceholder();
 
     const drawFrameAtIndex = (index) => {
@@ -411,35 +524,86 @@
       ctx.strokeRect(x + 0.5, y + 0.5, w + 1, h - 1);
     };
 
-    captureVideo.addEventListener('loadedmetadata', async () => {
-      if (!captureVideo.videoWidth || !captureVideo.videoHeight) return;
-      frameCanvas.width = captureVideo.videoWidth;
-      frameCanvas.height = captureVideo.videoHeight;
-
-      for (let i = 0; i < frameCount; i++) {
-        const t = frameCount === 1 ? 0 : (i / (frameCount - 1)) * Math.max(0, state.duration - 0.05);
-        try {
-          await new Promise((resolve) => {
-            const done = () => {
-              captureVideo.removeEventListener('seeked', done);
-              resolve();
-            };
-            captureVideo.addEventListener('seeked', done, { once: true });
-            captureVideo.currentTime = t;
-          });
-          drawFrameAtIndex(i);
-        } catch {
-          // ignore and keep placeholder if decoding fails
-        }
+    for (let i = 0; i < frameCount; i++) {
+      if (nonce !== timelinePreviewState.renderNonce) return;
+      const t = frameCount === 1
+        ? timelineWindow.start
+        : timelineWindow.start + (i / (frameCount - 1)) * Math.max(0, timelineWindow.duration - 0.05);
+      try {
+        await new Promise((resolve) => {
+          const done = () => {
+            captureVideo.removeEventListener('seeked', done);
+            resolve();
+          };
+          captureVideo.addEventListener('seeked', done, { once: true });
+          captureVideo.currentTime = t;
+        });
+        if (nonce !== timelinePreviewState.renderNonce) return;
+        drawFrameAtIndex(i);
+      } catch {
+        // ignore and keep what we have
       }
-    }, { once: true });
+    }
+
+    const cacheCanvas = document.createElement('canvas');
+    cacheCanvas.width = width;
+    cacheCanvas.height = height;
+    const cacheCtx = cacheCanvas.getContext('2d');
+    if (cacheCtx) cacheCtx.drawImage(canvas, 0, 0);
+    timelinePreviewState.cachedCanvas = cacheCanvas;
+    timelinePreviewState.baseToken = baseToken;
+    timelinePreviewState.windowStart = timelineWindow.start;
+    timelinePreviewState.windowEnd = timelineWindow.end;
+  }
+
+  function queueFilmstripRender(force) {
+    if (!videoEditPreview || !videoTimelineCanvas || !state.duration) {
+      drawFilmstripPlaceholder();
+      return;
+    }
+
+    const canvas = videoTimelineCanvas;
+    const width = canvas.width || Math.floor(videoTimelineStrip.getBoundingClientRect().width || 0);
+    const height = canvas.height || Math.floor(videoTimelineStrip.getBoundingClientRect().height || 0);
+    if (!width || !height) {
+      drawFilmstripPlaceholder();
+      return;
+    }
+
+    const frameWidth = Math.max(40, Math.floor(width / 16));
+    const frameCount = Math.max(6, Math.ceil(width / frameWidth));
+    const timelineWindow = getTimelineWindow();
+    const src = videoEditPreview.currentSrc || videoEditPreview.src || '';
+    const baseToken = `${src}|${state.duration}|${width}x${height}`;
+    const sourceToken = `${baseToken}|${timelineWindow.start.toFixed(3)}|${timelineWindow.end.toFixed(3)}|${frameCount}`;
+    if (!force && !timelinePreviewState.dirty && timelinePreviewState.sourceToken === sourceToken) {
+      return;
+    }
+
+    timelinePreviewState.sourceToken = sourceToken;
+    timelinePreviewState.frameCount = frameCount;
+    timelinePreviewState.dirty = false;
+
+    if (!force) {
+      drawFilmstripFromCache(baseToken, timelineWindow, width, height);
+    } else {
+      drawFilmstripPlaceholder();
+    }
+
+    window.clearTimeout(timelinePreviewState.renderTimerId);
+    const nonce = timelinePreviewState.renderNonce + 1;
+    timelinePreviewState.renderNonce = nonce;
+    const delay = force ? 0 : 140;
+    timelinePreviewState.renderTimerId = window.setTimeout(() => {
+      renderFilmstripAsync({ width, height, frameCount, timelineWindow, baseToken, nonce, src });
+    }, delay);
   }
 
   function renderPlayhead() {
     if (!videoTimelinePlayhead || !videoTimelineStrip || !videoEditPreview || !state.duration) return;
     const rect = videoTimelineStrip.getBoundingClientRect();
-    const pct = clamp(videoEditPreview.currentTime / state.duration, 0, 1);
-    videoTimelinePlayhead.style.left = `${pct * rect.width}px`;
+    const x = timelineTimeToX(videoEditPreview.currentTime, rect.width);
+    videoTimelinePlayhead.style.left = `${x}px`;
     if (videoCurrentTime) videoCurrentTime.textContent = formatTime(videoEditPreview.currentTime);
   }
 
@@ -721,11 +885,33 @@
     if (!videoTimelineStrip || !state.duration) return 0;
     const rect = videoTimelineStrip.getBoundingClientRect();
     const x = clamp(clientX - rect.left, 0, rect.width);
-    return (x / rect.width) * state.duration;
+    return timelineXToTime(x, rect.width);
   }
 
   function handleTimelinePointerDown(event) {
     if (!videoTimelineStrip || !videoTimelineSegments) return;
+    if (event.button === 1 || event.altKey) {
+      const startX = event.clientX;
+      const startTimelineStart = state.timelineStartSec;
+      const rect = videoTimelineStrip.getBoundingClientRect();
+      const windowDur = getTimelineWindowDurationSec();
+      const move = (moveEvent) => {
+        const dx = moveEvent.clientX - startX;
+        const secPerPx = rect.width > 0 ? (windowDur / rect.width) : 0;
+        state.timelineStartSec = startTimelineStart - dx * secPerPx;
+        clampTimelineStart();
+        renderTimeline();
+      };
+      const stop = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', stop);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', stop, { once: true });
+      event.preventDefault();
+      return;
+    }
+
     const selection = event.target.closest('.timeline-selection');
     const index = selection ? Number(selection.dataset.index) : -1;
     if (index >= 0) state.activeSegmentIndex = index;
@@ -747,6 +933,23 @@
     handleTimelinePointerMove(event);
     window.addEventListener('pointermove', handleTimelinePointerMove);
     window.addEventListener('pointerup', handleTimelinePointerUp);
+  }
+
+  function handleTimelineWheel(event) {
+    if (!state.duration || !videoTimelineStrip) return;
+    event.preventDefault();
+    const rect = videoTimelineStrip.getBoundingClientRect();
+    const x = clamp(event.clientX - rect.left, 0, rect.width);
+    const anchor = timelineXToTime(x, rect.width);
+    if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+      const windowDur = getTimelineWindowDurationSec();
+      const shiftSec = (windowDur * (event.deltaX || event.deltaY)) / Math.max(1, rect.width);
+      panTimelineBy(shiftSec);
+    } else {
+      const factor = event.deltaY > 0 ? 1 / 1.18 : 1.18;
+      setTimelineZoom((state.timelineZoom || 1) * factor, anchor);
+    }
+    renderTimeline();
   }
 
   function handleTimelinePointerMove(event) {
@@ -785,6 +988,18 @@
     timelineDrag = null;
     window.removeEventListener('pointermove', handleTimelinePointerMove);
     window.removeEventListener('pointerup', handleTimelinePointerUp);
+  }
+
+  function setOverviewCenterByClientX(clientX) {
+    if (!videoTimelineOverview || !state.duration) return;
+    const rect = videoTimelineOverview.getBoundingClientRect();
+    if (!rect.width) return;
+    const x = clamp(clientX - rect.left, 0, rect.width);
+    const centerSec = (x / rect.width) * state.duration;
+    const half = getTimelineWindowDurationSec() / 2;
+    state.timelineStartSec = centerSec - half;
+    clampTimelineStart();
+    renderTimeline();
   }
 
   function handleVerticalDrag(event) {
@@ -879,6 +1094,8 @@
     state.targetSizeMb = 10;
     state.selectedSizeLimit = '10mb';
     state.tool = 'trim';
+    state.timelineZoom = 1;
+    state.timelineStartSec = 0;
     
     // Update UI elements
     if (videoSpeedRange) videoSpeedRange.value = '1';
@@ -1042,6 +1259,8 @@
       state.segments = [{ start: 0, end: state.duration }];
       state.activeSegmentIndex = 0;
       state.trim = { ...state.segments[0] };
+      state.timelineZoom = 1;
+      state.timelineStartSec = 0;
       state.verticalOffsetPx = 0;
       timelinePreviewState.dirty = true;
       renderTimeline();
@@ -1052,7 +1271,73 @@
     videoEditPreview.addEventListener('timeupdate', renderPlayhead);
   }
 
-  if (videoTimelineStrip) videoTimelineStrip.addEventListener('pointerdown', handleTimelinePointerDown);
+  if (videoTimelineStrip) {
+    videoTimelineStrip.addEventListener('pointerdown', handleTimelinePointerDown);
+    videoTimelineStrip.addEventListener('wheel', handleTimelineWheel, { passive: false });
+  }
+  if (videoTimelineZoomIn) videoTimelineZoomIn.addEventListener('click', () => {
+    setTimelineZoom((state.timelineZoom || 1) * 1.25);
+    renderTimeline();
+  });
+  if (videoTimelineZoomOut) videoTimelineZoomOut.addEventListener('click', () => {
+    setTimelineZoom((state.timelineZoom || 1) / 1.25);
+    renderTimeline();
+  });
+  if (videoTimelineZoomFit) videoTimelineZoomFit.addEventListener('click', () => {
+    state.timelineZoom = 1;
+    state.timelineStartSec = 0;
+    renderTimeline();
+  });
+  if (videoTimelineOverview) {
+    videoTimelineOverview.addEventListener('pointerdown', (event) => {
+      if (!state.duration) return;
+      if (event.target === videoTimelineOverviewWindow) {
+        timelineOverviewDrag = {
+          startX: event.clientX,
+          startSec: state.timelineStartSec
+        };
+        videoTimelineOverviewWindow.classList.add('is-dragging');
+      } else {
+        setOverviewCenterByClientX(event.clientX);
+      }
+      const move = (moveEvent) => {
+        if (!timelineOverviewDrag || !videoTimelineOverview) return;
+        const rect = videoTimelineOverview.getBoundingClientRect();
+        const dx = moveEvent.clientX - timelineOverviewDrag.startX;
+        const secPerPx = rect.width > 0 ? (state.duration / rect.width) : 0;
+        state.timelineStartSec = timelineOverviewDrag.startSec + dx * secPerPx;
+        clampTimelineStart();
+        renderTimeline();
+      };
+      const up = () => {
+        timelineOverviewDrag = null;
+        if (videoTimelineOverviewWindow) videoTimelineOverviewWindow.classList.remove('is-dragging');
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up, { once: true });
+      event.preventDefault();
+    });
+  }
+  window.addEventListener('keydown', (event) => {
+    if (videoEditModal.hidden) return;
+    const seg = state.segments[state.activeSegmentIndex];
+    if (!seg || !state.duration) return;
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    if (!event.altKey) return;
+    const dir = event.key === 'ArrowLeft' ? -1 : 1;
+    const step = event.ctrlKey ? 1 : 0.1;
+    const minGap = 0.1;
+    if (event.shiftKey) {
+      seg.end = clamp(seg.end + dir * step, seg.start + minGap, state.duration);
+    } else {
+      seg.start = clamp(seg.start + dir * step, 0, seg.end - minGap);
+    }
+    normalizeSegments();
+    renderTimeline();
+    event.preventDefault();
+  });
   if (videoCropRect) videoCropRect.addEventListener('pointerdown', handleCropPointerDown);
   if (videoHistoryRefresh) videoHistoryRefresh.addEventListener('click', (e) => { e.preventDefault(); loadVideoHistory(); });
   if (videoProcessedRefresh) videoProcessedRefresh.addEventListener('click', (e) => { e.preventDefault(); loadVideoHistory(); });

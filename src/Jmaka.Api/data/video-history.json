@@ -16,5 +16,14 @@
     "Size": 6773422,
     "RelativePath": "video-out/20260228-023505-412-1cc9bed9002b4156a20838299adef8dc.mp4",
     "DurationSeconds": 88.066667
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-024821-565-6f1cf32331344f0793345dd2f19f96f6.mp4",
+    "OriginalName": "20260228-024821-565-6f1cf32331344f0793345dd2f19f96f6.mp4",
+    "CreatedAt": "2026-02-28T02:49:08.4346401+00:00",
+    "Size": 5057489,
+    "RelativePath": "video-out/20260228-024821-565-6f1cf32331344f0793345dd2f19f96f6.mp4",
+    "DurationSeconds": 41.75
   }
 ]
