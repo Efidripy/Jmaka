@@ -19,7 +19,7 @@
         <!-- Logo at the top -->
         <div class="ascii-logo-container">
           <pre id="asciiArt" class="ascii-art"></pre>
-          <span class="version-badge" data-version>v0.5.0</span>
+          <span class="version-badge" data-version>v0.5.2</span>
         </div>
 
         <!-- Upload button and languages HORIZONTALLY -->
@@ -121,7 +121,7 @@
     <pre id="result" class="result" aria-label="Результат" hidden></pre>
     
     <footer style="text-align: center; padding: 10px; font-size: 11px; color: #64748b; opacity: 0.7;">
-      Jmaka v<span data-version>0.5.0</span>
+      Jmaka v<span data-version>0.5.2</span>
     </footer>
   </main>
 
@@ -188,58 +188,69 @@
         <div class="modal-title-wrap">
           <div class="modal-title">Справка по Jmaka</div>
           <div class="modal-sub">
-            <span class="modal-subtext">Краткое описание всех функций и горячих действий.</span>
+            <span class="modal-subtext">Практическая шпаргалка по функциям, статусам и быстрым действиям.</span>
           </div>
         </div>
         <button id="helpClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
       </div>
       <div class="modal-body help-body">
-        <p><strong>Jmaka</strong> — небольшое веб-приложение для загрузки и обработки изображений.</p>
-        <h3>Загрузка файлов</h3>
-        <ul>
-          <li>Кнопка-дискета — выбор до 15 файлов за раз.</li>
-          <li>Поддержка drag &amp; drop: просто перетащите файлы на окно.</li>
-          <li>Вставка из буфера обмена (Ctrl+V) для картинок.</li>
-        </ul>
-        <h3>Таблица файлов</h3>
-        <ul>
-          <li>Каждая строка — загруженное изображение (новые сверху).</li>
-          <li>В ячейке «Оригинал» — миниатюра + маленькая кнопка-дискета для скачивания.</li>
-          <li>Размеры 1280 / 1920 / 2440 создаются по клику по кнопкам сверху.</li>
-          <li>Крестик справа удаляет запись и все связанные файлы.</li>
-        </ul>
-        <h3>Инструменты</h3>
-        <ul>
-          <li><strong>Crop</strong> — кадрирование исходника с выбором пропорций (1:1, 2:3, 16:9).</li>
-          <li><strong>Split</strong> — две картинки → одна 1280×720, белая полоса 7px по центру.</li>
-          <li><strong>Split3</strong> — три картинки → одна 1280×720, две белые полосы 7px.</li>
-          <li><strong>OknoFix</strong> — вертикальная карточка по строгому PNG-шаблону:
+        <div class="help-intro">
+          <p class="help-lead"><strong>Jmaka</strong> — рабочий инструмент для быстрой подготовки изображений и видео в одном окне.</p>
+          <div class="help-chip-row">
+            <span class="help-chip">RU / EN / ES</span>
+            <span class="help-chip">Изображения + видео</span>
+            <span class="help-chip">История + автоочистка</span>
+          </div>
+        </div>
+
+        <div class="help-grid">
+          <section class="help-section">
+            <h3>Быстрый старт</h3>
             <ul>
-              <li>режим фиксированного окна (как на исходном PNG);</li>
-              <li>картинка подложки двигается мышью и масштабируется пропорционально;</li>
-              <li>масштаб — через колесо мыши или кнопки «−»/«+» внизу справа.</li>
+              <li>Нажмите на кнопку-дискету, перетащите файлы или вставьте изображение из буфера обмена (Ctrl+V).</li>
+              <li>Выберите язык в правом верхнем углу: русский, английский или испанский.</li>
+              <li>Клик по строке в таблице делает её активной для всех инструментов.</li>
             </ul>
-          </li>
-          <li><strong>OknoScale</strong> — экспериментальный режим той же карточки с изменяемой шириной окна.</li>
-          <li><strong>Edit</strong> — редактирование изображений с настройкой яркости, контраста, насыщенности, оттенка, экспозиции и вибрации.</li>
-          <li><strong>Video Edit</strong> — редактирование видео с инструментами:
+          </section>
+
+          <section class="help-section">
+            <h3>Файлы и таблицы</h3>
             <ul>
-              <li><strong>Trim</strong> — обрезка начала/конца и вырезание сегментов из середины;</li>
-              <li><strong>Crop</strong> — кадрирование видео;</li>
-              <li><strong>Rotate</strong> — поворот на 90°, 180° или 270°;</li>
-              <li><strong>Flip</strong> — отражение по горизонтали или вертикали;</li>
-              <li><strong>Speed</strong> — изменение скорости (0.25x - 2.0x);</li>
-              <li><strong>Mute</strong> — отключение звука;</li>
-              <li><strong>Reset</strong> — сброс всех изменений.</li>
+              <li>Слева: Original / Crop / размеры 1280, 1920, 2440.</li>
+              <li>Справа: история Split, Split3, OknoFix, OknoScale, Edit и Video Edit.</li>
+              <li>Любой результат можно открыть, скачать или удалить.</li>
             </ul>
-          </li>
-        </ul>
-        <h3>Прочее</h3>
-        <ul>
-          <li>История Split / Split3 / OknoFix / OknoScale / Edit / Video Edit — в правой таблице.</li>
-          <li>Каждый результат можно открыть, скачать или удалить.</li>
-          <li>Старые записи и файлы автоматически очищаются по времени хранения.</li>
-        </ul>
+          </section>
+
+          <section class="help-section">
+            <h3>Инструменты изображений</h3>
+            <ul>
+              <li><strong>Crop</strong> — кадрирование исходника (1:1, 2:3, 16:9).</li>
+              <li><strong>Split / Split3</strong> — компоновка 2 или 3 изображений в 1280×720 с белыми разделителями.</li>
+              <li><strong>OknoFix / OknoScale</strong> — вертикальные карточки с позиционированием и масштабом под шаблон.</li>
+              <li><strong>Edit</strong> — тонкая настройка цвета, света, деталей и эффектов с сохранением результата как нового файла.</li>
+            </ul>
+          </section>
+
+          <section class="help-section">
+            <h3>Video Edit</h3>
+            <ul>
+              <li>Trim с несколькими сегментами, Crop, Rotate, Flip, Speed, Mute и Reset.</li>
+              <li>Overlay Upload: загрузка PNG/WebP/JPEG шаблона поверх видео.</li>
+              <li>Vidcov режим и быстрый выбор лимита размера (Episod 10/20/30 MB).</li>
+              <li>Статусы обработки показывают очередь, прогресс и оставшееся время.</li>
+            </ul>
+          </section>
+
+          <section class="help-section help-section-wide">
+            <h3>Полезные мелочи</h3>
+            <ul>
+              <li>Старые записи и файлы очищаются автоматически по времени хранения.</li>
+              <li>Если обработка завершилась только что, нажмите Refresh в Video Edit или обновите список результатов.</li>
+              <li>Кнопка удаления удаляет запись и связанные файлы безвозвратно.</li>
+            </ul>
+          </section>
+        </div>
       </div>
     </div>
   </div>
