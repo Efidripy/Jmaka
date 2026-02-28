@@ -920,3 +920,14 @@ function wireOknoFixUI() {
     layoutOknoFixImageCover();
   });
 }
+
+function initOknoTools() {
+  wireOknoScaleUI();
+  wireOknoFixUI();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initOknoTools, { once: true });
+} else {
+  initOknoTools();
+}

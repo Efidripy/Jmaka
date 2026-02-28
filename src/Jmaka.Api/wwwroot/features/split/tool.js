@@ -37,6 +37,20 @@ const splitState = {
   b: { storedName: null, url: null, natW: 0, natH: 0, x: 0, y: 0, w: 0, h: 0 }
 };
 
+function splitRememberViewSize(which, viewW, viewH) {
+  const st = which === 'a' ? splitState.a : splitState.b;
+  if (!st) return;
+  st.viewW = viewW;
+  st.viewH = viewH;
+}
+
+function splitGetRememberedViewSize(st, which) {
+  if (st && Number.isFinite(st.viewW) && Number.isFinite(st.viewH) && st.viewW > 0 && st.viewH > 0) {
+    return { w: st.viewW, h: st.viewH };
+  }
+  return splitGetHalfSize(which);
+}
+
 function splitShowItem(which) {
   const st = which === 'a' ? splitState.a : splitState.b;
   const el = which === 'a' ? splitItemA : splitItemB;
@@ -78,25 +92,55 @@ function splitClampResize(which, st, halfW, halfH, aspect) {
 function splitLayoutDefaults() {
   // Layout inside each half container.
   for (const which of ['a', 'b']) {
+    splitLayoutDefaultFor(which);
+  }
+}
+
+function splitLayoutDefaultFor(which) {
+  const st = which === 'a' ? splitState.a : splitState.b;
+  if (!st.url || !st.natW || !st.natH) return;
+
+  const { w: halfW, h: halfH } = splitGetHalfSize(which);
+  if (!halfW || !halfH) return;
+
+  const aspect = st.natW / st.natH;
+  const targetW = halfW * 1.15;
+  st.w = targetW;
+  st.h = st.w / aspect;
+
+  if (st.h > halfH * 0.9) {
+    st.h = halfH * 0.9;
+    st.w = st.h * aspect;
+  }
+
+  st.x = (halfW - st.w) / 2;
+  st.y = (halfH - st.h) / 2;
+  splitClampMove(which, st, halfW, halfH);
+  splitRememberViewSize(which, halfW, halfH);
+  splitShowItem(which);
+}
+
+function splitReflowOnResize() {
+  for (const which of ['a', 'b']) {
     const st = which === 'a' ? splitState.a : splitState.b;
     if (!st.url || !st.natW || !st.natH) continue;
 
     const { w: halfW, h: halfH } = splitGetHalfSize(which);
     if (!halfW || !halfH) continue;
-
-    const aspect = st.natW / st.natH;
-    const targetW = halfW * 1.15;
-    st.w = targetW;
-    st.h = st.w / aspect;
-
-    if (st.h > halfH * 0.9) {
-      st.h = halfH * 0.9;
-      st.w = st.h * aspect;
+    const prev = splitGetRememberedViewSize(st, which);
+    if (!prev.w || !prev.h || !st.w || !st.h) {
+      splitLayoutDefaultFor(which);
+      continue;
     }
 
-    st.x = (halfW - st.w) / 2;
-    st.y = (halfH - st.h) / 2;
+    const sx = halfW / prev.w;
+    const sy = halfH / prev.h;
+    st.x *= sx;
+    st.y *= sy;
+    st.w *= sx;
+    st.h *= sy;
     splitClampMove(which, st, halfW, halfH);
+    splitRememberViewSize(which, halfW, halfH);
     splitShowItem(which);
   }
 }
@@ -191,12 +235,12 @@ function splitSetItemFromStoredName(which, storedName) {
   img.onload = () => {
     st.natW = img.naturalWidth || 0;
     st.natH = img.naturalHeight || 0;
-    // if it was not laid out yet, do a default layout pass
-    splitLayoutDefaults();
+    // Replacing one slot should not reset neighboring slot transforms.
+    splitLayoutDefaultFor(which);
   };
 
   img.onerror = () => {
-    if (splitHint) splitHint.textContent = 'Не удалось загрузить 1280-картинку для Split.';
+    if (splitHint) splitHint.textContent = t('Не удалось загрузить 1280-картинку для Split.');
   };
 
   img.src = url;
@@ -214,7 +258,7 @@ async function openSplitModal() {
   if (splitPickTargetB) splitPickTargetB.classList.remove('is-active');
 
   if (splitHint) {
-    splitHint.textContent = 'Загружаю список...';
+    splitHint.textContent = t('Загружаю список...');
   }
 
   splitState.history = await fetchHistoryRaw();
@@ -275,8 +319,8 @@ async function openSplitModal() {
 
   if (splitHint) {
     splitHint.textContent = candidates.length > 0
-      ? 'Выберите слот (#1/#2), затем кликните по превью. Дальше перетаскивайте/масштабируйте.'
-      : 'Нет загруженных изображений.';
+      ? t('Выберите слот (#1/#2), затем кликните по превью. Дальше перетаскивайте/масштабируйте.')
+      : t('Нет загруженных изображений.');
   }
 
   if (splitApplyBtn) {
@@ -326,7 +370,7 @@ async function applySplit() {
   const halfB = splitGetHalfSize('b');
 
   if (!halfA.w || !halfA.h || !halfB.w || !halfB.h) {
-    if (splitHint) splitHint.textContent = 'Не удалось определить размер поля.';
+    if (splitHint) splitHint.textContent = t('Не удалось определить размер поля.');
     return;
   }
 
@@ -512,6 +556,7 @@ function wireSplitUI() {
         st.x = p.x - splitState.action.offsetX;
         st.y = p.y - splitState.action.offsetY;
         splitClampMove(which, st, halfW, halfH);
+        splitRememberViewSize(which, halfW, halfH);
         splitShowItem(which);
         return;
       }
@@ -559,6 +604,7 @@ function wireSplitUI() {
       st.h = newH;
 
       splitClampMove(which, st, halfW, halfH);
+      splitRememberViewSize(which, halfW, halfH);
       splitShowItem(which);
     });
 
@@ -620,6 +666,7 @@ function wireSplitUI() {
     st.h = newH;
 
     splitClampMove(which, st, halfW, halfH);
+    splitRememberViewSize(which, halfW, halfH);
     splitShowItem(which);
   });
 
@@ -634,7 +681,12 @@ function wireSplitUI() {
 
   window.addEventListener('resize', () => {
     if (!splitState.open) return;
-    splitLayoutDefaults();
+    splitReflowOnResize();
   });
 }
 
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', wireSplitUI, { once: true });
+} else {
+  wireSplitUI();
+}
