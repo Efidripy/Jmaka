@@ -8,6 +8,13 @@
   --border: rgba(255, 255, 255, 0.12);
   --danger: #b91c1c;
   --danger-light: #ff4d4f;
+  --ascii-c1: #60a5fa;
+  --ascii-c2: #a78bfa;
+  --ascii-c3: #f472b6;
+  --version-bg-1: rgba(96, 165, 250, 0.15);
+  --version-bg-2: rgba(167, 139, 250, 0.15);
+  --version-border: rgba(96, 165, 250, 0.3);
+  --version-text: var(--accent);
 }
 
 * { box-sizing: border-box; }
@@ -222,7 +229,7 @@ html, body {
   margin: 0;
   padding: 0;
   color: var(--text);
-  background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
+  background: linear-gradient(135deg, var(--ascii-c1) 0%, var(--ascii-c2) 50%, var(--ascii-c3) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -235,10 +242,10 @@ html, body {
 .version-badge {
   display: inline-block;
   padding: 4px 10px;
-  background: linear-gradient(135deg, rgba(96, 165, 250, 0.15) 0%, rgba(167, 139, 250, 0.15) 100%);
-  border: 1px solid rgba(96, 165, 250, 0.3);
+  background: linear-gradient(135deg, var(--version-bg-1) 0%, var(--version-bg-2) 100%);
+  border: 1px solid var(--version-border);
   border-radius: 12px;
-  color: var(--accent);
+  color: var(--version-text);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.5px;

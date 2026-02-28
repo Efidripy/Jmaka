@@ -52,5 +52,50 @@
     "Size": 885986,
     "RelativePath": "video-out/20260228-035112-465-7547ccd711254459a6d55ff5f17e21f1.mp4",
     "DurationSeconds": 10.208333
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-042646-904-cfc1916e95d148019b2378e0609e5e0f.mp4",
+    "OriginalName": "20260228-042646-904-cfc1916e95d148019b2378e0609e5e0f.mp4",
+    "CreatedAt": "2026-02-28T04:26:51.4628676+00:00",
+    "Size": 1500011,
+    "RelativePath": "video-out/20260228-042646-904-cfc1916e95d148019b2378e0609e5e0f.mp4",
+    "DurationSeconds": 10.24
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-042656-841-e97bc2aafa524985832330a5e753bfd6.mp4",
+    "OriginalName": "20260228-042656-841-e97bc2aafa524985832330a5e753bfd6.mp4",
+    "CreatedAt": "2026-02-28T04:27:01.965182+00:00",
+    "Size": 1262187,
+    "RelativePath": "video-out/20260228-042656-841-e97bc2aafa524985832330a5e753bfd6.mp4",
+    "DurationSeconds": 10.24
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-042711-395-56de2d1c59544ac7a1e28b36cec8d631.mp4",
+    "OriginalName": "20260228-042711-395-56de2d1c59544ac7a1e28b36cec8d631.mp4",
+    "CreatedAt": "2026-02-28T04:27:17.5323118+00:00",
+    "Size": 1255760,
+    "RelativePath": "video-out/20260228-042711-395-56de2d1c59544ac7a1e28b36cec8d631.mp4",
+    "DurationSeconds": 10.24
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-042734-140-2853805579604fb2be1b85e12405e970.mp4",
+    "OriginalName": "20260228-042734-140-2853805579604fb2be1b85e12405e970.mp4",
+    "CreatedAt": "2026-02-28T04:27:39.5127525+00:00",
+    "Size": 1269589,
+    "RelativePath": "video-out/20260228-042734-140-2853805579604fb2be1b85e12405e970.mp4",
+    "DurationSeconds": 10.24
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-042756-863-5a7f4ccab60e4f8389e0034344f512bf.mp4",
+    "OriginalName": "20260228-042756-863-5a7f4ccab60e4f8389e0034344f512bf.mp4",
+    "CreatedAt": "2026-02-28T04:27:59.8166555+00:00",
+    "Size": 897790,
+    "RelativePath": "video-out/20260228-042756-863-5a7f4ccab60e4f8389e0034344f512bf.mp4",
+    "DurationSeconds": 10.208333
   }
 ]
