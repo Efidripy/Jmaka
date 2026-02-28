@@ -83,12 +83,21 @@
                 <button id="videoTimelineZoomFit" class="btn small" type="button" title="Fit">Fit</button>
                 <span id="videoTimelineZoomLabel" class="timeline-zoom-label">1.0x</span>
               </div>
+              <div class="timeline-zoom-center timeline-clip-controls">
+                <div id="videoTimelineClips" class="timeline-clips" aria-label="Selected timeline clips"></div>
+              </div>
               <div class="timeline-zoom-hint">Wheel: zoom, Shift+wheel: pan</div>
             </div>
-            <div class="timeline-strip" id="videoTimelineStrip">
-              <canvas id="videoTimelineCanvas"></canvas>
-              <div id="videoTimelineSegments" class="timeline-segments"></div>
-              <div id="videoTimelinePlayhead" class="timeline-playhead"></div>
+            <div class="timeline-strip-wrap">
+              <div class="timeline-strip" id="videoTimelineStrip">
+                <canvas id="videoTimelineCanvas"></canvas>
+                <div id="videoTimelineSegments" class="timeline-segments"></div>
+                <div id="videoTimelinePlayhead" class="timeline-playhead"></div>
+              </div>
+              <div class="timeline-strip-add">
+                <button id="videoTimelineAddBtn" class="timeline-add-btn" type="button" title="Добавить видео в конец" aria-label="Добавить видео в конец">+</button>
+                <div id="videoTimelineAddMenu" class="timeline-add-menu" hidden></div>
+              </div>
             </div>
             <div class="timeline-overview" id="videoTimelineOverview" title="Timeline overview">
               <div class="timeline-overview-window" id="videoTimelineOverviewWindow"></div>
@@ -97,9 +106,9 @@
               <div class="timeline-range">IN <span id="videoTrimStartLabel">00:00</span> - OUT <span id="videoTrimEndLabel">00:00</span></div>
               <div class="timeline-help">Drag boundaries to set segment.</div>
               <div class="timeline-segment-controls">
-                <button id="videoAddSegment" class="btn small" type="button" title="Добавить сегмент">+ Segment</button>
-                <button id="videoRemoveSegment" class="btn small" type="button" title="Удалить активный сегмент">- Segment</button>
-                <span id="videoSegmentsInfo" class="segments-info">1 segment</span>
+                <button id="videoAddSegment" class="btn small" type="button" title="Add segment">+ Segment</button>
+                <button id="videoRemoveSegment" class="btn small" type="button" title="Remove segment">- Segment</button>
+                <span id="videoSegmentsInfo" class="timeline-segments-info">1 segment</span>
               </div>
             </div>
           </div>

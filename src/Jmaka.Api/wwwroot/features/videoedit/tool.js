@@ -29,6 +29,9 @@
   const videoTimelinePlayhead = document.getElementById('videoTimelinePlayhead');
   const videoTimelineOverview = document.getElementById('videoTimelineOverview');
   const videoTimelineOverviewWindow = document.getElementById('videoTimelineOverviewWindow');
+  const videoTimelineClips = document.getElementById('videoTimelineClips');
+  const videoTimelineAddBtn = document.getElementById('videoTimelineAddBtn');
+  const videoTimelineAddMenu = document.getElementById('videoTimelineAddMenu');
   const videoTimelineZoomOut = document.getElementById('videoTimelineZoomOut');
   const videoTimelineZoomIn = document.getElementById('videoTimelineZoomIn');
   const videoTimelineZoomFit = document.getElementById('videoTimelineZoomFit');
@@ -97,7 +100,11 @@
     targetSizeMb: 10,
     selectedSizeLimit: '10mb',
     timelineZoom: 1,
-    timelineStartSec: 0
+    timelineStartSec: 0,
+    timelineClips: [],
+    timelineClipTrims: {},
+    timelineClipSegments: {},
+    timelineClipOffsets: {}
   };
 
   let originals = [];
@@ -152,6 +159,143 @@
     const s = total % 60;
     if (h > 0) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function getProcessSourceNames() {
+    if (Array.isArray(state.timelineClips) && state.timelineClips.length > 0) {
+      return state.timelineClips.filter((name, idx, arr) => !!name && arr.indexOf(name) === idx);
+    }
+    return state.storedName ? [state.storedName] : [];
+  }
+
+  function isInTimeline(storedName) {
+    return !!storedName && Array.isArray(state.timelineClips) && state.timelineClips.includes(storedName);
+  }
+
+  function findOriginalByStoredName(storedName) {
+    return originals.find((item) => item && item.storedName === storedName) || null;
+  }
+
+  function getClipDuration(storedName) {
+    const item = findOriginalByStoredName(storedName);
+    const duration = Number(item && item.durationSeconds);
+    return Number.isFinite(duration) && duration > 0 ? duration : 0;
+  }
+
+  function getClipTrim(storedName) {
+    if (!storedName) return null;
+    const duration = getClipDuration(storedName);
+    const saved = state.timelineClipTrims[storedName];
+    const rawStart = saved && Number.isFinite(saved.start) ? saved.start : 0;
+    const rawEnd = saved && Number.isFinite(saved.end) ? saved.end : duration;
+    if (!duration) return { start: 0, end: 0, duration: 0 };
+    const start = clamp(rawStart, 0, duration);
+    const end = clamp(rawEnd, 0, duration);
+    if (end - start >= 0.05) return { start, end, duration };
+    return { start: 0, end: duration, duration };
+  }
+
+  function sanitizeSegmentsByDuration(segments, duration) {
+    const maxDuration = Math.max(0, Number(duration) || 0);
+    if (!maxDuration) return [{ start: 0, end: 0 }];
+    const normalized = [];
+    for (const seg of Array.isArray(segments) ? segments : []) {
+      const start = clamp(Number(seg && seg.start), 0, maxDuration);
+      const end = clamp(Number(seg && seg.end), 0, maxDuration);
+      if (end - start >= 0.1) normalized.push({ start, end });
+    }
+    normalized.sort((a, b) => a.start - b.start);
+    const merged = [];
+    for (const seg of normalized) {
+      if (merged.length === 0) {
+        merged.push(seg);
+        continue;
+      }
+      const prev = merged[merged.length - 1];
+      if (seg.start <= prev.end + 0.05) prev.end = Math.max(prev.end, seg.end);
+      else merged.push(seg);
+    }
+    return merged.length > 0 ? merged : [{ start: 0, end: maxDuration }];
+  }
+
+  function setStoredClipSegments(storedName, segments, durationOverride = null) {
+    if (!storedName) return;
+    const duration = Number.isFinite(durationOverride) && durationOverride > 0
+      ? durationOverride
+      : getClipDuration(storedName);
+    const cleaned = sanitizeSegmentsByDuration(segments, duration);
+    state.timelineClipSegments[storedName] = cleaned.map((x) => ({ start: x.start, end: x.end }));
+    const trimStart = Math.min(...cleaned.map((x) => x.start));
+    const trimEnd = Math.max(...cleaned.map((x) => x.end));
+    state.timelineClipTrims[storedName] = { start: trimStart, end: trimEnd };
+  }
+
+  function getClipSegments(storedName) {
+    if (!storedName) return [];
+    const duration = getClipDuration(storedName);
+    const saved = state.timelineClipSegments[storedName];
+    if (Array.isArray(saved) && saved.length > 0) {
+      return sanitizeSegmentsByDuration(saved, duration);
+    }
+    const clipTrim = getClipTrim(storedName);
+    if (!clipTrim) return sanitizeSegmentsByDuration([], duration);
+    return sanitizeSegmentsByDuration([{ start: clipTrim.start, end: clipTrim.end }], clipTrim.duration);
+  }
+
+  function getOffsetModeKey(mode = state.outputMode) {
+    return mode === 'vidcov' ? 'vidcov' : 'episod';
+  }
+
+  function getStoredClipOffset(storedName, mode = state.outputMode) {
+    if (!storedName) return 0;
+    const raw = state.timelineClipOffsets[storedName];
+    if (Number.isFinite(raw)) return raw;
+    if (!raw || typeof raw !== 'object') return 0;
+    const modeKey = getOffsetModeKey(mode);
+    const exact = raw[modeKey];
+    if (Number.isFinite(exact)) return exact;
+    const episod = raw.episod;
+    if (Number.isFinite(episod)) return episod;
+    const vidcov = raw.vidcov;
+    if (Number.isFinite(vidcov)) return vidcov;
+    return 0;
+  }
+
+  function setStoredClipOffset(storedName, offset, mode = state.outputMode) {
+    if (!storedName) return;
+    const modeKey = getOffsetModeKey(mode);
+    const safe = Number.isFinite(offset) ? offset : 0;
+    const raw = state.timelineClipOffsets[storedName];
+    const next = raw && typeof raw === 'object'
+      ? { ...raw }
+      : (Number.isFinite(raw) ? { episod: raw } : {});
+    next[modeKey] = safe;
+    state.timelineClipOffsets[storedName] = next;
+  }
+
+  function switchOutputMode(nextMode) {
+    const normalized = nextMode === 'vidcov' ? 'vidcov' : 'episod';
+    if (state.outputMode === normalized) return;
+    const currentStoredName = state.storedName;
+    if (currentStoredName && isInTimeline(currentStoredName)) {
+      setStoredClipOffset(currentStoredName, state.verticalOffsetPx, state.outputMode);
+    }
+    state.outputMode = normalized;
+    if (state.outputMode === 'vidcov') state.muteAudio = true;
+    if (currentStoredName && isInTimeline(currentStoredName)) {
+      state.verticalOffsetPx = getStoredClipOffset(currentStoredName, state.outputMode);
+    }
+    renderPlaybackState();
+    renderCropRect();
+    renderOutputControls();
+  }
+
+  function saveActiveClipTrim() {
+    const storedName = state.storedName;
+    if (!storedName || !isInTimeline(storedName)) return;
+    normalizeSegments();
+    setStoredClipSegments(storedName, state.segments);
+    setStoredClipOffset(storedName, state.verticalOffsetPx, state.outputMode);
   }
 
   function normalizeSegments() {
@@ -230,7 +374,7 @@
 
   function setProcessing(isProcessing) {
     if (videoProcessingOverlay) videoProcessingOverlay.classList.toggle('is-active', !!isProcessing);
-    if (videoEditSave) videoEditSave.disabled = isProcessing || !state.storedName;
+    if (videoEditSave) videoEditSave.disabled = isProcessing || getProcessSourceNames().length === 0;
   }
 
   function renderToolState() {
@@ -245,6 +389,12 @@
     if (videoSegmentsInfo) {
       const n = state.segments.length;
       videoSegmentsInfo.textContent = `${n} segment${n === 1 ? '' : 's'}`;
+    }
+    if (videoAddSegment) {
+      videoAddSegment.disabled = !(state.duration > 0) || state.segments.length >= 20;
+    }
+    if (videoRemoveSegment) {
+      videoRemoveSegment.disabled = state.segments.length <= 1;
     }
   }
 
@@ -626,7 +776,7 @@
   function renderOutputControls() {
     const isVidcovMode = state.outputMode === 'vidcov';
     if (videoTargetSize) videoTargetSize.value = String(state.targetSizeMb);
-    if (videoEditSave) videoEditSave.disabled = !state.storedName;
+    if (videoEditSave) videoEditSave.disabled = getProcessSourceNames().length === 0;
     if (videoMuteLabel) videoMuteLabel.textContent = state.muteAudio ? 'Unmute' : 'Mute';
     if (videoMuteAudio) {
       videoMuteAudio.checked = !!state.muteAudio;
@@ -655,6 +805,7 @@
     renderPlaybackState();
     renderCropRect();
     renderTimeline();
+    renderTimelineClipControls();
     renderOutputControls();
     renderOverlayTemplates();
     renderOverlayPreview();
@@ -674,7 +825,19 @@
       }
       originals = data.filter((item) => item && item.kind !== 'processed');
       processed = data.filter((item) => item && item.kind === 'processed');
+      const knownOriginals = new Set(originals.map((item) => item.storedName));
+      state.timelineClips = state.timelineClips.filter((storedName) => knownOriginals.has(storedName));
+      state.timelineClipTrims = Object.fromEntries(
+        Object.entries(state.timelineClipTrims).filter(([storedName]) => knownOriginals.has(storedName))
+      );
+      state.timelineClipSegments = Object.fromEntries(
+        Object.entries(state.timelineClipSegments).filter(([storedName]) => knownOriginals.has(storedName))
+      );
+      state.timelineClipOffsets = Object.fromEntries(
+        Object.entries(state.timelineClipOffsets).filter(([storedName]) => knownOriginals.has(storedName))
+      );
       renderVideoLists();
+      renderTimelineClipControls();
       if (processed.length === 0) {
         setHint(vt('Results пуст. Нажмите Refresh, если обработка завершилась только что.', 'Results пуст. Нажмите Refresh, если обработка завершилась только что.'));
       }
@@ -779,6 +942,7 @@
       if (!isProcessed && item.storedName === state.storedName) row.classList.add('is-active');
       row.addEventListener('click', () => {
         if (!item.relativePath) return;
+        saveActiveClipTrim();
         const url = withCacheBust ? withCacheBust(item.relativePath, item.storedName) : item.relativePath;
         if (videoEditPreview) {
           videoEditPreview.src = url;
@@ -790,7 +954,8 @@
         }
         state.storedName = item.storedName;
         setHint(vt('Выберите отрезки на таймлайне и нажмите Сделать.', 'Выберите отрезки на таймлайне и нажмите Сделать.'));
-        if (videoEditSave) videoEditSave.disabled = false;
+        renderOutputControls();
+        renderTimelineClipControls();
         renderVideoLists();
       });
 
@@ -849,9 +1014,13 @@
         if (item.storedName === state.storedName) {
           state.storedName = null;
           if (videoEditPreview) videoEditPreview.removeAttribute('src');
-          if (videoEditSave) videoEditSave.disabled = true;
         }
+        state.timelineClips = state.timelineClips.filter((name) => name !== item.storedName);
+        delete state.timelineClipTrims[item.storedName];
+        delete state.timelineClipSegments[item.storedName];
+        delete state.timelineClipOffsets[item.storedName];
         await loadVideoHistory();
+        renderOutputControls();
       });
       actions.appendChild(del);
 
@@ -883,16 +1052,199 @@
     else processed.forEach((item) => renderItem(item, videoProcessedList, true));
   }
 
+  function closeTimelineAddMenu() {
+    if (videoTimelineAddMenu) videoTimelineAddMenu.hidden = true;
+  }
+
+  function positionTimelineAddMenu() {
+    if (!videoTimelineAddMenu || !videoTimelineAddBtn || videoTimelineAddMenu.hidden) return;
+    const btnRect = videoTimelineAddBtn.getBoundingClientRect();
+    const vw = document.documentElement ? document.documentElement.clientWidth : window.innerWidth;
+    const vh = document.documentElement ? document.documentElement.clientHeight : window.innerHeight;
+    const menuWidth = Math.min(320, Math.max(220, Math.floor(vw * 0.74)));
+    const margin = 10;
+    let left = btnRect.right - menuWidth;
+    left = clamp(left, margin, Math.max(margin, vw - menuWidth - margin));
+    const topBelow = btnRect.bottom + 8;
+    const estimatedHeight = 280;
+    const top = topBelow + estimatedHeight <= vh - margin
+      ? topBelow
+      : Math.max(margin, btnRect.top - estimatedHeight - 8);
+    videoTimelineAddMenu.style.left = `${Math.round(left)}px`;
+    videoTimelineAddMenu.style.top = `${Math.round(top)}px`;
+  }
+
+  function openTimelineAddMenu() {
+    if (!videoTimelineAddMenu) return;
+    renderTimelineAddMenu();
+    videoTimelineAddMenu.hidden = false;
+    positionTimelineAddMenu();
+  }
+
+  function removeTimelineClip(storedName) {
+    saveActiveClipTrim();
+    const idx = state.timelineClips.findIndex((name) => name === storedName);
+    if (idx < 0) return;
+    state.timelineClips.splice(idx, 1);
+    delete state.timelineClipTrims[storedName];
+    delete state.timelineClipSegments[storedName];
+    delete state.timelineClipOffsets[storedName];
+    if (state.timelineClips.length === 0 && state.storedName === storedName) {
+      state.storedName = null;
+      if (videoEditPreview) videoEditPreview.removeAttribute('src');
+    }
+    renderTimelineClipControls();
+    renderVideoLists();
+    renderOutputControls();
+  }
+
+  function seedTimelineWithCurrentVideo() {
+    if (state.timelineClips.length > 0) return;
+    const currentStoredName = state.storedName;
+    if (!currentStoredName || isInTimeline(currentStoredName)) return;
+    const currentItem = findOriginalByStoredName(currentStoredName);
+    if (!currentItem) return;
+    const duration = Number(currentItem.durationSeconds) || getClipDuration(currentStoredName) || 0;
+    const active = state.segments[state.activeSegmentIndex] || state.segments[0];
+    const start = active ? clamp(active.start, 0, duration) : 0;
+    const endRaw = active ? clamp(active.end, 0, duration) : duration;
+    const end = endRaw - start >= 0.05 ? endRaw : duration;
+    state.timelineClips.push(currentStoredName);
+    setStoredClipSegments(currentStoredName, [{ start, end }], duration);
+    setStoredClipOffset(currentStoredName, state.verticalOffsetPx, 'episod');
+    setStoredClipOffset(currentStoredName, state.verticalOffsetPx, 'vidcov');
+  }
+
+  function addTimelineClip(storedName) {
+    if (!storedName || isInTimeline(storedName)) return;
+    const item = findOriginalByStoredName(storedName);
+    if (!item) return;
+    seedTimelineWithCurrentVideo();
+    state.timelineClips.push(storedName);
+    const duration = Number(item.durationSeconds) || 0;
+    setStoredClipSegments(storedName, [{ start: 0, end: duration > 0 ? duration : 0 }], duration);
+    setStoredClipOffset(storedName, 0, 'episod');
+    setStoredClipOffset(storedName, 0, 'vidcov');
+    if (state.timelineClips.length === 1 || !state.storedName) {
+      saveActiveClipTrim();
+      state.storedName = item.storedName;
+      if (videoEditPreview && item.relativePath) {
+        const url = withCacheBust ? withCacheBust(item.relativePath, item.storedName) : item.relativePath;
+        videoEditPreview.src = url;
+        timelinePreviewState.dirty = true;
+      }
+    }
+    closeTimelineAddMenu();
+    renderTimelineClipControls();
+    renderVideoLists();
+    renderOutputControls();
+  }
+
+  function renderTimelineAddMenu() {
+    if (!videoTimelineAddMenu) return;
+    videoTimelineAddMenu.textContent = '';
+    if (originals.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'timeline-add-empty';
+      empty.textContent = 'Загрузите видео, чтобы добавить в склейку';
+      videoTimelineAddMenu.appendChild(empty);
+      return;
+    }
+    originals.forEach((item) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'timeline-add-item';
+      const used = isInTimeline(item.storedName);
+      if (used) {
+        option.classList.add('is-used');
+        option.disabled = true;
+      }
+      const thumb = document.createElement('div');
+      thumb.className = 'timeline-add-item-thumb';
+      if (item.relativePath) {
+        const videoThumb = document.createElement('video');
+        videoThumb.muted = true;
+        videoThumb.preload = 'metadata';
+        videoThumb.src = toAbsoluteUrl(item.relativePath);
+        videoThumb.playsInline = true;
+        thumb.appendChild(videoThumb);
+      }
+      const duration = document.createElement('div');
+      duration.className = 'timeline-add-item-duration';
+      duration.textContent = formatDurationCompact(item.durationSeconds);
+      option.appendChild(thumb);
+      option.appendChild(duration);
+      option.addEventListener('click', () => addTimelineClip(item.storedName));
+      videoTimelineAddMenu.appendChild(option);
+    });
+    positionTimelineAddMenu();
+  }
+
+  function renderTimelineClipControls() {
+    if (!videoTimelineClips) return;
+    videoTimelineClips.textContent = '';
+    state.timelineClips.forEach((storedName) => {
+      const item = findOriginalByStoredName(storedName);
+      if (!item) return;
+      const node = document.createElement('div');
+      node.className = 'timeline-clip-item';
+      if (state.storedName === storedName) node.classList.add('is-active');
+
+      if (item.relativePath) {
+        const clipVideo = document.createElement('video');
+        clipVideo.muted = true;
+        clipVideo.preload = 'metadata';
+        clipVideo.src = toAbsoluteUrl(item.relativePath);
+        clipVideo.playsInline = true;
+        node.appendChild(clipVideo);
+      }
+
+      const duration = document.createElement('span');
+      duration.className = 'timeline-clip-duration';
+      const clipTrim = getClipTrim(storedName);
+      const clipDuration = clipTrim ? Math.max(0, clipTrim.end - clipTrim.start) : item.durationSeconds;
+      duration.textContent = formatDurationCompact(clipDuration);
+      node.appendChild(duration);
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'timeline-clip-remove';
+      remove.textContent = '×';
+      remove.title = 'Удалить клип';
+      remove.addEventListener('click', (event) => {
+        event.stopPropagation();
+        removeTimelineClip(storedName);
+      });
+      node.appendChild(remove);
+
+      node.addEventListener('click', () => {
+        saveActiveClipTrim();
+        state.storedName = item.storedName || state.storedName;
+        if (videoEditPreview && item.relativePath) {
+          const url = withCacheBust ? withCacheBust(item.relativePath, item.storedName) : item.relativePath;
+          videoEditPreview.src = url;
+          timelinePreviewState.dirty = true;
+        }
+      });
+      videoTimelineClips.appendChild(node);
+    });
+
+    renderTimelineAddMenu();
+  }
+
   function openModal() {
     videoEditModal.hidden = false;
     setHint(vt('videoUploadHint', 'Загрузите видео и перетащите границы на таймлайне.'));
     setStatus('Ready', 0);
     loadVideoHistory();
     loadOverlayTemplates();
+    closeTimelineAddMenu();
     renderAll();
   }
 
   function closeModal() {
+    saveActiveClipTrim();
+    closeTimelineAddMenu();
     videoEditModal.hidden = true;
     if (videoEditPreview) videoEditPreview.pause();
   }
@@ -906,6 +1258,7 @@
 
   function handleTimelinePointerDown(event) {
     if (!videoTimelineStrip || !videoTimelineSegments) return;
+    if (event.target && event.target.closest && event.target.closest('.timeline-strip-add')) return;
     if (event.button === 1 || event.altKey) {
       const startX = event.clientX;
       const startTimelineStart = state.timelineStartSec;
@@ -1001,6 +1354,8 @@
   }
 
   function handleTimelinePointerUp() {
+    saveActiveClipTrim();
+    renderTimelineClipControls();
     timelineDrag = null;
     window.removeEventListener('pointermove', handleTimelinePointerMove);
     window.removeEventListener('pointerup', handleTimelinePointerUp);
@@ -1038,13 +1393,47 @@
     if (!duration) return;
     const maxSegments = 20;
     if (state.segments.length >= maxSegments) return;
-    const active = state.segments[state.activeSegmentIndex] || { start: 0, end: duration };
-    const len = Math.max(0.5, Math.min(5, (active.end - active.start) / 2));
-    const start = clamp(active.end + 0.2, 0, Math.max(0, duration - len));
-    state.segments.push({ start, end: start + len });
-    state.activeSegmentIndex = state.segments.length - 1;
     normalizeSegments();
+
+    const minGap = 0.1;
+    const separation = 0.12; // must stay above normalize merge threshold (0.05)
+    let bestGap = null;
+    let prevEnd = 0;
+    for (const seg of state.segments) {
+      const gap = seg.start - prevEnd;
+      if (gap >= minGap && (!bestGap || gap > bestGap.length)) {
+        bestGap = { start: prevEnd, end: seg.start, length: gap };
+      }
+      prevEnd = seg.end;
+    }
+    const tailGap = duration - prevEnd;
+    if (tailGap >= minGap && (!bestGap || tailGap > bestGap.length)) {
+      bestGap = { start: prevEnd, end: duration, length: tailGap };
+    }
+
+    if (bestGap) {
+      const len = Math.min(5, Math.max(0.5, bestGap.length - separation * 2));
+      const start = clamp(bestGap.start + separation, 0, Math.max(0, bestGap.end - separation - len));
+      state.segments.push({ start, end: start + len });
+      state.activeSegmentIndex = state.segments.length - 1;
+    } else {
+      const active = state.segments[state.activeSegmentIndex] || { start: 0, end: duration };
+      const activeLen = active.end - active.start;
+      if (activeLen < 0.4) return;
+      const splitPoint = active.start + activeLen / 2;
+      const leftEnd = Math.max(active.start + 0.1, splitPoint - separation);
+      const rightStart = Math.min(active.end - 0.1, splitPoint + separation);
+      if (rightStart - leftEnd < minGap) return;
+      const oldEnd = active.end;
+      active.end = leftEnd;
+      state.segments.splice(state.activeSegmentIndex + 1, 0, { start: rightStart, end: oldEnd });
+      state.activeSegmentIndex = state.activeSegmentIndex + 1;
+    }
+
+    normalizeSegments();
+    saveActiveClipTrim();
     renderTimeline();
+    renderToolState();
   }
 
   function removeSegment() {
@@ -1052,7 +1441,9 @@
     state.segments.splice(state.activeSegmentIndex, 1);
     state.activeSegmentIndex = clamp(state.activeSegmentIndex, 0, state.segments.length - 1);
     normalizeSegments();
+    saveActiveClipTrim();
     renderTimeline();
+    renderToolState();
   }
 
   function applyCropRatio(rawRatio) {
@@ -1113,6 +1504,11 @@
     state.tool = 'trim';
     state.timelineZoom = 1;
     state.timelineStartSec = 0;
+    if (state.storedName && isInTimeline(state.storedName)) {
+      setStoredClipSegments(state.storedName, [{ start: 0, end: duration }], duration);
+      setStoredClipOffset(state.storedName, 0, 'episod');
+      setStoredClipOffset(state.storedName, 0, 'vidcov');
+    }
     
     // Update UI elements
     if (videoSpeedRange) videoSpeedRange.value = '1';
@@ -1123,6 +1519,7 @@
     renderPlaybackState();
     renderCropRect();
     renderTimeline();
+    renderTimelineClipControls();
     renderOutputControls();
     
     setHint(vt('Все изменения сброшены. Начните заново.', 'Все изменения сброшены. Начните заново.'));
@@ -1184,6 +1581,33 @@
   toolButtons.forEach((btn) => btn.addEventListener('click', () => { state.tool = btn.dataset.tool; renderToolState(); }));
   if (videoAddSegment) videoAddSegment.addEventListener('click', addSegment);
   if (videoRemoveSegment) videoRemoveSegment.addEventListener('click', removeSegment);
+  const toggleTimelineAddMenu = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!videoTimelineAddMenu) return;
+    if (videoTimelineAddMenu.hidden) openTimelineAddMenu();
+    else closeTimelineAddMenu();
+  };
+  if (videoTimelineAddBtn) {
+    videoTimelineAddBtn.addEventListener('pointerdown', toggleTimelineAddMenu);
+    videoTimelineAddBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  }
+  if (videoTimelineAddMenu) {
+    videoTimelineAddMenu.addEventListener('pointerdown', (event) => event.stopPropagation());
+    videoTimelineAddMenu.addEventListener('click', (event) => event.stopPropagation());
+  }
+  document.addEventListener('pointerdown', (event) => {
+    if (!videoTimelineAddMenu || videoTimelineAddMenu.hidden) return;
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (videoTimelineAddMenu.contains(target)) return;
+    if (videoTimelineAddBtn && videoTimelineAddBtn.contains(target)) return;
+    closeTimelineAddMenu();
+  });
+  window.addEventListener('resize', positionTimelineAddMenu);
 
   if (videoRotateCw) videoRotateCw.addEventListener('click', () => { state.rotateDeg = (state.rotateDeg + 90) % 360; renderPlaybackState(); });
   if (videoRotateCcw) videoRotateCcw.addEventListener('click', () => { state.rotateDeg = (state.rotateDeg - 90 + 360) % 360; renderPlaybackState(); });
@@ -1238,11 +1662,7 @@
   });
   if (videoModeVidcov) {
     videoModeVidcov.addEventListener('click', () => {
-      state.outputMode = state.outputMode === 'vidcov' ? 'episod' : 'vidcov';
-      if (state.outputMode === 'vidcov') {
-        state.muteAudio = true;
-      }
-      renderOutputControls();
+      switchOutputMode(state.outputMode === 'vidcov' ? 'episod' : 'vidcov');
     });
   }
   if (sizeLimitButtons.length > 0) {
@@ -1253,7 +1673,7 @@
         if (Number.isFinite(value) && value > 0) {
           state.targetSizeMb = value;
           state.selectedSizeLimit = raw;
-          state.outputMode = 'episod';
+          switchOutputMode('episod');
           state.muteAudio = false;
           renderOutputControls();
         }
@@ -1273,12 +1693,22 @@
   if (videoEditPreview) {
     videoEditPreview.addEventListener('loadedmetadata', () => {
       state.duration = Number(videoEditPreview.duration) || 0;
-      state.segments = [{ start: 0, end: state.duration }];
+      const activeSegments = state.storedName && isInTimeline(state.storedName)
+        ? getClipSegments(state.storedName)
+        : null;
+      state.segments = activeSegments && activeSegments.length > 0
+        ? activeSegments.map((x) => ({ start: x.start, end: x.end }))
+        : [{ start: 0, end: state.duration }];
       state.activeSegmentIndex = 0;
       state.trim = { ...state.segments[0] };
+      if (state.storedName && isInTimeline(state.storedName)) {
+        setStoredClipSegments(state.storedName, state.segments, state.duration);
+        state.verticalOffsetPx = getStoredClipOffset(state.storedName, state.outputMode);
+      } else {
+        state.verticalOffsetPx = 0;
+      }
       state.timelineZoom = 1;
       state.timelineStartSec = 0;
-      state.verticalOffsetPx = 0;
       timelinePreviewState.dirty = true;
       renderTimeline();
       queueFilmstripRender(true);
@@ -1521,8 +1951,11 @@
 
   if (videoEditSave) {
     videoEditSave.addEventListener('click', async () => {
-      if (!state.storedName) return;
+      const processSourceNames = getProcessSourceNames();
+      if (processSourceNames.length === 0) return;
+      const primaryStoredName = processSourceNames[0];
       normalizeSegments();
+      saveActiveClipTrim();
       const isVidcovMode = state.outputMode === 'vidcov';
       const stageRect = videoPreviewStage ? videoPreviewStage.getBoundingClientRect() : null;
       const outputHeight = isVidcovMode ? 404 : 720;
@@ -1531,17 +1964,29 @@
         : 0;
       const targetSizeMb = isVidcovMode ? 1.5 : state.targetSizeMb;
       const muteAudio = isVidcovMode ? true : state.muteAudio;
+      const sourceClips = processSourceNames.map((storedName) => {
+        const clipTrim = getClipTrim(storedName);
+        const clipSegments = getClipSegments(storedName);
+        return {
+          storedName,
+          trimStartSec: clipTrim ? clipTrim.start : 0,
+          trimEndSec: clipTrim ? clipTrim.end : getClipDuration(storedName),
+          segments: clipSegments.map((seg) => ({ startSec: seg.start, endSec: seg.end }))
+        };
+      });
 
       const payload = {
-        storedName: state.storedName,
+        storedName: primaryStoredName,
+        sourceStoredNames: processSourceNames,
+        sourceClips,
         trimStartSec: state.segments[0]?.start ?? 0,
         trimEndSec: state.segments[state.segments.length - 1]?.end ?? 0,
         cutStartSec: null,
         cutEndSec: null,
         outputWidth: 1280,
         targetSizeMb,
-        // Frontend drag direction is opposite of FFmpeg crop Y offset sign.
-        // Invert it to match preview and final output.
+        // Keep the same vertical offset sign convention across all output modes
+        // so Vidcov matches Episod (10/20/30) behavior from preview.
         verticalOffsetPx: -offsetOutPx,
         segments: state.segments.map((x) => ({ startSec: x.start, endSec: x.end })),
         cropX: state.crop.x,

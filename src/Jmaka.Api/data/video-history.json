@@ -97,5 +97,203 @@
     "Size": 897790,
     "RelativePath": "video-out/20260228-042756-863-5a7f4ccab60e4f8389e0034344f512bf.mp4",
     "DurationSeconds": 10.208333
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-055245-115-e4cc9b30ee7e4c9a985626bfe082670b.mp4",
+    "OriginalName": "20260228-055245-115-e4cc9b30ee7e4c9a985626bfe082670b.mp4",
+    "CreatedAt": "2026-02-28T05:52:50.5431557+00:00",
+    "Size": 1216820,
+    "RelativePath": "video-out/20260228-055245-115-e4cc9b30ee7e4c9a985626bfe082670b.mp4",
+    "DurationSeconds": 30.791667
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-060022-050-e18980d7832f41888fb96e751f4e3b54.mp4",
+    "OriginalName": "20260228-060022-050-e18980d7832f41888fb96e751f4e3b54.mp4",
+    "CreatedAt": "2026-02-28T06:00:30.4131332+00:00",
+    "Size": 2646945,
+    "RelativePath": "video-out/20260228-060022-050-e18980d7832f41888fb96e751f4e3b54.mp4",
+    "DurationSeconds": 20.1
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-055713-090-c753122022a0446db30326c09d149521.mp4",
+    "OriginalName": "20260228-055713-090-c753122022a0446db30326c09d149521.mp4",
+    "CreatedAt": "2026-02-28T05:57:32.9724372+00:00",
+    "Size": 4194352,
+    "RelativePath": "video-out/20260228-055713-090-c753122022a0446db30326c09d149521.mp4",
+    "DurationSeconds": 0
+  },
+  {
+    "Kind": "upload",
+    "StoredName": "4290a41208cd40899da48dc4edd2e604.mp4",
+    "OriginalName": "UwMbhSM9J4mbWeOM.mp4",
+    "CreatedAt": "2026-02-28T06:02:26.1475277+00:00",
+    "Size": 5905411,
+    "RelativePath": "video/4290a41208cd40899da48dc4edd2e604.mp4",
+    "DurationSeconds": 19.562
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-060322-343-31bb7b51a5474873bbadb94bafcaa841.mp4",
+    "OriginalName": "20260228-060322-343-31bb7b51a5474873bbadb94bafcaa841.mp4",
+    "CreatedAt": "2026-02-28T06:03:40.8455113+00:00",
+    "Size": 6211338,
+    "RelativePath": "video-out/20260228-060322-343-31bb7b51a5474873bbadb94bafcaa841.mp4",
+    "DurationSeconds": 49.439002
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-061018-974-4a9650e4bee54a17b4701836c62e71cd.mp4",
+    "OriginalName": "20260228-061018-974-4a9650e4bee54a17b4701836c62e71cd.mp4",
+    "CreatedAt": "2026-02-28T06:10:47.7330553+00:00",
+    "Size": 10192715,
+    "RelativePath": "video-out/20260228-061018-974-4a9650e4bee54a17b4701836c62e71cd.mp4",
+    "DurationSeconds": 84.15
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-061207-786-6deb01e5d7bf469783c25c382a99978b.mp4",
+    "OriginalName": "20260228-061207-786-6deb01e5d7bf469783c25c382a99978b.mp4",
+    "CreatedAt": "2026-02-28T06:12:21.2696141+00:00",
+    "Size": 1212324,
+    "RelativePath": "video-out/20260228-061207-786-6deb01e5d7bf469783c25c382a99978b.mp4",
+    "DurationSeconds": 26.875
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-061254-474-949eba59c022420c8eb10cad599063ef.mp4",
+    "OriginalName": "20260228-061254-474-949eba59c022420c8eb10cad599063ef.mp4",
+    "CreatedAt": "2026-02-28T06:13:02.5984275+00:00",
+    "Size": 1226818,
+    "RelativePath": "video-out/20260228-061254-474-949eba59c022420c8eb10cad599063ef.mp4",
+    "DurationSeconds": 42.5
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-061544-803-27f2199e5f6c4d9d88b82167f9590218.mp4",
+    "OriginalName": "20260228-061544-803-27f2199e5f6c4d9d88b82167f9590218.mp4",
+    "CreatedAt": "2026-02-28T06:16:02.6175946+00:00",
+    "Size": 6304463,
+    "RelativePath": "video-out/20260228-061544-803-27f2199e5f6c4d9d88b82167f9590218.mp4",
+    "DurationSeconds": 50.35
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-061610-455-574e64fe985b4e53bb45f0df17e9ebc3.mp4",
+    "OriginalName": "20260228-061610-455-574e64fe985b4e53bb45f0df17e9ebc3.mp4",
+    "CreatedAt": "2026-02-28T06:16:28.513131+00:00",
+    "Size": 6304463,
+    "RelativePath": "video-out/20260228-061610-455-574e64fe985b4e53bb45f0df17e9ebc3.mp4",
+    "DurationSeconds": 50.35
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-061634-420-4e072fe2b41a4398ac245bf74cf5f1a7.mp4",
+    "OriginalName": "20260228-061634-420-4e072fe2b41a4398ac245bf74cf5f1a7.mp4",
+    "CreatedAt": "2026-02-28T06:16:43.2206006+00:00",
+    "Size": 1226019,
+    "RelativePath": "video-out/20260228-061634-420-4e072fe2b41a4398ac245bf74cf5f1a7.mp4",
+    "DurationSeconds": 42.5
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-061859-152-799e51c2bfef40fd89590c6805b97f69.mp4",
+    "OriginalName": "20260228-061859-152-799e51c2bfef40fd89590c6805b97f69.mp4",
+    "CreatedAt": "2026-02-28T06:19:07.4913937+00:00",
+    "Size": 1226908,
+    "RelativePath": "video-out/20260228-061859-152-799e51c2bfef40fd89590c6805b97f69.mp4",
+    "DurationSeconds": 42.5
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-061949-401-67c54f7abc3f40e5a1146824e3844f22.mp4",
+    "OriginalName": "20260228-061949-401-67c54f7abc3f40e5a1146824e3844f22.mp4",
+    "CreatedAt": "2026-02-28T06:19:53.6660749+00:00",
+    "Size": 1152090,
+    "RelativePath": "video-out/20260228-061949-401-67c54f7abc3f40e5a1146824e3844f22.mp4",
+    "DurationSeconds": 12.833333
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-062021-666-17c5e1cbda9949ad920a2d3f8eda699a.mp4",
+    "OriginalName": "20260228-062021-666-17c5e1cbda9949ad920a2d3f8eda699a.mp4",
+    "CreatedAt": "2026-02-28T06:20:25.9668413+00:00",
+    "Size": 1147315,
+    "RelativePath": "video-out/20260228-062021-666-17c5e1cbda9949ad920a2d3f8eda699a.mp4",
+    "DurationSeconds": 12.833333
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-062400-574-056f94072c6840a4a39a332f6612fa45.mp4",
+    "OriginalName": "20260228-062400-574-056f94072c6840a4a39a332f6612fa45.mp4",
+    "CreatedAt": "2026-02-28T06:24:02.7639128+00:00",
+    "Size": 850741,
+    "RelativePath": "video-out/20260228-062400-574-056f94072c6840a4a39a332f6612fa45.mp4",
+    "DurationSeconds": 8.25
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-062423-402-22031ed37b9747dab56bb68e3fe1b473.mp4",
+    "OriginalName": "20260228-062423-402-22031ed37b9747dab56bb68e3fe1b473.mp4",
+    "CreatedAt": "2026-02-28T06:24:26.1952264+00:00",
+    "Size": 911779,
+    "RelativePath": "video-out/20260228-062423-402-22031ed37b9747dab56bb68e3fe1b473.mp4",
+    "DurationSeconds": 10.208333
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-062706-196-f7651875ba4a436e8ef842d642f8c0eb.mp4",
+    "OriginalName": "20260228-062706-196-f7651875ba4a436e8ef842d642f8c0eb.mp4",
+    "CreatedAt": "2026-02-28T06:27:07.4439841+00:00",
+    "Size": 534313,
+    "RelativePath": "video-out/20260228-062706-196-f7651875ba4a436e8ef842d642f8c0eb.mp4",
+    "DurationSeconds": 2.416667
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-062748-160-ebc162b84e1e4534bbd07267ee90e895.mp4",
+    "OriginalName": "20260228-062748-160-ebc162b84e1e4534bbd07267ee90e895.mp4",
+    "CreatedAt": "2026-02-28T06:27:51.0587431+00:00",
+    "Size": 971727,
+    "RelativePath": "video-out/20260228-062748-160-ebc162b84e1e4534bbd07267ee90e895.mp4",
+    "DurationSeconds": 11.25
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-063034-339-a3d4460998b246a3878c65e1f2bb6b3b.mp4",
+    "OriginalName": "20260228-063034-339-a3d4460998b246a3878c65e1f2bb6b3b.mp4",
+    "CreatedAt": "2026-02-28T06:30:44.6478134+00:00",
+    "Size": 4578036,
+    "RelativePath": "video-out/20260228-063034-339-a3d4460998b246a3878c65e1f2bb6b3b.mp4",
+    "DurationSeconds": 29.801995
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-063054-797-118a6cae46fa45679e37b8c8b1f9ed97.mp4",
+    "OriginalName": "20260228-063054-797-118a6cae46fa45679e37b8c8b1f9ed97.mp4",
+    "CreatedAt": "2026-02-28T06:30:59.6419898+00:00",
+    "Size": 1225532,
+    "RelativePath": "video-out/20260228-063054-797-118a6cae46fa45679e37b8c8b1f9ed97.mp4",
+    "DurationSeconds": 29.708333
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-063110-526-e5eef8382c4641039580cb03282aaa0f.mp4",
+    "OriginalName": "20260228-063110-526-e5eef8382c4641039580cb03282aaa0f.mp4",
+    "CreatedAt": "2026-02-28T06:31:15.2537175+00:00",
+    "Size": 1227511,
+    "RelativePath": "video-out/20260228-063110-526-e5eef8382c4641039580cb03282aaa0f.mp4",
+    "DurationSeconds": 29.708333
+  },
+  {
+    "Kind": "processed",
+    "StoredName": "20260228-063434-035-caf024058b444993a1c3ca84cf07f76f.mp4",
+    "OriginalName": "20260228-063434-035-caf024058b444993a1c3ca84cf07f76f.mp4",
+    "CreatedAt": "2026-02-28T06:34:36.4967247+00:00",
+    "Size": 852703,
+    "RelativePath": "video-out/20260228-063434-035-caf024058b444993a1c3ca84cf07f76f.mp4",
+    "DurationSeconds": 8.083333
   }
 ]
