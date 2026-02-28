@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using System.Globalization;
+using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.FileProviders;
 using SixLabors.ImageSharp;
@@ -13,7 +15,7 @@ using Jmaka.Api.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 const long MaxUploadBytes = 75L * 1024 * 1024; // 75 MB
-const long MaxVideoUploadBytes = MaxUploadBytes * 4; // 300 MB
+const long MaxVideoUploadBytes = 1536L * 1024 * 1024; // 1.5 GB
 
 // Ширина миниатюры для превью (используется в UI, чтобы не грузить оригиналы)
 const int PreviewWidthPx = 320;
@@ -84,6 +86,7 @@ var editsDir = Path.Combine(storageRoot, "edits");
 var editsPreviewDir = Path.Combine(storageRoot, "edits-preview");
 var videoDir = Path.Combine(storageRoot, "video");
 var videoOutDir = Path.Combine(storageRoot, "video-out");
+var videoOverlayDir = Path.Combine(storageRoot, "video-overlays");
 var dataDir = Path.Combine(storageRoot, "data");
 var historyPath = Path.Combine(dataDir, "history.json");
 var compositesPath = Path.Combine(dataDir, "composites.json");
@@ -100,6 +103,7 @@ Directory.CreateDirectory(editsDir);
 Directory.CreateDirectory(editsPreviewDir);
 Directory.CreateDirectory(videoDir);
 Directory.CreateDirectory(videoOutDir);
+Directory.CreateDirectory(videoOverlayDir);
 Directory.CreateDirectory(dataDir);
 foreach (var w in resizeWidths)
 {
@@ -109,6 +113,7 @@ foreach (var w in resizeWidths)
 var historyLock = new SemaphoreSlim(1, 1);
 var compositesLock = new SemaphoreSlim(1, 1);
 var videoHistoryLock = new SemaphoreSlim(1, 1);
+var uploadNormalizeJobs = new ConcurrentDictionary<Guid, UploadNormalizeJobState>();
 
 // Retention: delete entries/files older than N hours (default 48h)
 var retentionHours = 48;
@@ -606,6 +611,17 @@ app.UseStaticFiles(new StaticFileOptions
         ctx.Context.Response.Headers["Expires"] = "0";
     }
 });
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(videoOverlayDir),
+    RequestPath = "/video-overlays",
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-store";
+        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+        ctx.Context.Response.Headers["Expires"] = "0";
+    }
+});
 
 app.UseAntiforgery();
 app.MapRazorPages();
@@ -863,6 +879,10 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, ILogger<P
     {
         form = await request.ReadFormAsync(ct);
     }
+    catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+    {
+        return Results.BadRequest(new { error = $"file is too large (max {Math.Round(MaxVideoUploadBytes / 1024d / 1024d)} MB)" });
+    }
     catch
     {
         return Results.BadRequest(new { error = "invalid multipart form" });
@@ -890,7 +910,7 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, ILogger<P
         uploadExt = ".bin";
     }
 
-    // Always normalize uploads to browser-friendly MP4 (H.264/AAC) for stable preview/editing.
+    // Upload first, then normalize in background with pollable progress.
     var uploadTempName = $"{Guid.NewGuid():N}.upload{uploadExt}";
     var uploadTempPath = Path.Combine(videoDir, uploadTempName);
     var storedName = $"{Guid.NewGuid():N}.mp4";
@@ -901,61 +921,197 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, ILogger<P
         {
             await file.CopyToAsync(stream, ct);
         }
+        var duration = await TryGetVideoDurationSecondsAsync(uploadTempPath, ct, logger);
+        var createdAt = DateTimeOffset.UtcNow;
+        var jobId = Guid.NewGuid();
+        var normalizeJob = new UploadNormalizeJobState(
+            jobId,
+            createdAt,
+            createdAt.AddHours(6),
+            file.FileName,
+            uploadTempPath,
+            storedName,
+            absolutePath,
+            duration
+        );
+        uploadNormalizeJobs[jobId] = normalizeJob;
 
-        var ffmpegArgs = new List<string>
+        _ = Task.Run(async () =>
         {
-            "-y",
-            "-i", uploadTempPath,
-            "-map", "0:v:0",
-            "-map", "0:a?",
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-movflags", "+faststart",
-            absolutePath
-        };
+            normalizeJob.Status = UploadNormalizeJobStatus.RUNNING;
+            normalizeJob.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            try
+            {
+                var ffmpegArgs = new List<string>
+                {
+                    "-y",
+                    "-progress", "pipe:2",
+                    "-nostats",
+                    "-i", uploadTempPath,
+                    "-map", "0:v:0",
+                    "-map", "0:a?",
+                    "-c:v", "libx264",
+                    "-preset", "superfast",
+                    "-crf", "24",
+                    "-pix_fmt", "yuv420p",
+                    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                    "-c:a", "aac",
+                    "-b:a", "96k",
+                    "-movflags", "+faststart",
+                    absolutePath
+                };
 
-        var convert = await RunProcessAsync("ffmpeg", ffmpegArgs, ct, logger, "upload-video normalize");
-        if (!convert.Success || !File.Exists(absolutePath))
+                var convert = await RunProcessAsync(
+                    "ffmpeg",
+                    ffmpegArgs,
+                    CancellationToken.None,
+                    logger,
+                    "upload-video normalize",
+                    null,
+                    (line) =>
+                    {
+                        if (normalizeJob.DurationSeconds <= 0) return;
+                        var pct = ParseFfmpegProgressPercent(line, normalizeJob.DurationSeconds);
+                        if (!pct.HasValue) return;
+                        normalizeJob.ProgressPercent = Math.Clamp(pct.Value, 0, 99);
+                        normalizeJob.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                    });
+                if (!convert.Success || !File.Exists(absolutePath))
+                {
+                    TryDeleteFile(absolutePath);
+                    var error = string.IsNullOrWhiteSpace(convert.Error) ? "ffmpeg normalize failed" : convert.Error;
+                    normalizeJob.Status = UploadNormalizeJobStatus.FAILED;
+                    normalizeJob.Error = error;
+                    normalizeJob.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                    return;
+                }
+
+                var outputSize = new FileInfo(absolutePath).Length;
+                var outputDuration = await TryGetVideoDurationSecondsAsync(absolutePath, CancellationToken.None, logger);
+                var relativePath = $"video/{storedName}";
+                var entry = new VideoHistoryItem(
+                    Kind: "upload",
+                    StoredName: storedName,
+                    OriginalName: file.FileName,
+                    CreatedAt: DateTimeOffset.UtcNow,
+                    Size: outputSize,
+                    RelativePath: relativePath,
+                    DurationSeconds: outputDuration
+                );
+                await AppendVideoHistoryAsync(videoHistoryPath, videoHistoryLock, entry, CancellationToken.None);
+
+                normalizeJob.ProgressPercent = 100;
+                normalizeJob.Status = UploadNormalizeJobStatus.SUCCEEDED;
+                normalizeJob.RelativePath = relativePath;
+                normalizeJob.Size = outputSize;
+                normalizeJob.DurationSeconds = outputDuration;
+                normalizeJob.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            }
+            catch (Exception ex)
+            {
+                TryDeleteFile(absolutePath);
+                normalizeJob.Status = UploadNormalizeJobStatus.FAILED;
+                normalizeJob.Error = ex.Message;
+                normalizeJob.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            }
+            finally
+            {
+                TryDeleteFile(uploadTempPath);
+            }
+        });
+
+        return Results.Accepted($"/video/upload-jobs/{jobId}", new
         {
-            TryDeleteFile(absolutePath);
-            var error = string.IsNullOrWhiteSpace(convert.Error) ? "ffmpeg normalize failed" : convert.Error;
-            return Results.BadRequest(new { error });
-        }
+            jobId,
+            status = normalizeJob.Status,
+            createdAt = normalizeJob.CreatedAtUtc
+        });
     }
     finally
     {
-        TryDeleteFile(uploadTempPath);
+        foreach (var key in uploadNormalizeJobs.Keys.ToArray())
+        {
+            if (!uploadNormalizeJobs.TryGetValue(key, out var j)) continue;
+            if (j.TtlAtUtc <= DateTimeOffset.UtcNow)
+            {
+                uploadNormalizeJobs.TryRemove(key, out _);
+            }
+        }
+    }
+})
+.DisableAntiforgery()
+.Accepts<IFormFile>("multipart/form-data")
+.Produces(StatusCodes.Status202Accepted)
+.Produces(StatusCodes.Status400BadRequest);
+
+// --- Video overlay templates ---
+app.MapGet("/video-overlay-templates", () =>
+{
+    var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".png", ".webp", ".jpg", ".jpeg" };
+    var items = Directory.EnumerateFiles(videoOverlayDir, "*.*", SearchOption.TopDirectoryOnly)
+        .Where(path => allowed.Contains(Path.GetExtension(path)))
+        .Select(path =>
+        {
+            var info = new FileInfo(path);
+            var fileName = info.Name;
+            return new
+            {
+                fileName,
+                relativePath = $"video-overlays/{fileName}",
+                createdAt = new DateTimeOffset(info.CreationTimeUtc, TimeSpan.Zero),
+                size = info.Length
+            };
+        })
+        .OrderByDescending(x => x.createdAt)
+        .ToArray();
+    return Results.Ok(items);
+})
+.Produces(StatusCodes.Status200OK);
+
+app.MapPost("/upload-video-overlay-template", async Task<IResult> (HttpRequest request, CancellationToken ct) =>
+{
+    IFormCollection form;
+    try
+    {
+        form = await request.ReadFormAsync(ct);
+    }
+    catch
+    {
+        return Results.BadRequest(new { error = "invalid multipart form" });
     }
 
-    var duration = await TryGetVideoDurationSecondsAsync(absolutePath, ct, logger);
-    var outputSize = new FileInfo(absolutePath).Length;
+    var file = form.Files.FirstOrDefault();
+    if (file is null || file.Length == 0)
+    {
+        return Results.BadRequest(new { error = "file is required" });
+    }
 
-    var createdAt = DateTimeOffset.UtcNow;
-    var relativePath = $"video/{storedName}";
-    var entry = new VideoHistoryItem(
-        Kind: "upload",
-        StoredName: storedName,
-        OriginalName: file.FileName,
-        CreatedAt: createdAt,
-        Size: outputSize,
-        RelativePath: relativePath,
-        DurationSeconds: duration
-    );
-    await AppendVideoHistoryAsync(videoHistoryPath, videoHistoryLock, entry, ct);
+    if (file.Length > MaxUploadBytes)
+    {
+        return Results.BadRequest(new { error = "file is too large" });
+    }
+
+    var ext = SanitizeExtension(Path.GetExtension(file.FileName));
+    var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".png", ".webp", ".jpg", ".jpeg" };
+    if (string.IsNullOrWhiteSpace(ext) || !allowed.Contains(ext))
+    {
+        return Results.BadRequest(new { error = "supported formats: .png, .webp, .jpg, .jpeg" });
+    }
+
+    var storedName = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}{ext}";
+    var absolutePath = Path.Combine(videoOverlayDir, storedName);
+    await using (var stream = File.Create(absolutePath))
+    {
+        await file.CopyToAsync(stream, ct);
+    }
 
     return Results.Ok(new
     {
-        storedName,
+        fileName = storedName,
+        relativePath = $"video-overlays/{storedName}",
         originalName = file.FileName,
-        createdAt,
-        relativePath,
-        size = outputSize,
-        durationSeconds = duration
+        size = file.Length,
+        createdAt = DateTimeOffset.UtcNow
     });
 })
 .DisableAntiforgery()
@@ -1919,8 +2075,34 @@ app.MapPost("/video-process", (VideoProcessRequest req, HttpContext http, IFfmpe
     var outName = $"{createdAt:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.mp4";
     var outPath = Path.Combine(videoOutDir, outName);
 
+    string? overlayRelativePath = null;
+    if (!string.IsNullOrWhiteSpace(req.OverlayTemplateRelativePath))
+    {
+        var expectedPrefix = "video-overlays/";
+        var normalized = req.OverlayTemplateRelativePath.Replace('\\', '/');
+        if (!normalized.StartsWith(expectedPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new { error = "invalid overlay path" });
+        }
+
+        var fileName = Path.GetFileName(normalized);
+        if (string.IsNullOrWhiteSpace(fileName) || !string.Equals(normalized, $"{expectedPrefix}{fileName}", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new { error = "invalid overlay path" });
+        }
+
+        var overlayAbsolutePath = Path.Combine(videoOverlayDir, fileName);
+        if (!File.Exists(overlayAbsolutePath))
+        {
+            return Results.BadRequest(new { error = "overlay not found" });
+        }
+
+        overlayRelativePath = $"{expectedPrefix}{fileName}";
+    }
+
     var correlationId = http.TraceIdentifier;
-    var enqueue = queue.Enqueue(req, inputPath, outPath, correlationId);
+    var reqForJob = req with { OverlayTemplateRelativePath = overlayRelativePath };
+    var enqueue = queue.Enqueue(reqForJob, inputPath, outPath, correlationId);
     if (!enqueue.Accepted && enqueue.QueueFull)
     {
         return Results.Json(new { error = "Queue is full" }, statusCode: StatusCodes.Status429TooManyRequests);
@@ -1962,6 +2144,36 @@ app.MapGet("/video/jobs/{jobId:guid}", (Guid jobId, IFfmpegJobQueue queue) =>
         job.Progress,
         job.Error,
         job.RelativeOutputPath
+    });
+})
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+app.MapGet("/video/upload-jobs/{jobId:guid}", (Guid jobId) =>
+{
+    if (!uploadNormalizeJobs.TryGetValue(jobId, out var job))
+    {
+        return Results.NotFound(new { error = "job not found" });
+    }
+
+    if (job.TtlAtUtc <= DateTimeOffset.UtcNow)
+    {
+        uploadNormalizeJobs.TryRemove(jobId, out _);
+        return Results.NotFound(new { error = "job expired" });
+    }
+
+    return Results.Ok(new
+    {
+        job.JobId,
+        job.CreatedAtUtc,
+        job.UpdatedAtUtc,
+        job.Status,
+        progress = $"{Math.Clamp(job.ProgressPercent, 0, 100)}%",
+        job.Error,
+        job.StoredName,
+        job.RelativePath,
+        job.Size,
+        job.DurationSeconds
     });
 })
 .Produces(StatusCodes.Status200OK)
@@ -2108,7 +2320,45 @@ static async Task<double> TryGetVideoDurationSecondsAsync(string absolutePath, C
     return 0;
 }
 
-static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> args, CancellationToken ct, Microsoft.Extensions.Logging.ILogger? logger = null, string? context = null, Action<int>? exitCodeCallback = null)
+static int GetEnvInt(string name, int fallback)
+{
+    var raw = Environment.GetEnvironmentVariable(name);
+    if (!string.IsNullOrWhiteSpace(raw) && int.TryParse(raw, out var parsed))
+    {
+        return parsed;
+    }
+    return fallback;
+}
+
+static int? ParseFfmpegProgressPercent(string line, double durationSeconds)
+{
+    if (string.IsNullOrWhiteSpace(line) || durationSeconds <= 0) return null;
+
+    var msMatch = Regex.Match(line, @"out_time_ms=(\d+)", RegexOptions.CultureInvariant);
+    if (msMatch.Success && long.TryParse(msMatch.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var outTimeUs))
+    {
+        var elapsedSec = outTimeUs / 1_000_000.0;
+        var pct = (int)Math.Round(Math.Clamp((elapsedSec / durationSeconds) * 100.0, 0, 100));
+        return pct;
+    }
+
+    var timeMatch = Regex.Match(line, @"time=(\d+):(\d+):(\d+(?:\.\d+)?)", RegexOptions.CultureInvariant);
+    if (!timeMatch.Success) return null;
+    if (!double.TryParse(timeMatch.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var hh)) return null;
+    if (!double.TryParse(timeMatch.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var mm)) return null;
+    if (!double.TryParse(timeMatch.Groups[3].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var ss)) return null;
+    var elapsed = hh * 3600 + mm * 60 + ss;
+    return (int)Math.Round(Math.Clamp((elapsed / durationSeconds) * 100.0, 0, 100));
+}
+
+static async Task<ProcessResult> RunProcessAsync(
+    string fileName,
+    List<string> args,
+    CancellationToken ct,
+    Microsoft.Extensions.Logging.ILogger? logger = null,
+    string? context = null,
+    Action<int>? exitCodeCallback = null,
+    Action<string>? stderrLineCallback = null)
 {
     var psi = new System.Diagnostics.ProcessStartInfo
     {
@@ -2138,11 +2388,104 @@ static async Task<ProcessResult> RunProcessAsync(string fileName, List<string> a
         return new ProcessResult(false, string.Empty, "failed to start process");
     }
 
-    var outputTask = process.StandardOutput.ReadToEndAsync(ct);
-    var errorTask = process.StandardError.ReadToEndAsync(ct);
-    await process.WaitForExitAsync(ct);
-    var output = await outputTask;
-    var error = await errorTask;
+    var outputBuilder = new System.Text.StringBuilder();
+    var errorBuilder = new System.Text.StringBuilder();
+    var lastActivityUtc = DateTimeOffset.UtcNow;
+
+    process.OutputDataReceived += (_, e) =>
+    {
+        if (e.Data is null) return;
+        outputBuilder.AppendLine(e.Data);
+        lastActivityUtc = DateTimeOffset.UtcNow;
+    };
+    process.ErrorDataReceived += (_, e) =>
+    {
+        if (e.Data is null) return;
+        errorBuilder.AppendLine(e.Data);
+        stderrLineCallback?.Invoke(e.Data);
+        lastActivityUtc = DateTimeOffset.UtcNow;
+    };
+    process.BeginOutputReadLine();
+    process.BeginErrorReadLine();
+
+    var timeoutSec = Math.Clamp(GetEnvInt("JMAKA_FFMPEG_TIMEOUT_SEC", 1800), 60, 7200);
+    var idleTimeoutSec = Math.Clamp(GetEnvInt("JMAKA_FFMPEG_IDLE_TIMEOUT_SEC", 120), 15, timeoutSec);
+    var startedAtUtc = DateTimeOffset.UtcNow;
+    var timedOut = false;
+    var stalled = false;
+
+    while (!process.HasExited)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        var now = DateTimeOffset.UtcNow;
+        if ((now - startedAtUtc).TotalSeconds > timeoutSec)
+        {
+            timedOut = true;
+            break;
+        }
+        if ((now - lastActivityUtc).TotalSeconds > idleTimeoutSec)
+        {
+            stalled = true;
+            break;
+        }
+
+        await Task.Delay(500, ct);
+    }
+
+    if (timedOut || stalled)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // ignore kill errors
+        }
+    }
+
+    try
+    {
+        if (!process.HasExited)
+        {
+            await process.WaitForExitAsync(ct);
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+        throw;
+    }
+
+    var output = outputBuilder.ToString();
+    var error = errorBuilder.ToString();
+
+    if (timedOut)
+    {
+        var msg = $"process timeout after {timeoutSec}s";
+        logger?.LogError("{Context}FFMPEG TIMEOUT: {Message}", contextPrefix, msg);
+        return new ProcessResult(false, output, string.IsNullOrWhiteSpace(error) ? msg : error);
+    }
+    if (stalled)
+    {
+        var msg = $"process stalled: no output for {idleTimeoutSec}s";
+        logger?.LogError("{Context}FFMPEG STALLED: {Message}", contextPrefix, msg);
+        return new ProcessResult(false, output, string.IsNullOrWhiteSpace(error) ? msg : error);
+    }
 
     // Track exit code via callback (used for FFmpeg OOM detection)
     exitCodeCallback?.Invoke(process.ExitCode);
@@ -2739,12 +3082,56 @@ public record VideoProcessRequest(
     bool? FlipV,
     double? Speed,
     bool? MuteAudio,
-    string? EncodingMode
+    string? EncodingMode,
+    string? OverlayTemplateRelativePath
 );
 
 public record VideoProcessSegment(
     double StartSec,
     double EndSec
 );
+
+enum UploadNormalizeJobStatus { QUEUED, RUNNING, SUCCEEDED, FAILED }
+
+sealed class UploadNormalizeJobState
+{
+    public UploadNormalizeJobState(
+        Guid jobId,
+        DateTimeOffset createdAtUtc,
+        DateTimeOffset ttlAtUtc,
+        string originalName,
+        string uploadTempPath,
+        string storedName,
+        string outputPath,
+        double durationSeconds)
+    {
+        JobId = jobId;
+        CreatedAtUtc = createdAtUtc;
+        UpdatedAtUtc = createdAtUtc;
+        TtlAtUtc = ttlAtUtc;
+        OriginalName = originalName;
+        UploadTempPath = uploadTempPath;
+        StoredName = storedName;
+        OutputPath = outputPath;
+        DurationSeconds = durationSeconds;
+        Status = UploadNormalizeJobStatus.QUEUED;
+        ProgressPercent = 0;
+    }
+
+    public Guid JobId { get; }
+    public DateTimeOffset CreatedAtUtc { get; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+    public DateTimeOffset TtlAtUtc { get; }
+    public string OriginalName { get; }
+    public string UploadTempPath { get; }
+    public string StoredName { get; }
+    public string OutputPath { get; }
+    public double DurationSeconds { get; set; }
+    public UploadNormalizeJobStatus Status { get; set; }
+    public int ProgressPercent { get; set; }
+    public string? Error { get; set; }
+    public string? RelativePath { get; set; }
+    public long? Size { get; set; }
+}
 
 record ProcessResult(bool Success, string Output, string Error);
