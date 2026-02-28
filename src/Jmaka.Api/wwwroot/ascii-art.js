@@ -46,37 +46,23 @@ const JMAKA_ASCII_BASE = [
      888  888  888888 "88b888  888`
 ];
 
-function makeBorder(width, ch) {
-  return ch.repeat(Math.max(12, width));
-}
-
 function padAscii(text) {
   return String(text || '').replace(/\t/g, '  ').trimEnd();
 }
 
 function buildAsciiVariants(targetCount = 42) {
   const variants = JMAKA_ASCII_BASE.map((x) => padAscii(x));
-  const topBottomChars = ['=', '-', '~', '*', '#', '+', ':', '.'];
-  const sideChars = ['|', '!', ':', '/', '\\'];
+  const blockVariants = ['█', '▓', '▒', '■', '▉', '▊'];
 
   let i = 0;
   while (variants.length < targetCount) {
-    const src = JMAKA_ASCII_BASE[i % JMAKA_ASCII_BASE.length];
-    const art = padAscii(src);
-    const lines = art.split('\n');
-    const maxLen = lines.reduce((m, line) => Math.max(m, line.length), 0);
-    const topBottom = makeBorder(maxLen + 4 + ((i % 3) * 2), topBottomChars[i % topBottomChars.length]);
-    const side = sideChars[i % sideChars.length];
-    const tag = ` JMAKA-${String(i + 1).padStart(2, '0')} `;
+    const src = padAscii(JMAKA_ASCII_BASE[i % JMAKA_ASCII_BASE.length]);
+    const blockChar = blockVariants[i % blockVariants.length];
+    const transformed = src
+      .replace(/[█▓▒■▉▊]/g, blockChar)
+      .replace(/_/g, i % 2 === 0 ? '_' : '‾');
 
-    const framed = [
-      topBottom,
-      ...lines.map((line) => `${side} ${line.padEnd(maxLen, ' ')} ${side}`),
-      topBottom,
-      tag
-    ].join('\n');
-
-    variants.push(framed);
+    variants.push(transformed);
     i += 1;
   }
 
