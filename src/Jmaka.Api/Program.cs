@@ -2564,7 +2564,7 @@ static async Task<ProcessResult> RunProcessAsync(
     // Build command string for logging (safely)
     var argsStr = string.Join(" ", args.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
     var contextPrefix = !string.IsNullOrEmpty(context) ? $"{context}: " : "";
-    
+
     logger?.LogInformation("{Context}FFMPEG START: {FileName} {Arguments}", contextPrefix, fileName, argsStr);
 
     using var process = new System.Diagnostics.Process { StartInfo = psi };
@@ -2685,7 +2685,7 @@ static async Task<ProcessResult> RunProcessAsync(
     }
 
     var success = process.ExitCode == 0;
-    
+
     if (success)
     {
         logger?.LogDebug("{Context}FFMPEG SUCCESS (exit code 0)", contextPrefix);
@@ -2784,7 +2784,7 @@ static async Task SaveImageWithSafeTempAsync(Image image, string outAbsolutePath
 {
     // CRITICAL: Always normalize to sRGB before saving JPEG
     using var normalized = imagePipeline.NormalizeToSrgb(image, "composite");
-    
+
     var ext = Path.GetExtension(outAbsolutePath);
     var dir = Path.GetDirectoryName(outAbsolutePath) ?? throw new InvalidOperationException("Invalid output path");
     var fileNoExt = Path.GetFileNameWithoutExtension(outAbsolutePath);
