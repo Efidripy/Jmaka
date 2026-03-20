@@ -80,6 +80,7 @@
 ## ▶️ Запуск локально
 - `dotnet run --project src/Jmaka.Api --launch-profile http`
 - открыть `http://localhost:5189/`
+- bounded smoke check: `powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\smoke-api-version.ps1`
 
 ## API (кратко)
 - `POST /upload` (multipart/form-data поле `files`, можно несколько)
@@ -203,6 +204,7 @@ curl -L -o ~/jmaka.tar.gz \
 ### Запуск
 - `dotnet run --project src/Jmaka.Api --launch-profile http`
 - открыть `http://localhost:5189/`
+- bounded smoke check: `powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\smoke-api-version.ps1`
 
 ### Известная особенность (file lock)
 Если `dotnet build -c Release` падает с ошибкой, что файл `Jmaka.Api.exe` занят — значит запущен процесс из `bin/Release`. Остановите его и пересоберите.
