@@ -1,13 +1,26 @@
-/* Jmaka frontend version: 0.5.2 */
+/* Jmaka frontend version: 0.5.3 */
 :root {
+  /* Core surface tokens */
   --bg: #0b0f17;
   --panel: #111827;
   --text: #e5e7eb;
   --muted: #9ca3af;
   --accent: #60a5fa;
   --border: rgba(255, 255, 255, 0.12);
+  --surface-2: #0f172a;
+  --success: #22c55e;
+  --warning: #f59e0b;
   --danger: #b91c1c;
   --danger-light: #ff4d4f;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --space-1: 6px;
+  --space-2: 10px;
+  --space-3: 14px;
+  --space-4: 18px;
+  --space-5: 24px;
+  --focus-ring: 0 0 0 3px rgba(96, 165, 250, 0.35);
   --ascii-c1: #60a5fa;
   --ascii-c2: #a78bfa;
   --ascii-c3: #f472b6;
@@ -15,9 +28,45 @@
   --version-bg-2: rgba(167, 139, 250, 0.15);
   --version-border: rgba(96, 165, 250, 0.3);
   --version-text: var(--accent);
+  --scroll-track: rgba(15, 23, 42, 0.92);
+  --scroll-thumb: rgba(148, 163, 184, 0.72);
+  --scroll-thumb-hover: rgba(186, 199, 216, 0.9);
 }
 
-* { box-sizing: border-box; }
+/* Compatibility aliases for incremental normalization */
+:root {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 999px;
+  border: 2px solid var(--scroll-track);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
 
 html, body {
   height: 100%;
@@ -54,7 +103,7 @@ html, body {
   width: 132px;
   min-height: 104px;
   padding: 10px 12px;
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
@@ -113,6 +162,17 @@ html, body {
 .save-btn[disabled] {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+button:focus-visible,
+[role="button"]:focus-visible,
+.btn:focus-visible,
+.tool-btn:focus-visible,
+.size-btn:focus-visible,
+.download-btn:focus-visible,
+.lang-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 /* Левая панель с названием, кнопкой загрузки и языками */
@@ -567,6 +627,9 @@ html, body {
 
 .help-card {
   max-width: 900px;
+  max-height: min(92vh, 980px);
+  display: flex;
+  flex-direction: column;
   background:
     radial-gradient(1200px 420px at -10% -30%, rgba(56, 189, 248, 0.16), transparent 55%),
     radial-gradient(900px 320px at 120% 130%, rgba(14, 165, 233, 0.12), transparent 60%),
@@ -576,7 +639,7 @@ html, body {
 .help-body {
   font-size: 13px;
   line-height: 1.58;
-  max-height: min(72vh, 760px);
+  max-height: min(74vh, 760px);
   overflow: auto;
   padding: 14px;
 }
@@ -647,6 +710,15 @@ html, body {
 }
 
 @media (max-width: 760px) {
+  .help-card {
+    max-height: 94vh;
+  }
+
+  .help-body {
+    max-height: 74vh;
+    padding: 12px;
+  }
+
   .help-grid {
     grid-template-columns: 1fr;
   }
@@ -896,10 +968,13 @@ html, body {
   position: relative;
   margin: 5vh auto;
   width: min(980px, calc(100% - 24px));
+  max-height: 90vh;
   background: rgba(17, 24, 39, 0.95);
   border: 1px solid var(--border);
   border-radius: 16px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-header {
@@ -961,8 +1036,10 @@ html, body {
   font-size: 18px;
 }
 
- .modal-body {
+.modal-body {
   padding: 12px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .crop-stage {
@@ -1019,6 +1096,7 @@ html, body {
   justify-content: space-between;
   padding: 12px 14px;
   border-top: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 
 .modal-hint {
@@ -1048,6 +1126,42 @@ html, body {
 .modal-actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .modal-card {
+    width: calc(100% - 14px);
+    margin: 2vh auto;
+    max-height: 96vh;
+  }
+
+  .modal-header {
+    padding: 10px;
+  }
+
+  .modal-body {
+    padding: 10px;
+  }
+
+  .modal-footer {
+    padding: 10px;
+    align-items: stretch;
+  }
+
+  .modal-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .modal-actions .btn {
+    flex: 1 1 140px;
+  }
+
+  .modal-hint {
+    width: 100%;
+  }
 }
 
 .btn {

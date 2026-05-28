@@ -190,7 +190,7 @@ function split3SetItemFromStoredName(which, storedName) {
   };
 
   img.onerror = () => {
-    if (split3Hint) split3Hint.textContent = t('Не удалось загрузить картинку для Split3.');
+    if (split3Hint) split3Hint.textContent = t('Failed to load image for Split3.');
   };
 
   img.src = url;
@@ -208,7 +208,7 @@ async function openSplit3Modal() {
   if (split3PickTargetB) split3PickTargetB.classList.remove('is-active');
   if (split3PickTargetC) split3PickTargetC.classList.remove('is-active');
 
-  if (split3Hint) split3Hint.textContent = t('Загружаю список...');
+  if (split3Hint) split3Hint.textContent = t('Loading list...');
 
   split3State.history = await fetchHistoryRaw();
   const candidates = split3State.history.filter(it => !!(it && it.originalRelativePath && it.imageWidth && it.imageHeight));
@@ -222,6 +222,7 @@ async function openSplit3Modal() {
       btn.className = 'split-thumb';
       btn.dataset.sn = it.storedName;
       btn.title = it.originalName || it.storedName || '';
+      btn.setAttribute('aria-label', `Выбрать изображение ${it.originalName || it.storedName || ''}`);
 
       const img = document.createElement('img');
       img.alt = it.originalName || it.storedName || '';
@@ -272,8 +273,8 @@ async function openSplit3Modal() {
 
   if (split3Hint) {
     split3Hint.textContent = candidates.length > 0
-      ? t('Выберите слот (#1/#2/#3), затем кликните по превью. Дальше перетаскивайте/масштабируйте.')
-      : t('Нет загруженных изображений.');
+      ? t('Choose slot (#1/#2/#3), then click a preview. Then drag/scale.')
+      : t('No uploaded images.');
   }
 
   if (split3ApplyBtn) {
@@ -313,7 +314,7 @@ async function applySplit3() {
   const c = split3State.c;
 
   if (!a || !a.storedName || !b || !b.storedName || !c || !c.storedName) {
-    if (split3Hint) split3Hint.textContent = t('Выберите три картинки.');
+    if (split3Hint) split3Hint.textContent = t('Choose three images.');
     return;
   }
 
@@ -322,7 +323,7 @@ async function applySplit3() {
   const panelC = split3GetPanelSize('c');
 
   if (!panelA.w || !panelA.h || !panelB.w || !panelB.h || !panelC.w || !panelC.h) {
-    if (split3Hint) split3Hint.textContent = t('Не удалось определить размер поля.');
+    if (split3Hint) split3Hint.textContent = t('Failed to determine stage size.');
     return;
   }
 
@@ -338,7 +339,7 @@ async function applySplit3() {
   try {
     if (split3ApplyBtn) split3ApplyBtn.disabled = true;
     setBusy(true);
-    if (split3Hint) split3Hint.textContent = t('Склеиваю...');
+    if (split3Hint) split3Hint.textContent = t('Merging...');
 
     const res = await fetch(toAbsoluteUrl('split3'), {
       method: 'POST',
@@ -351,7 +352,7 @@ async function applySplit3() {
     try { data = JSON.parse(text); } catch { data = text; }
 
     if (!res.ok) {
-      if (split3Hint) split3Hint.textContent = t('Ошибка split3.');
+      if (split3Hint) split3Hint.textContent = t('Split3 error.');
       showResult(data);
       return;
     }
@@ -364,10 +365,10 @@ async function applySplit3() {
     cacheBust.set(c.storedName, Date.now());
     await loadComposites();
 
-    hint.textContent = t('Split3 создан.');
+    hint.textContent = t('Split3 created.');
     closeSplit3Modal();
   } catch (e) {
-    if (split3Hint) split3Hint.textContent = t('Ошибка split3.');
+    if (split3Hint) split3Hint.textContent = t('Split3 error.');
     showResult(String(e));
   } finally {
     setBusy(false);

@@ -1,5 +1,5 @@
 (() => {
-  console.info('VideoEdit v0.5.2 loaded');
+  console.info('VideoEdit v0.5.3 loaded');
   
   const videoEditModal = document.getElementById('videoEditModal');
   if (!videoEditModal) return;
@@ -404,7 +404,7 @@
     videoOverlaySelect.innerHTML = '';
     const empty = document.createElement('option');
     empty.value = '';
-    empty.textContent = 'No overlay';
+    empty.textContent = vt('No overlay', 'No overlay');
     videoOverlaySelect.appendChild(empty);
     overlayTemplates.forEach((item) => {
       const opt = document.createElement('option');
@@ -813,14 +813,14 @@
 
   async function loadVideoHistory() {
     if (!videoOriginalsList || !videoProcessedList) return;
-    videoOriginalsList.textContent = vt('loading', 'Загрузка...');
-    videoProcessedList.textContent = vt('loading', 'Загрузка...');
+    videoOriginalsList.textContent = vt('loading', 'Loading...');
+    videoProcessedList.textContent = vt('loading', 'Loading...');
     try {
       const res = await fetch(toAbsoluteUrl('video-history'), { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok || !Array.isArray(data)) {
-        videoOriginalsList.textContent = vt('loadError', 'Ошибка загрузки.');
-        videoProcessedList.textContent = vt('loadError', 'Ошибка загрузки.');
+        videoOriginalsList.textContent = vt('loadError', 'Loading error.');
+        videoProcessedList.textContent = vt('loadError', 'Loading error.');
         return;
       }
       originals = data.filter((item) => item && item.kind !== 'processed');
@@ -839,11 +839,11 @@
       renderVideoLists();
       renderTimelineClipControls();
       if (processed.length === 0) {
-        setHint(vt('Results пуст. Нажмите Refresh, если обработка завершилась только что.', 'Results пуст. Нажмите Refresh, если обработка завершилась только что.'));
+        setHint(vt('Results are empty for now.', 'Results are empty for now.'));
       }
     } catch {
-      videoOriginalsList.textContent = vt('loadError', 'Ошибка загрузки.');
-      videoProcessedList.textContent = vt('loadError', 'Ошибка загрузки.');
+      videoOriginalsList.textContent = vt('loadError', 'Loading error.');
+      videoProcessedList.textContent = vt('loadError', 'Loading error.');
     }
   }
 
@@ -882,7 +882,7 @@
       let data;
       try { data = await res.json(); } catch { data = null; }
       if (!res.ok) {
-        throw new Error(data && data.error ? data.error : vt('Не удалось получить статус задачи', 'Не удалось получить статус задачи'));
+        throw new Error(data && data.error ? data.error : vt('Failed to get job status', 'Failed to get job status'));
       }
 
       const status = normalizeJobStatus(data && data.status);
@@ -900,7 +900,7 @@
       await new Promise((resolve) => setTimeout(resolve, Math.max(150, pollMs)));
     }
 
-    throw new Error(vt('Превышено время ожидания завершения задачи', 'Превышено время ожидания завершения задачи'));
+    throw new Error(vt('Job completion timeout', 'Job completion timeout'));
   }
 
   async function waitForUploadNormalizeCompletion(jobId, timeoutMs = 1800000, onProgress, pollMs = 1000) {
@@ -912,7 +912,7 @@
       let data;
       try { data = await res.json(); } catch { data = null; }
       if (!res.ok) {
-        throw new Error(data && data.error ? data.error : vt('videoNormalizeStatusError', 'Не удалось получить статус нормализации'));
+        throw new Error(data && data.error ? data.error : vt('videoNormalizeStatusError', 'Failed to get normalization status'));
       }
 
       const status = normalizeJobStatus(data && data.status);
@@ -927,7 +927,7 @@
       await new Promise((resolve) => setTimeout(resolve, Math.max(200, pollMs)));
     }
 
-    throw new Error(vt('videoNormalizeTimeout', 'Превышено время ожидания нормализации видео'));
+    throw new Error(vt('videoNormalizeTimeout', 'Video normalization timed out'));
   }
 
   function renderVideoLists() {
@@ -949,11 +949,11 @@
           timelinePreviewState.dirty = true;
         }
         if (isProcessed) {
-          setHint(vt('Просмотр результата. Для обработки выберите оригинал.', 'Просмотр результата. Для обработки выберите оригинал.'));
+          setHint(vt('previewingResultChooseOriginal', 'Previewing result. Choose an original to process.'));
           return;
         }
         state.storedName = item.storedName;
-        setHint(vt('Выберите отрезки на таймлайне и нажмите Сделать.', 'Выберите отрезки на таймлайне и нажмите Сделать.'));
+        setHint(vt('selectSegmentsAndProcess', 'Select timeline segments and click Process.'));
         renderOutputControls();
         renderTimelineClipControls();
         renderVideoLists();
@@ -996,6 +996,7 @@
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'btn small';
+      del.setAttribute('aria-label', vt('deleteVideo', 'Delete video'));
       del.textContent = '✖';
       del.addEventListener('click', async (event) => {
         event.stopPropagation();
@@ -1040,7 +1041,8 @@
       const refreshBtn = document.createElement('button');
       refreshBtn.type = 'button';
       refreshBtn.className = 'btn small';
-      refreshBtn.textContent = vt('Обновить', 'Обновить');
+      refreshBtn.setAttribute('aria-label', vt('refreshResultsList', 'Refresh results list'));
+      refreshBtn.textContent = vt('refresh', 'Refresh');
       refreshBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1146,7 +1148,7 @@
     if (originals.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'timeline-add-empty';
-      empty.textContent = 'Загрузите видео, чтобы добавить в склейку';
+      empty.textContent = vt('uploadVideoToAddClips', 'Upload a video to add clips');
       videoTimelineAddMenu.appendChild(empty);
       return;
     }
@@ -1154,6 +1156,7 @@
       const option = document.createElement('button');
       option.type = 'button';
       option.className = 'timeline-add-item';
+      option.setAttribute('aria-label', `${vt('addClip', 'Add clip')} ${item.originalName || item.storedName || ''}`);
       const used = isInTimeline(item.storedName);
       if (used) {
         option.classList.add('is-used');
@@ -1209,8 +1212,9 @@
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'timeline-clip-remove';
+      remove.setAttribute('aria-label', vt('removeClipFromTimeline', 'Remove clip from timeline'));
       remove.textContent = '×';
-      remove.title = 'Удалить клип';
+      remove.title = vt('removeClip', 'Remove clip');
       remove.addEventListener('click', (event) => {
         event.stopPropagation();
         removeTimelineClip(storedName);
@@ -1234,7 +1238,7 @@
 
   function openModal() {
     videoEditModal.hidden = false;
-    setHint(vt('videoUploadHint', 'Загрузите видео и перетащите границы на таймлайне.'));
+    setHint(vt('videoUploadHint', 'Upload a video and drag the segment boundaries on the timeline.'));
     setStatus('Ready', 0);
     loadVideoHistory();
     loadOverlayTemplates();
@@ -1522,7 +1526,7 @@
     renderTimelineClipControls();
     renderOutputControls();
     
-    setHint(vt('Все изменения сброшены. Начните заново.', 'Все изменения сброшены. Начните заново.'));
+    setHint(vt('allChangesReset', 'All changes were reset. Start again.'));
   }
 
   function handleCropPointerDown(event) {
@@ -1804,18 +1808,18 @@
       if (!file) return;
       const form = new FormData();
       form.append('file', file);
-      setStatus('Uploading overlay template... 0%', 0);
+      setStatus(vt('overlayUploading', 'Uploading overlay template...') + ' 0%', 0);
       try {
         const res = await uploadFormWithProgress('upload-video-overlay-template', form, (pct) => {
-          setStatus(`Uploading overlay template... ${Math.round(pct)}%`, pct);
+          setStatus(`${vt('overlayUploading', 'Uploading overlay template...')} ${Math.round(pct)}%`, pct);
         });
         const data = res.data;
         if (!res.ok) throw new Error(data && data.error ? data.error : `overlay upload failed (${res.status})`);
         state.overlayTemplateRelativePath = data && data.relativePath ? data.relativePath : null;
         await loadOverlayTemplates();
-        setStatus('Overlay uploaded', 100);
+        setStatus(vt('overlayUploaded', 'Overlay uploaded'), 100);
       } catch (err) {
-        setStatus(`Overlay upload failed: ${String(err || '').trim()}`.trim(), 0);
+        setStatus(`${vt('overlayUploadFailed', 'Overlay upload failed:')} ${String(err || '').trim()}`.trim(), 0);
       } finally {
         videoOverlayInput.value = '';
       }
@@ -1837,11 +1841,11 @@
       const selected = getSelectedOverlayTemplate();
       if (!selected || !selected.fileName) return;
       const currentName = selected.displayName || selected.fileName;
-      const nextName = window.prompt('Overlay name', currentName);
+      const nextName = window.prompt(vt('overlayNamePrompt', 'Overlay name'), currentName);
       if (nextName === null) return;
       const normalized = String(nextName || '').trim();
       if (!normalized) return;
-      setStatus('Renaming overlay...', null, { indeterminate: true });
+      setStatus(vt('overlayRenaming', 'Renaming overlay...'), null, { indeterminate: true });
       try {
         const res = await fetch(toAbsoluteUrl(`video-overlay-templates/${encodeURIComponent(selected.fileName)}/rename`), {
           method: 'POST',
@@ -1856,9 +1860,9 @@
         state.overlayTemplateRelativePath = data && data.relativePath ? data.relativePath : state.overlayTemplateRelativePath;
         renderOverlayTemplates();
         renderOverlayPreview();
-        setStatus('Overlay renamed', 100);
+        setStatus(vt('overlayRenamed', 'Overlay renamed'), 100);
       } catch (err) {
-        setStatus(`Overlay rename failed: ${String(err || '').trim()}`.trim(), 0);
+        setStatus(`${vt('overlayRenameFailed', 'Overlay rename failed:')} ${String(err || '').trim()}`.trim(), 0);
       }
     });
   }
@@ -1868,9 +1872,9 @@
       const selected = getSelectedOverlayTemplate();
       if (!selected || !selected.fileName) return;
       const name = selected.displayName || selected.fileName;
-      if (!window.confirm(`Delete overlay "${name}" permanently?`)) return;
+      if (!window.confirm(`${vt('overlayDeleteConfirmPrefix', 'Delete overlay')} "${name}" ${vt('overlayDeleteConfirmSuffix', 'permanently?')}`)) return;
 
-      setStatus('Deleting overlay...', null, { indeterminate: true });
+      setStatus(vt('overlayDeleting', 'Deleting overlay...'), null, { indeterminate: true });
       try {
         const res = await fetch(toAbsoluteUrl(`video-overlay-templates/${encodeURIComponent(selected.fileName)}`), {
           method: 'DELETE'
@@ -1885,9 +1889,9 @@
         await loadOverlayTemplates();
         renderOverlayTemplates();
         renderOverlayPreview();
-        setStatus('Overlay deleted', 100);
+        setStatus(vt('overlayDeleted', 'Overlay deleted'), 100);
       } catch (err) {
-        setStatus(`Overlay delete failed: ${String(err || '').trim()}`.trim(), 0);
+        setStatus(`${vt('overlayDeleteFailed', 'Overlay delete failed:')} ${String(err || '').trim()}`.trim(), 0);
       }
     });
   }
@@ -1898,10 +1902,10 @@
       if (!file) return;
       const form = new FormData();
       form.append('file', file);
-      setStatus(vt('videoUploading', 'Загружаю видео... 0%'), 0);
+      setStatus(vt('videoUploading', 'Uploading video... 0%'), 0);
       try {
         const res = await uploadFormWithProgress('upload-video', form, (pct) => {
-          setStatus(`${vt('videoUploading', 'Загружаю видео...')} ${Math.round(pct)}%`, pct);
+          setStatus(`${vt('videoUploading', 'Uploading video...')} ${Math.round(pct)}%`, pct);
         });
         const data = res.data;
         if (!res.ok) {
@@ -1916,10 +1920,10 @@
             const pct = Number.isFinite(p.progress) ? p.progress : null;
             const elapsedSec = (Date.now() - normalizeStartedAt) / 1000;
             const etaSec = pct != null && pct > 1 ? (elapsedSec * (100 - pct)) / pct : null;
-            const etaText = Number.isFinite(etaSec) ? ` • ~${formatEta(etaSec)} ${vt('etaLeft', 'осталось')}` : '';
+            const etaText = Number.isFinite(etaSec) ? ` • ~${formatEta(etaSec)} ${vt('etaLeft', 'left')}` : '';
             const label = pct != null
-              ? `${vt('videoNormalize', 'Нормализую формат для редактора...')} ${Math.round(pct)}%${etaText}`
-              : `${vt('videoNormalizeElapsed', 'Нормализую формат для редактора... прошло')} ${formatEta(elapsedSec)}`;
+              ? `${vt('videoNormalize', 'Normalizing format for editor...')} ${Math.round(pct)}%${etaText}`
+              : `${vt('videoNormalizeElapsed', 'Normalizing format for editor... elapsed')} ${formatEta(elapsedSec)}`;
             setStatus(label, pct, { indeterminate: pct == null });
           }, 1000);
 
@@ -1940,11 +1944,11 @@
             timelinePreviewState.dirty = true;
           }
         }
-        setStatus(vt('videoUploaded', 'Видео загружено. Выберите отрезки на таймлайне и нажмите Сделать.'), 100, { indeterminate: false });
+        setStatus(vt('videoUploaded', 'Video uploaded. Select timeline segments and click Process.'), 100, { indeterminate: false });
         await loadVideoHistory();
         renderOutputControls();
       } catch (err) {
-        setStatus(`${vt('videoUploadErrorPrefix', 'Ошибка загрузки видео.')} ${String(err || '').trim()}`.trim(), 0, { indeterminate: false });
+        setStatus(`${vt('videoUploadErrorPrefix', 'Video upload error.')} ${String(err || '').trim()}`.trim(), 0, { indeterminate: false });
       }
     });
   }
@@ -2003,7 +2007,7 @@
       };
 
       setProcessing(true);
-      setStatus(vt('videoProcessing', 'Обрабатываю видео... 0%'), 0);
+      setStatus(vt('videoProcessing', 'Processing video... 0%'), 0);
       const processingStartedAt = Date.now();
       const minVisualProcessMs = 1200;
       try {
@@ -2016,19 +2020,19 @@
         try { data = await res.json(); } catch { data = null; }
         if (!res.ok) throw new Error(data && data.error ? data.error : 'process failed');
 
-        if (!data || !data.jobId) throw new Error(vt('Сервер не вернул jobId', 'Сервер не вернул jobId'));
+        if (!data || !data.jobId) throw new Error(vt('serverNoJobId', 'Server did not return jobId'));
         const job = await waitForJobCompletion(data.jobId, 180000, (p) => {
           const pct = Number.isFinite(p.progress) ? p.progress : null;
           let label;
           if (p.status === 'QUEUED') {
-            label = vt('videoQueue', 'В очереди...');
+            label = vt('videoQueue', 'Queued...');
           } else if (pct != null) {
             const elapsedSec = (Date.now() - processingStartedAt) / 1000;
             const etaSec = pct > 1 ? (elapsedSec * (100 - pct)) / pct : null;
-            const etaText = Number.isFinite(etaSec) ? ` • ~${formatEta(etaSec)} ${vt('etaLeft', 'осталось')}` : '';
-            label = `${vt('videoProcessing', 'Обрабатываю видео...')} ${Math.round(pct)}%${etaText}`;
+            const etaText = Number.isFinite(etaSec) ? ` • ~${formatEta(etaSec)} ${vt('etaLeft', 'left')}` : '';
+            label = `${vt('videoProcessing', 'Processing video...')} ${Math.round(pct)}%${etaText}`;
           } else {
-            label = vt('videoProcessing', 'Обрабатываю видео...');
+            label = vt('videoProcessing', 'Processing video...');
           }
           setStatus(label, pct ?? 0);
         }, 1000);
@@ -2038,7 +2042,7 @@
           await new Promise((resolve) => setTimeout(resolve, minVisualProcessMs - spentMs));
         }
         if (job.status !== 'SUCCEEDED') {
-          const statusMsg = vt('Задача завершилась со статусом', 'Задача завершилась со статусом');
+          const statusMsg = vt('jobFinishedWithStatus', 'Job finished with status');
           throw new Error(job.error || `${statusMsg} ${job.status}`);
         }
 
@@ -2047,11 +2051,11 @@
           timelinePreviewState.dirty = true;
         }
 
-        setStatus(vt('videoDone', 'Готово. Результат появился в Processed.'), 100);
+        setStatus(vt('videoDone', 'Done. The result appeared in Processed.'), 100);
         await loadVideoHistory();
         console.info(`Results refreshed (${processed.length})`);
       } catch (err) {
-        setStatus(`${vt('videoProcessErrorPrefix', 'Ошибка обработки видео.')} ${String(err || '').trim()}`.trim(), 0);
+        setStatus(`${vt('videoProcessErrorPrefix', 'Video processing error.')} ${String(err || '').trim()}`.trim(), 0);
       } finally {
         setProcessing(false);
       }
