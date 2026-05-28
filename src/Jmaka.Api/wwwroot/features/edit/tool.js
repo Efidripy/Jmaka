@@ -497,7 +497,7 @@ function selectImageEditItem(item) {
   imageEditState.selected = item;
   imageEditState.storedName = item.storedName;
   imageEditState.baseUrl = item.url || item.previewUrl;
-  if (imageEditHint) imageEditHint.textContent = 'Настройте параметры и сохраните.';
+  if (imageEditHint) imageEditHint.textContent = t('imageEditTuneAndSave');
   if (item.type === 'saved' && item.editParams) {
     imageEditState.params = cloneParams(item.editParams);
     imageEditState.selectedPreset = item.editParams.preset || 'None';
@@ -530,6 +530,7 @@ function buildImagePickerElement(item) {
   el.className = 'edit-pick-item';
   el.type = 'button';
   el.dataset.id = item.id;
+  el.setAttribute('aria-label', t('chooseImage') + ` ${item.name || item.id || ''}`);
 
   const thumbUrl = item.thumbnailUrl || item.previewUrl || item.url || '';
 
@@ -581,12 +582,12 @@ async function loadImageEditList() {
     }
 
     if (!imageEditState.items.length && imageEditHint) {
-      imageEditHint.textContent = 'Нет загруженных изображений в разделе Original.';
+      imageEditHint.textContent = t('imageEditNoOriginals');
     }
 
     updateImageListActiveState();
   } catch (err) {
-    if (imageEditHint) imageEditHint.textContent = 'Не удалось загрузить список изображений.';
+    if (imageEditHint) imageEditHint.textContent = t('imageEditLoadListError');
   }
 }
 
@@ -623,7 +624,7 @@ async function deleteImageEditItem(item) {
     await fetch(toAbsoluteUrl(`images/${encodeURIComponent(item.id)}`), { method: 'DELETE' });
     await loadImageEditList();
   } catch (err) {
-    if (imageEditHint) imageEditHint.textContent = 'Ошибка удаления.';
+    if (imageEditHint) imageEditHint.textContent = t('imageEditDeleteError');
   }
 }
 
@@ -641,7 +642,7 @@ function openImageEdit() {
   imageEditModal.hidden = false;
   imageEditState.open = true;
   resetImageEditParams();
-  if (imageEditHint) imageEditHint.textContent = 'Выберите изображение из верхнего списка.';
+  if (imageEditHint) imageEditHint.textContent = t('imageEditSelectTopHint');
   if (imageEditApplyBtn) imageEditApplyBtn.disabled = true;
   loadImageEditList();
 }

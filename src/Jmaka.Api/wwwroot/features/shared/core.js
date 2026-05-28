@@ -1,5 +1,5 @@
-// Jmaka frontend version: 0.5.2
-let APP_VERSION = '0.5.2';
+// Jmaka frontend version: 0.5.3
+let APP_VERSION = '0.5.3';
 
 const fileInput = document.getElementById('fileInput');
 const saveBtn = document.getElementById('saveBtn');

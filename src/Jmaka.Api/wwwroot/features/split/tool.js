@@ -240,7 +240,7 @@ function splitSetItemFromStoredName(which, storedName) {
   };
 
   img.onerror = () => {
-    if (splitHint) splitHint.textContent = t('Не удалось загрузить 1280-картинку для Split.');
+    if (splitHint) splitHint.textContent = t('Failed to load 1280 image for Split.');
   };
 
   img.src = url;
@@ -258,7 +258,7 @@ async function openSplitModal() {
   if (splitPickTargetB) splitPickTargetB.classList.remove('is-active');
 
   if (splitHint) {
-    splitHint.textContent = t('Загружаю список...');
+    splitHint.textContent = t('Loading list...');
   }
 
   splitState.history = await fetchHistoryRaw();
@@ -275,6 +275,7 @@ async function openSplitModal() {
       btn.className = 'split-thumb';
       btn.dataset.sn = it.storedName;
       btn.title = it.originalName || it.storedName || '';
+      btn.setAttribute('aria-label', `Выбрать изображение ${it.originalName || it.storedName || ''}`);
 
       const img = document.createElement('img');
       img.alt = it.originalName || it.storedName || '';
@@ -319,8 +320,8 @@ async function openSplitModal() {
 
   if (splitHint) {
     splitHint.textContent = candidates.length > 0
-      ? t('Выберите слот (#1/#2), затем кликните по превью. Дальше перетаскивайте/масштабируйте.')
-      : t('Нет загруженных изображений.');
+      ? t('Choose slot (#1/#2), then click a preview. Then drag/scale.')
+      : t('No uploaded images.');
   }
 
   if (splitApplyBtn) {
@@ -370,7 +371,7 @@ async function applySplit() {
   const halfB = splitGetHalfSize('b');
 
   if (!halfA.w || !halfA.h || !halfB.w || !halfB.h) {
-    if (splitHint) splitHint.textContent = t('Не удалось определить размер поля.');
+    if (splitHint) splitHint.textContent = t('Failed to determine stage size.');
     return;
   }
 

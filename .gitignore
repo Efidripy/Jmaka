@@ -28,6 +28,7 @@ node_modules/
 # .NET
 **/bin/
 **/obj/
+*.lscache
 
 # Local publish artifacts (created by deploy/publish-linux.ps1)
 artifacts/

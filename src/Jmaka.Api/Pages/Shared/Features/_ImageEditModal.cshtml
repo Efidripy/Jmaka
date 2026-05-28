@@ -1,22 +1,22 @@
   <!-- Image Edit -->
   <div id="imageEditModal" class="modal" hidden>
     <div class="modal-backdrop" data-close="1"></div>
-    <div class="modal-card edit-card" role="dialog" aria-modal="true" aria-label="Image Edit">
+    <div class="modal-card edit-card" role="dialog" aria-modal="true" aria-labelledby="imageEditModalTitle" aria-describedby="imageEditHint">
       <div class="modal-header">
         <div class="modal-title-wrap">
-          <div class="modal-title">Image Edit</div>
+          <div id="imageEditModalTitle" class="modal-title" data-i18n="Image Edit">Image Edit</div>
           <div class="modal-sub">
             <span class="modal-subtext">Правки применяются в реальном времени, сохранение — на сервере.</span>
           </div>
         </div>
-        <button id="imageEditClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+        <button id="imageEditClose" class="modal-x" type="button" aria-label="Close" data-i18n-aria-label="Close">×</button>
       </div>
       <div class="modal-body edit-body">
         <div class="edit-main">
           <div class="edit-source-picker" aria-label="Выбор изображения для редактирования">
             <div class="edit-source-header">
-              <span>Choose image</span>
-              <button id="imageEditRefreshTop" class="btn small" type="button">Refresh</button>
+              <span data-i18n="Choose image">Choose image</span>
+              <button id="imageEditRefreshTop" class="btn small" type="button" data-i18n="Refresh">Refresh</button>
             </div>
             <div id="imageEditTopList" class="edit-source-list"></div>
           </div>
@@ -293,8 +293,8 @@
       <div class="modal-footer">
         <div id="imageEditHint" class="modal-hint">Выберите изображение из верхнего списка.</div>
         <div class="modal-actions">
-          <button id="imageEditCancel" class="btn" type="button">Закрыть</button>
-          <button id="imageEditApply" class="btn primary" type="button" disabled>Сохранить</button>
+          <button id="imageEditCancel" class="btn" type="button" data-i18n="Close">Close</button>
+          <button id="imageEditApply" class="btn primary" type="button" disabled data-i18n="Save">Save</button>
         </div>
       </div>
     </div>

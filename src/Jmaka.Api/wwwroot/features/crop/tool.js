@@ -25,7 +25,7 @@ let cropState = {
 
 function setBusy(busy) {
   saveBtn.disabled = busy;
-  saveBtn.title = busy ? 'Загрузка...' : 'Загрузить файл';
+  saveBtn.title = busy ? t('loading') : t('Upload file');
 }
 
 function showResult(obj) {
@@ -139,7 +139,8 @@ function appendLinkWithDownload(td, linkEl, href, suggestedName) {
   const dlBtn = document.createElement('button');
   dlBtn.type = 'button';
   dlBtn.className = 'download-btn';
-  dlBtn.title = 'Скачать';
+  dlBtn.setAttribute('aria-label', t('Download file'));
+  dlBtn.title = t('Download');
   // Жирная иконка дискеты
   dlBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2v4h9V5H6zm2 2h5V7H8v0zm-2 6v7h11v-7H6z"/></svg>';
   dlBtn.addEventListener('click', (e) => {
@@ -212,7 +213,7 @@ async function deleteRow(storedName) {
 
   try {
     setBusy(true);
-    hint.textContent = 'Удаляю...';
+    hint.textContent = t('Deleting...');
 
     const res = await fetch(toAbsoluteUrl('delete'), {
       method: 'POST',
@@ -225,7 +226,7 @@ async function deleteRow(storedName) {
     try { data = JSON.parse(text); } catch { data = text; }
 
     if (!res.ok) {
-      hint.textContent = 'Ошибка удаления.';
+      hint.textContent = t('Delete error.');
       showResult(data);
       return;
     }
@@ -253,9 +254,9 @@ async function deleteRow(storedName) {
       setMainPreviewFromItem(null);
     }
 
-    hint.textContent = 'Удалено.';
+    hint.textContent = t('Deleted.');
   } catch (e) {
-    hint.textContent = 'Ошибка удаления.';
+    hint.textContent = t('Delete error.');
     showResult(String(e));
   } finally {
     setBusy(false);
@@ -343,7 +344,8 @@ function ensureTableRowForUpload(data, opts) {
   const delBtn = document.createElement('button');
   delBtn.type = 'button';
   delBtn.className = 'del-btn';
-  delBtn.title = 'Удалить';
+  delBtn.setAttribute('aria-label', t('Delete entry'));
+  delBtn.title = t('Delete');
   delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7a1 1 0 0 0-1.4 0L12 10.6 7.1 5.7A1 1 0 1 0 5.7 7.1L10.6 12l-4.9 4.9a1 1 0 1 0 1.4 1.4L12 13.4l4.9 4.9a1 1 0 0 0 1.4-1.4L13.4 12l4.9-4.9a1 1 0 0 0 0-1.4z"/></svg>';
   delBtn.addEventListener('click', (e) => {
     e.preventDefault();
@@ -572,7 +574,7 @@ if (sizeButtons) {
       if (data && data.relativePath) {
         const storedName = lastUpload && lastUpload.storedName;
         if (!storedName) {
-          hint.textContent = 'Не выбран оригинал.';
+          hint.textContent = t('Original not selected.');
           return;
         }
 
@@ -588,12 +590,12 @@ if (sizeButtons) {
         // Отключаем кнопку, чтобы не делать дубликат
         btn.disabled = true;
 
-        hint.textContent = 'Готово.';
+        hint.textContent = t('Done.');
       } else {
-        hint.textContent = 'Не удалось создать файл.';
+        hint.textContent = t('Failed to create file.');
       }
     } catch (err) {
-      hint.textContent = 'Ошибка оптимизации.';
+      hint.textContent = t('Optimization error.');
       showResult(String(err));
     } finally {
       setBusy(false);
@@ -609,13 +611,13 @@ async function upload(files) {
   }
 
   if (list.length > 15) {
-    hint.textContent = 'Можно загрузить максимум 15 файлов за раз.';
+    hint.textContent = t('You can upload up to 15 files at once.');
     showResult({ error: 'too_many_files', max: 15, selected: list.length });
     return;
   }
 
   setBusy(true);
-  showResult('Загрузка...');
+  showResult(t('Loading...'));
   resetSizeButtons();
 
   try {
@@ -635,7 +637,7 @@ async function upload(files) {
 
     if (!res.ok) {
       showResult(data);
-      hint.textContent = 'Ошибка загрузки.';
+      hint.textContent = t('Loading error.');
       return;
     }
 
@@ -779,7 +781,7 @@ fileInput.addEventListener('change', () => {
       preview.removeAttribute('src');
     }
     resetSizeButtons();
-    hint.textContent = 'Нажмите на дискету, перетащите файлы или вставьте из буфера обмена — и они загрузятся.';
+    hint.textContent = t('Click the disk icon, drag files, or paste from clipboard — they will upload automatically.');
     showResult('');
     return;
   }
@@ -790,7 +792,7 @@ fileInput.addEventListener('change', () => {
       preview.removeAttribute('src');
     }
     resetSizeButtons();
-    hint.textContent = 'Можно выбрать максимум 15 файлов за раз.';
+    hint.textContent = t('You can select up to 15 files at once.');
     showResult({ error: 'too_many_files', max: 15, selected: files.length });
     return;
   }
@@ -1146,7 +1148,7 @@ async function applyCrop() {
 
   try {
     setCropBusy(true);
-    hint.textContent = 'Обрезаю...';
+    hint.textContent = t('Cropping...');
 
     const res = await fetch(toAbsoluteUrl('crop'), {
       method: 'POST',
@@ -1159,7 +1161,7 @@ async function applyCrop() {
     try { data = JSON.parse(text); } catch { data = text; }
 
     if (!res.ok) {
-      hint.textContent = 'Ошибка кадрирования.';
+      hint.textContent = t('Crop error.');
       showResult(data);
       return;
     }
@@ -1172,10 +1174,10 @@ async function applyCrop() {
     // Обновляем таблицу/превью из истории. Плюс сохраняем выделение на этой же записи.
     await loadHistory(cropState.storedName);
 
-    hint.textContent = 'Готово. Ресайзы сброшены — их нужно создать заново.';
+    hint.textContent = t('Done. Resizes were reset and must be generated again.');
     closeCropModal();
   } catch (e) {
-    hint.textContent = 'Ошибка кадрирования.';
+    hint.textContent = t('Crop error.');
     showResult(String(e));
   } finally {
     setCropBusy(false);
@@ -1535,7 +1537,8 @@ async function loadComposites() {
         const delBtn = document.createElement('button');
         delBtn.type = 'button';
         delBtn.className = 'del-btn';
-        delBtn.title = 'Удалить результат';
+        delBtn.setAttribute('aria-label', t('Delete result'));
+        delBtn.title = t('Delete result');
         delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7a1 1 0 0 0-1.4 0L12 10.6 7.1 5.7A1 1 0 1 0 5.7 7.1L10.6 12l-4.9 4.9a1 1 0 1 0 1.4 1.4L12 13.4l4.9 4.9a1 1 0 0 0 1.4-1.4L13.4 12l4.9-4.9a1 1 0 0 0 0-1.4z"/></svg>';
         delBtn.addEventListener('click', (e) => {
           e.preventDefault();

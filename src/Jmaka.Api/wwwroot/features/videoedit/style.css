@@ -934,41 +934,169 @@
 }
 
 @media (max-width: 1200px) {
+  #videoEditModal .modal-header {
+    min-height: 50px;
+    padding: 8px 10px;
+  }
+
+  #videoEditModal .modal-title {
+    font-size: 21px;
+  }
+
+  #videoEditModal .modal-subtext {
+    font-size: 11px;
+  }
+
+  #videoEditModal .modal-x {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+  }
+
+  .video-edit-toolbar {
+    padding: 8px 12px;
+    gap: 10px;
+  }
+
+  .video-tool-group .tool-btn {
+    min-height: 32px;
+    padding: 6px 10px;
+    font-size: 12px;
+    gap: 6px;
+  }
+
+  .video-overlay-select {
+    min-height: 32px;
+    font-size: 12px;
+    padding: 6px 28px 6px 10px;
+  }
+
   .video-edit-card {
     width: min(1680px, 95vw);
-    height: min(1080px, 94vh);
+    height: auto;
+    max-height: 94vh;
+    overflow: hidden;
   }
 
   .video-edit-body {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
-    overflow: hidden;
+    grid-template-rows: auto auto;
+    align-content: start;
+    overflow: auto;
+    max-height: none;
   }
 
   .video-edit-sidebar {
-    min-height: 180px;
-    max-height: 34vh;
+    position: relative;
+    z-index: 4;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    margin-top: 8px;
+  }
+
+  .sidebar-libraries {
+    grid-template-rows: none;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+    height: auto;
+  }
+
+  .sidebar-section {
+    min-height: 0;
+    max-height: 114px;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 5px 7px 5px;
+    gap: 4px;
+  }
+
+  .sidebar-header > span {
+    font-size: 12px;
+  }
+
+  .sidebar-header .btn.small {
+    min-height: 22px;
+    padding: 1px 7px;
+    font-size: 10px;
+  }
+
+  .video-list {
+    padding: 0 7px 7px;
+    gap: 5px;
     overflow: auto;
+  }
+
+  .video-list-item {
+    padding: 5px;
+    gap: 6px;
+  }
+
+  .video-thumb {
+    width: 44px;
+    height: 26px;
+  }
+
+  .video-list-meta {
+    font-size: 10px;
   }
 
   .video-edit-main {
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
     padding-right: 0;
     display: grid;
-    grid-template-rows: minmax(180px, 1fr) auto auto;
+    grid-template-rows: auto auto auto;
     align-content: start;
+    gap: 10px;
+  }
+
+  .video-preview-wrap {
+    min-height: 220px;
+  }
+
+  .video-timeline,
+  .video-edit-controls {
+    position: relative;
+    z-index: 1;
+    overflow: visible;
+  }
+
+  .video-timeline { min-height: 180px; display: block; }
+
+  .timeline-strip {
+    min-height: 56px;
   }
 
 }
 
 @media (max-width: 760px) {
   #videoEditModal .modal-title {
-    font-size: 24px;
+    font-size: 21px;
+  }
+
+  #videoEditModal .modal-header {
+    min-height: 52px;
+    padding: 8px 10px;
   }
 
   .video-edit-toolbar {
-    padding: 10px 12px;
+    padding: 7px 10px;
+    gap: 8px;
+  }
+
+  .video-tool-group .tool-btn {
+    min-height: 30px;
+    padding: 5px 9px;
+    font-size: 11px;
+  }
+
+  .video-overlay-select {
+    min-height: 30px;
+    font-size: 11px;
   }
 
   .video-helper-text {
@@ -976,7 +1104,8 @@
   }
 
   .video-edit-body {
-    padding: 0 12px 12px;
+    padding: 0 10px 10px;
+    overflow: auto;
   }
 
   .video-edit-main {
@@ -984,7 +1113,7 @@
   }
 
   .video-preview-wrap {
-    padding: 10px;
+    padding: 8px;
   }
 
   .timeline-meta {
@@ -1020,16 +1149,24 @@
   }
 
   .video-footer {
-    align-items: center;
-    flex-direction: row;
-    justify-content: space-between;
-    padding: 10px 12px;
+    position: static;
+    z-index: auto;
+    align-items: stretch;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 8px 10px 10px;
+    gap: 8px;
+  }
+
+  .video-footer-left,
+  .video-footer-right {
+    width: 100%;
+    flex-wrap: wrap;
+    white-space: normal;
   }
 
   .video-footer-right {
-    width: auto;
-    flex-wrap: nowrap;
-    white-space: nowrap;
+    justify-content: flex-start;
   }
 
   .video-edit-controls {
@@ -1047,9 +1184,128 @@
   }
 
   .video-status-line {
-    order: 3;
+    order: 2;
     width: 100%;
     max-width: none;
     flex-basis: 100%;
+  }
+
+  .sidebar-libraries {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar-section {
+    min-height: 0;
+  }
+
+  .video-footer .video-process-btn,
+  .video-footer .btn {
+    min-height: 34px;
+  }
+}
+
+/* Laptop viewport profile (e.g. 1366x768 with browser chrome) */
+@media (max-height: 800px) and (min-width: 1000px) {
+  .video-edit-card {
+    height: calc(100dvh - 6px);
+    max-height: calc(100dvh - 6px);
+    margin: 2px auto 0;
+  }
+
+  #videoEditModal .modal-header {
+    min-height: 46px;
+    padding: 6px 10px;
+  }
+
+  #videoEditModal .modal-title {
+    font-size: 20px;
+  }
+
+  #videoEditModal .modal-subtext {
+    font-size: 11px;
+  }
+
+  .video-edit-toolbar {
+    padding: 6px 10px;
+    gap: 8px;
+  }
+
+  .video-tool-group .tool-btn,
+  .video-overlay-select {
+    min-height: 30px;
+    font-size: 11px;
+  }
+
+  .video-helper-text {
+    padding: 6px 10px 4px;
+    font-size: 11px;
+  }
+
+  .video-edit-body {
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 0.34fr);
+    grid-template-rows: minmax(0, 1fr);
+    padding: 0 10px 8px;
+    gap: 10px;
+  }
+
+  .video-edit-sidebar {
+    margin-top: 0;
+    max-height: none;
+    overflow: hidden;
+  }
+
+  .sidebar-libraries {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 8px;
+    height: 100%;
+  }
+
+  .video-preview-wrap {
+    min-height: 170px;
+    padding: 8px;
+  }
+
+  .video-timeline {
+    min-height: 150px;
+    padding: 8px;
+  }
+
+  .timeline-strip {
+    height: 52px;
+  }
+
+  .video-edit-controls {
+    min-height: 34px;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+
+  .sidebar-section {
+    max-height: none;
+  }
+
+  .sidebar-header > span {
+    font-size: 11px;
+  }
+
+  .sidebar-header .btn.small {
+    min-height: 20px;
+    font-size: 10px;
+    padding: 1px 6px;
+  }
+
+  .video-list-item {
+    padding: 3px 4px;
+  }
+
+  .video-thumb {
+    width: 36px;
+    height: 22px;
+  }
+
+  .video-footer {
+    padding: 5px 10px 6px;
+    min-height: 44px;
   }
 }

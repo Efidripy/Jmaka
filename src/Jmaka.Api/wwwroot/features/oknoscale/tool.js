@@ -88,7 +88,7 @@ function openOknoScaleModal() {
 
   if (!lastUpload || !lastUpload.storedName || !lastUpload.originalRelativePath) {
     if (oknoScaleHint) {
-      oknoScaleHint.textContent = 'Сначала выберите строку в таблице файлов.';
+      oknoScaleHint.textContent = t('selectFilesRowFirst');
     }
     return;
   }
@@ -104,7 +104,7 @@ function openOknoScaleModal() {
   if (oknoScaleApplyBtn) oknoScaleApplyBtn.disabled = true;
 
   if (oknoScaleHint) {
-    oknoScaleHint.textContent = 'Двигайте и масштабируйте картинку под окном. Ширину окна можно менять ручками слева/справа.';
+    oknoScaleHint.textContent = t('moveScaleUnderWindowResizable');
   }
 
   layoutOknoScaleWindowInitial();
@@ -418,7 +418,7 @@ function wireOknoScaleUI() {
 
       try {
         setBusy(true);
-        if (oknoScaleHint) oknoScaleHint.textContent = 'Генерирую OknoScale...';
+        if (oknoScaleHint) oknoScaleHint.textContent = t('generatingOknoScale');
 
         const res = await fetch(toAbsoluteUrl('oknoscale'), {
           method: 'POST',
@@ -559,7 +559,7 @@ function openOknoFixModal(mode) {
 
   if (!lastUpload || !lastUpload.storedName || !lastUpload.originalRelativePath) {
     if (oknoFixHint) {
-      oknoFixHint.textContent = 'Сначала выберите строку в таблице файлов.';
+      oknoFixHint.textContent = t('selectFilesRowFirst');
     }
     return;
   }
@@ -575,7 +575,7 @@ function openOknoFixModal(mode) {
   if (oknoFixApplyBtn) oknoFixApplyBtn.disabled = true;
 
   if (oknoFixHint) {
-    oknoFixHint.textContent = 'Двигайте и масштабируйте картинку под окном.';
+    oknoFixHint.textContent = t('moveScaleUnderWindow');
   }
 
   layoutOknoFixWindowInitial();
@@ -883,7 +883,7 @@ function wireOknoFixUI() {
 
       try {
         setBusy(true);
-        if (oknoFixHint) oknoFixHint.textContent = 'Генерирую OknoFix...';
+        if (oknoFixHint) oknoFixHint.textContent = t('generatingOknoFix');
 
         const res = await fetch(toAbsoluteUrl('oknofix'), {
           method: 'POST',

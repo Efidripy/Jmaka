@@ -1,36 +1,36 @@
   <div id="split3Modal" class="modal" hidden>
     <div class="modal-backdrop" data-close="1"></div>
-    <div class="modal-card split-card split3-card" role="dialog" aria-modal="true" aria-label="Split3">
+    <div class="modal-card split-card split3-card" role="dialog" aria-modal="true" aria-labelledby="split3ModalTitle" aria-describedby="split3Hint">
       <div class="modal-header">
         <div class="modal-title-wrap">
-          <div class="modal-title">Split3 (3 изображения → 16:9)</div>
+          <div id="split3ModalTitle" class="modal-title" data-i18n="Split3 (3 изображения → 16:9)">Split3 (3 изображения → 16:9)</div>
           <div class="modal-sub">
-            <span class="modal-subtext">Поле 1280×720. Перетаскивайте и масштабируйте изображения, пропорции сохраняются.</span>
+            <span class="modal-subtext" data-i18n="Поле 1280×720. Перетаскивайте и масштабируйте изображения, пропорции сохраняются.">Поле 1280×720. Перетаскивайте и масштабируйте изображения, пропорции сохраняются.</span>
           </div>
         </div>
-        <button id="split3Close" class="modal-x" type="button" aria-label="Закрыть">×</button>
+        <button id="split3Close" class="modal-x" type="button" aria-label="Close" data-i18n-aria-label="Close">×</button>
       </div>
       <div class="modal-body">
-        <div class="split-controls" aria-label="Выбор изображений">
-          <div class="split-label">Выберите слот, затем кликните по превью из списка загруженных изображений:</div>
+        <div class="split-controls" aria-label="Image selection" data-i18n-aria-label="Image selection">
+          <div class="split-label" data-i18n="Выберите слот, затем кликните по превью из списка загруженных изображений:">Выберите слот, затем кликните по превью из списка загруженных изображений:</div>
           <div class="split-targets">
-            <button id="split3PickTargetA" class="split-target is-active" type="button" aria-label="Выбор для картинки 1">
+            <button id="split3PickTargetA" class="split-target is-active" type="button" aria-label="Select for image 1" data-i18n-aria-label="Select for image 1">
               <div class="split-target-title">#1</div>
               <img id="split3TargetImgA" class="split-target-img" alt="" />
             </button>
-            <button id="split3PickTargetB" class="split-target" type="button" aria-label="Выбор для картинки 2">
+            <button id="split3PickTargetB" class="split-target" type="button" aria-label="Select for image 2" data-i18n-aria-label="Select for image 2">
               <div class="split-target-title">#2</div>
               <img id="split3TargetImgB" class="split-target-img" alt="" />
             </button>
-            <button id="split3PickTargetC" class="split-target" type="button" aria-label="Выбор для картинки 3">
+            <button id="split3PickTargetC" class="split-target" type="button" aria-label="Select for image 3" data-i18n-aria-label="Select for image 3">
               <div class="split-target-title">#3</div>
               <img id="split3TargetImgC" class="split-target-img" alt="" />
             </button>
           </div>
-          <div id="split3Gallery" class="split-gallery" aria-label="Превью"></div>
+          <div id="split3Gallery" class="split-gallery" aria-label="Preview" data-i18n-aria-label="Preview"></div>
         </div>
-        <div id="split3Stage" class="split-stage split3-stage" aria-label="Поле 16:9">
-          <div id="split3ThirdA" class="split-half split3-third one" aria-label="Треть 1">
+        <div id="split3Stage" class="split-stage split3-stage" aria-label="16:9 stage" data-i18n-aria-label="16:9 stage">
+          <div id="split3ThirdA" class="split-half split3-third one" aria-label="Third 1" data-i18n-aria-label="Third 1">
             <div id="split3ItemA" class="split-item" data-i="a" hidden>
               <img class="split-img" alt="" />
               <div class="split-handle tl" data-h="tl"></div>
@@ -43,7 +43,7 @@
               <div class="split-handle l" data-h="l"></div>
             </div>
           </div>
-          <div id="split3ThirdB" class="split-half split3-third two" aria-label="Треть 2">
+          <div id="split3ThirdB" class="split-half split3-third two" aria-label="Third 2" data-i18n-aria-label="Third 2">
             <div id="split3ItemB" class="split-item" data-i="b" hidden>
               <img class="split-img" alt="" />
               <div class="split-handle tl" data-h="tl"></div>
@@ -56,7 +56,7 @@
               <div class="split-handle l" data-h="l"></div>
             </div>
           </div>
-          <div id="split3ThirdC" class="split-half split3-third three" aria-label="Треть 3">
+          <div id="split3ThirdC" class="split-half split3-third three" aria-label="Third 3" data-i18n-aria-label="Third 3">
             <div id="split3ItemC" class="split-item" data-i="c" hidden>
               <img class="split-img" alt="" />
               <div class="split-handle tl" data-h="tl"></div>
@@ -72,10 +72,10 @@
         </div>
       </div>
       <div class="modal-footer">
-        <div id="split3Hint" class="modal-hint">Выберите три картинки.</div>
+        <div id="split3Hint" class="modal-hint" data-i18n="Выберите три картинки.">Выберите три картинки.</div>
         <div class="modal-actions">
-          <button id="split3Cancel" class="btn" type="button">Отмена</button>
-          <button id="split3Apply" class="btn primary" type="button">Склеить</button>
+          <button id="split3Cancel" class="btn" type="button" data-i18n="Cancel">Cancel</button>
+          <button id="split3Apply" class="btn primary" type="button" data-i18n="Merge">Merge</button>
         </div>
       </div>
     </div>

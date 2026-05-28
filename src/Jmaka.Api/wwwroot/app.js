@@ -1,5 +1,5 @@
-// Jmaka frontend version: 0.5.2
-let APP_VERSION = '0.5.2';
+// Jmaka frontend version: 0.5.3
+let APP_VERSION = '0.5.3';
 
 const fileInput = document.getElementById('fileInput');
 const saveBtn = document.getElementById('saveBtn');
@@ -64,7 +64,42 @@ const UI_TEXTS = {
     saving: 'Сохраняю...',
     saveError: 'Ошибка сохранения.',
     saveDone: 'Готово.',
-    languageLabel: 'Выбор языка'
+    languageLabel: 'Выбор языка',
+    imageEditNoOriginals: 'Нет загруженных изображений в разделе Original.',
+    imageEditLoadListError: 'Не удалось загрузить список изображений.',
+    imageEditDeleteError: 'Ошибка удаления.',
+    imageEditSelectTopHint: 'Выберите изображение из верхнего списка.',
+    previewingResultChooseOriginal: 'Просмотр результата. Для обработки выберите оригинал.',
+    selectSegmentsAndProcess: 'Выберите отрезки на таймлайне и нажмите Сделать.',
+    refreshResultsList: 'Обновить список результатов',
+    refresh: 'Обновить',
+    uploadVideoToAddClips: 'Загрузите видео, чтобы добавить в склейку',
+    addClip: 'Добавить клип',
+    removeClipFromTimeline: 'Удалить клип из таймлайна',
+    removeClip: 'Удалить клип',
+    allChangesReset: 'Все изменения сброшены. Начните заново.',
+    serverNoJobId: 'Сервер не вернул jobId',
+    jobFinishedWithStatus: 'Задача завершилась со статусом',
+    deleteVideo: 'Удалить видео',
+    imageEditTuneAndSave: 'Настройте параметры и сохраните.',
+    chooseImage: 'Выбрать изображение',
+    overlayUploading: 'Загружаю оверлей...',
+    overlayUploaded: 'Оверлей загружен',
+    overlayUploadFailed: 'Ошибка загрузки оверлея:',
+    overlayNamePrompt: 'Название оверлея',
+    overlayRenaming: 'Переименовываю оверлей...',
+    overlayRenamed: 'Оверлей переименован',
+    overlayRenameFailed: 'Ошибка переименования оверлея:',
+    overlayDeleteConfirmPrefix: 'Удалить оверлей',
+    overlayDeleteConfirmSuffix: 'навсегда?',
+    overlayDeleting: 'Удаляю оверлей...',
+    overlayDeleted: 'Оверлей удален',
+    overlayDeleteFailed: 'Ошибка удаления оверлея:'
+    ,selectFilesRowFirst: 'Сначала выберите строку в таблице файлов.'
+    ,moveScaleUnderWindow: 'Двигайте и масштабируйте картинку под окном.'
+    ,moveScaleUnderWindowResizable: 'Двигайте и масштабируйте картинку под окном. Ширину окна можно менять ручками слева/справа.'
+    ,generatingOknoFix: 'Генерирую OknoFix...'
+    ,generatingOknoScale: 'Генерирую OknoScale...'
   },
   'en-US': {
     loading: 'Loading...',
@@ -96,7 +131,42 @@ const UI_TEXTS = {
     saving: 'Saving...',
     saveError: 'Save error.',
     saveDone: 'Done.',
-    languageLabel: 'Language selector'
+    languageLabel: 'Language selector',
+    imageEditNoOriginals: 'No uploaded images in Original section.',
+    imageEditLoadListError: 'Failed to load image list.',
+    imageEditDeleteError: 'Delete error.',
+    imageEditSelectTopHint: 'Choose an image from the top list.',
+    previewingResultChooseOriginal: 'Previewing result. Choose an original to process.',
+    selectSegmentsAndProcess: 'Select timeline segments and click Process.',
+    refreshResultsList: 'Refresh results list',
+    refresh: 'Refresh',
+    uploadVideoToAddClips: 'Upload a video to add clips',
+    addClip: 'Add clip',
+    removeClipFromTimeline: 'Remove clip from timeline',
+    removeClip: 'Remove clip',
+    allChangesReset: 'All changes were reset. Start again.',
+    serverNoJobId: 'Server did not return jobId',
+    jobFinishedWithStatus: 'Job finished with status',
+    deleteVideo: 'Delete video',
+    imageEditTuneAndSave: 'Tune parameters and save.',
+    chooseImage: 'Choose image',
+    overlayUploading: 'Uploading overlay...',
+    overlayUploaded: 'Overlay uploaded',
+    overlayUploadFailed: 'Overlay upload failed:',
+    overlayNamePrompt: 'Overlay name',
+    overlayRenaming: 'Renaming overlay...',
+    overlayRenamed: 'Overlay renamed',
+    overlayRenameFailed: 'Overlay rename failed:',
+    overlayDeleteConfirmPrefix: 'Delete overlay',
+    overlayDeleteConfirmSuffix: 'permanently?',
+    overlayDeleting: 'Deleting overlay...',
+    overlayDeleted: 'Overlay deleted',
+    overlayDeleteFailed: 'Overlay delete failed:'
+    ,selectFilesRowFirst: 'Select a row in files table first.'
+    ,moveScaleUnderWindow: 'Move and scale image under the window.'
+    ,moveScaleUnderWindowResizable: 'Move and scale image under the window. Window width can be changed with left/right handles.'
+    ,generatingOknoFix: 'Generating OknoFix...'
+    ,generatingOknoScale: 'Generating OknoScale...'
   },
   'es-ES': {
     loading: 'Cargando...',
@@ -128,7 +198,42 @@ const UI_TEXTS = {
     saving: 'Guardando...',
     saveError: 'Error al guardar.',
     saveDone: 'Listo.',
-    languageLabel: 'Selector de idioma'
+    languageLabel: 'Selector de idioma',
+    imageEditNoOriginals: 'No hay imágenes cargadas en la sección Original.',
+    imageEditLoadListError: 'No se pudo cargar la lista de imágenes.',
+    imageEditDeleteError: 'Error al eliminar.',
+    imageEditSelectTopHint: 'Seleccione una imagen de la lista superior.',
+    previewingResultChooseOriginal: 'Vista previa del resultado. Seleccione un original para procesar.',
+    selectSegmentsAndProcess: 'Seleccione segmentos en la línea de tiempo y pulse Procesar.',
+    refreshResultsList: 'Actualizar lista de resultados',
+    refresh: 'Actualizar',
+    uploadVideoToAddClips: 'Suba un vídeo para añadir clips',
+    addClip: 'Añadir clip',
+    removeClipFromTimeline: 'Eliminar clip de la línea de tiempo',
+    removeClip: 'Eliminar clip',
+    allChangesReset: 'Se restablecieron todos los cambios. Comience de nuevo.',
+    serverNoJobId: 'El servidor no devolvió jobId',
+    jobFinishedWithStatus: 'La tarea terminó con estado',
+    deleteVideo: 'Eliminar vídeo',
+    imageEditTuneAndSave: 'Ajuste parámetros y guarde.',
+    chooseImage: 'Seleccionar imagen',
+    overlayUploading: 'Subiendo overlay...',
+    overlayUploaded: 'Overlay subido',
+    overlayUploadFailed: 'Error al subir overlay:',
+    overlayNamePrompt: 'Nombre del overlay',
+    overlayRenaming: 'Renombrando overlay...',
+    overlayRenamed: 'Overlay renombrado',
+    overlayRenameFailed: 'Error al renombrar overlay:',
+    overlayDeleteConfirmPrefix: 'Eliminar overlay',
+    overlayDeleteConfirmSuffix: 'permanentemente?',
+    overlayDeleting: 'Eliminando overlay...',
+    overlayDeleted: 'Overlay eliminado',
+    overlayDeleteFailed: 'Error al eliminar overlay:'
+    ,selectFilesRowFirst: 'Primero selecciona una fila en la tabla de archivos.'
+    ,moveScaleUnderWindow: 'Mueve y escala la imagen bajo la ventana.'
+    ,moveScaleUnderWindowResizable: 'Mueve y escala la imagen bajo la ventana. El ancho se puede cambiar con los tiradores izquierdo/derecho.'
+    ,generatingOknoFix: 'Generando OknoFix...'
+    ,generatingOknoScale: 'Generando OknoScale...'
   }
 };
 
@@ -713,6 +818,30 @@ function translateTextNode(node) {
 
 function translateElementAttributes(el) {
   if (!el || !el.getAttribute) return;
+  const textKey = el.getAttribute('data-i18n');
+  if (textKey) {
+    const translatedText = t(textKey);
+    if (el.textContent !== translatedText) el.textContent = translatedText;
+  }
+
+  const ariaKey = el.getAttribute('data-i18n-aria-label');
+  if (ariaKey) {
+    const translatedAria = t(ariaKey);
+    if (el.getAttribute('aria-label') !== translatedAria) el.setAttribute('aria-label', translatedAria);
+  }
+
+  const titleKey = el.getAttribute('data-i18n-title');
+  if (titleKey) {
+    const translatedTitle = t(titleKey);
+    if (el.getAttribute('title') !== translatedTitle) el.setAttribute('title', translatedTitle);
+  }
+
+  const placeholderKey = el.getAttribute('data-i18n-placeholder');
+  if (placeholderKey) {
+    const translatedPlaceholder = t(placeholderKey);
+    if (el.getAttribute('placeholder') !== translatedPlaceholder) el.setAttribute('placeholder', translatedPlaceholder);
+  }
+
   let src = i18nAttrSource.get(el);
   if (!src) {
     src = {};
@@ -1579,6 +1708,7 @@ async function openSplitModal() {
       btn.className = 'split-thumb';
       btn.dataset.sn = it.storedName;
       btn.title = it.originalName || it.storedName || '';
+      btn.setAttribute('aria-label', `Выбрать изображение ${it.originalName || it.storedName || ''}`);
 
       const img = document.createElement('img');
       img.alt = it.originalName || it.storedName || '';
@@ -2207,6 +2337,7 @@ async function openSplit3Modal() {
       btn.className = 'split-thumb';
       btn.dataset.sn = it.storedName;
       btn.title = it.originalName || it.storedName || '';
+      btn.setAttribute('aria-label', `Выбрать изображение ${it.originalName || it.storedName || ''}`);
 
       const img = document.createElement('img');
       img.alt = it.originalName || it.storedName || '';
@@ -2749,6 +2880,7 @@ function appendLinkWithDownload(td, linkEl, href, suggestedName) {
   const dlBtn = document.createElement('button');
   dlBtn.type = 'button';
   dlBtn.className = 'download-btn';
+  dlBtn.setAttribute('aria-label', 'Скачать файл');
   dlBtn.title = 'Скачать';
   // Жирная иконка дискеты
   dlBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2v4h9V5H6zm2 2h5V7H8v0zm-2 6v7h11v-7H6z"/></svg>';
@@ -2953,6 +3085,7 @@ function ensureTableRowForUpload(data, opts) {
   const delBtn = document.createElement('button');
   delBtn.type = 'button';
   delBtn.className = 'del-btn';
+  delBtn.setAttribute('aria-label', 'Удалить запись');
   delBtn.title = 'Удалить';
   delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7a1 1 0 0 0-1.4 0L12 10.6 7.1 5.7A1 1 0 1 0 5.7 7.1L10.6 12l-4.9 4.9a1 1 0 1 0 1.4 1.4L12 13.4l4.9 4.9a1 1 0 0 0 1.4-1.4L13.4 12l4.9-4.9a1 1 0 0 0 0-1.4z"/></svg>';
   delBtn.addEventListener('click', (e) => {
@@ -4149,6 +4282,7 @@ async function loadComposites() {
         const delBtn = document.createElement('button');
         delBtn.type = 'button';
         delBtn.className = 'del-btn';
+        delBtn.setAttribute('aria-label', 'Удалить результат');
         delBtn.title = 'Удалить результат';
         delBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7a1 1 0 0 0-1.4 0L12 10.6 7.1 5.7A1 1 0 1 0 5.7 7.1L10.6 12l-4.9 4.9a1 1 0 1 0 1.4 1.4L12 13.4l4.9 4.9a1 1 0 0 0 1.4-1.4L13.4 12l4.9-4.9a1 1 0 0 0 0-1.4z"/></svg>';
         delBtn.addEventListener('click', (e) => {
@@ -5545,12 +5679,12 @@ async function loadImageEditList() {
     }
 
     if (!imageEditState.items.length && imageEditHint) {
-      imageEditHint.textContent = 'Нет загруженных изображений в разделе Original.';
+      imageEditHint.textContent = t('imageEditNoOriginals');
     }
 
     updateImageListActiveState();
   } catch (err) {
-    if (imageEditHint) imageEditHint.textContent = 'Не удалось загрузить список изображений.';
+    if (imageEditHint) imageEditHint.textContent = t('imageEditLoadListError');
   }
 }
 
@@ -5587,7 +5721,7 @@ async function deleteImageEditItem(item) {
     await fetch(toAbsoluteUrl(`images/${encodeURIComponent(item.id)}`), { method: 'DELETE' });
     await loadImageEditList();
   } catch (err) {
-    if (imageEditHint) imageEditHint.textContent = 'Ошибка удаления.';
+    if (imageEditHint) imageEditHint.textContent = t('imageEditDeleteError');
   }
 }
 
@@ -5605,7 +5739,7 @@ function openImageEdit() {
   imageEditModal.hidden = false;
   imageEditState.open = true;
   resetImageEditParams();
-  if (imageEditHint) imageEditHint.textContent = 'Выберите изображение из верхнего списка.';
+  if (imageEditHint) imageEditHint.textContent = t('imageEditSelectTopHint');
   if (imageEditApplyBtn) imageEditApplyBtn.disabled = true;
   loadImageEditList();
 }

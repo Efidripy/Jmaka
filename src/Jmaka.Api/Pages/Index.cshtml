@@ -12,20 +12,20 @@
   <link rel="stylesheet" href="~/features/videoedit/style.css" asp-append-version="true" />
 </head>
 <body>
-  <main class="page">
-    <section class="uploader" aria-label="Загрузка файла">
+  <main id="mainContent" class="page" role="main">
+    <section class="uploader" aria-label="File upload area" data-i18n-aria-label="File upload area">
       <!-- Left Panel -->
       <div class="left-panel">
         <!-- Logo at the top -->
         <div class="ascii-logo-container">
           <pre id="asciiArt" class="ascii-art"></pre>
-          <span class="version-badge" data-version>v0.5.2</span>
+          <span class="version-badge" data-version>v0.5.3</span>
         </div>
 
         <!-- Upload button and languages HORIZONTALLY -->
         <div class="upload-and-language">
           <!-- Upload button on the left -->
-          <button class="save-btn" id="saveBtn" type="button" aria-label="Загрузить изображение">
+          <button class="save-btn" id="saveBtn" type="button" aria-label="Upload image" data-i18n-aria-label="Upload image">
             <div class="save-icon" aria-hidden="true">
               <svg class="save-arrow" viewBox="0 0 64 64" focusable="false">
                 <path d="M32 8v22" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
@@ -35,11 +35,11 @@
                 <path d="M10 8h34l10 10v38H10V8zm6 6v12h26V14H16zm0 20v16h32V34H16zm6-16h12v6H22v-6z" />
               </svg>
             </div>
-            <div class="save-label">Загрузить изображение</div>
+            <div class="save-label" data-i18n="Upload image">Upload image</div>
           </button>
 
           <!-- Language switcher on the right -->
-          <div id="languageSwitcher" class="language-switcher" aria-label="Language selector">
+          <div id="languageSwitcher" class="language-switcher" role="group" aria-label="Language selector">
             <button id="langRuBtn" class="lang-btn" type="button" data-lang="ru" aria-pressed="false">Русский</button>
             <button id="langEnBtn" class="lang-btn" type="button" data-lang="en-US" aria-pressed="false">English</button>
             <button id="langEsBtn" class="lang-btn" type="button" data-lang="es-ES" aria-pressed="false">Español</button>
@@ -49,8 +49,8 @@
 
       <!-- Right Panel -->
       <div class="preview-wrap">
-        <div class="main-controls" aria-label="Панель управления">
-          <div class="tool-buttons" aria-label="Инструменты">
+        <div class="main-controls" aria-label="Control panel" data-i18n-aria-label="Control panel">
+          <div class="tool-buttons" aria-label="Tools" data-i18n-aria-label="Tools">
             <div class="tool-row">
               <button id="splitToolBtn" class="btn tool-btn" type="button">Split</button>
               <button id="split3ToolBtn" class="btn tool-btn" type="button">Split3</button>
@@ -64,30 +64,30 @@
             </div>
           </div>
 
-          <div id="sizeButtons" class="size-buttons" aria-label="Размеры">
+          <div id="sizeButtons" class="size-buttons" role="group" aria-label="Sizes" data-i18n-aria-label="Sizes">
             <button class="size-btn" type="button" data-w="2440" disabled>2440</button>
             <button class="size-btn" type="button" data-w="1920" disabled>1920</button>
             <button class="size-btn" type="button" data-w="1280" disabled>1280</button>
           </div>
         </div>
 
-        <div id="hint" class="hint">Нажмите на дискету, перетащите файлы или вставьте из буфера обмена — и они загрузятся.</div>
-        <button id="helpBtn" class="help-btn" type="button" aria-label="Справка">?</button>
+        <div id="hint" class="hint" role="status" aria-live="polite" data-i18n="Click the disk icon, drag files, or paste from clipboard — they will upload automatically.">Click the disk icon, drag files, or paste from clipboard — they will upload automatically.</div>
+        <button id="helpBtn" class="help-btn" type="button" aria-label="Help" data-i18n-aria-label="Help">?</button>
       </div>
 
       <input id="fileInput" class="file-input" type="file" accept="image/*" multiple />
       <input id="videoInput" class="file-input" type="file" accept="video/*" hidden />
     </section>
 
-    <div class="tables-wrap" aria-label="Таблицы файлов">
-      <div class="links-wrap" aria-label="Таблица файлов">
+    <div class="tables-wrap" aria-label="Files tables" data-i18n-aria-label="Files tables">
+      <div class="links-wrap" aria-label="Files table" data-i18n-aria-label="Files table">
         <div class="links-title">Original / Crop / Sizes</div>
         <div class="table-wrap">
-          <table class="files-table" aria-label="Готовые файлы">
+          <table class="files-table" aria-label="Ready files" data-i18n-aria-label="Ready files">
             <thead>
               <tr>
-                <th class="col-dt">Дата - время</th>
-                <th class="col-orig">Оригинал</th>
+                <th class="col-dt" data-i18n="Date - time">Date - time</th>
+                <th class="col-orig" data-i18n="Original">Original</th>
                 <th class="col-crop">Crop</th>
                 <th class="col-size">1280</th>
                 <th class="col-size">1920</th>
@@ -100,15 +100,15 @@
         </div>
       </div>
 
-      <div class="links-wrap composites-wrap" aria-label="Таблица Split">
+      <div class="links-wrap composites-wrap" aria-label="Split table" data-i18n-aria-label="Split table">
       <div class="links-title">Split / Split3 / OknoFix / OknoScale / Edits</div>
         <div class="table-wrap">
           <table class="files-table" aria-label="Split / Split3">
             <thead>
               <tr>
-                <th class="col-dt">Дата - время</th>
-                <th class="col-kind">Тип</th>
-                <th class="col-comp">Результат</th>
+                <th class="col-dt" data-i18n="Date - time">Date - time</th>
+                <th class="col-kind" data-i18n="Type">Type</th>
+                <th class="col-comp" data-i18n="Result">Result</th>
                 <th class="col-del"></th>
               </tr>
             </thead>
@@ -118,37 +118,37 @@
       </div>
     </div>
 
-    <pre id="result" class="result" aria-label="Результат" hidden></pre>
+    <pre id="result" class="result" role="status" aria-live="polite" aria-label="Result" data-i18n-aria-label="Result" hidden></pre>
     
     <footer style="text-align: center; padding: 10px; font-size: 11px; color: #64748b; opacity: 0.7;">
-      Jmaka v<span data-version>0.5.2</span>
+      Jmaka v<span data-version>0.5.3</span>
     </footer>
   </main>
 
   <!-- Модалка подтверждения удаления -->
   <div id="deleteModal" class="modal" hidden>
     <div class="modal-backdrop" data-close="1"></div>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Удаление">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Delete" data-i18n-aria-label="Delete">
       <div class="modal-header">
         <div class="modal-title-wrap">
-          <div class="modal-title">Удаление</div>
+          <div class="modal-title" data-i18n="Delete">Delete</div>
           <div class="modal-sub">
-            <span class="modal-subtext">Удалить запись и все связанные файлы безвозвратно?</span>
+            <span class="modal-subtext" data-i18n="Delete this entry and all related files permanently?">Delete this entry and all related files permanently?</span>
           </div>
         </div>
-        <button id="deleteClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+        <button id="deleteClose" class="modal-x" type="button" aria-label="Close" data-i18n-aria-label="Close">×</button>
       </div>
       <div class="modal-body">
         <label class="checkbox-row">
           <input id="deleteSkipConfirm" type="checkbox" />
-          <span>Больше не спрашивать (удалять сразу)</span>
+          <span data-i18n="Do not ask again (delete immediately)">Do not ask again (delete immediately)</span>
         </label>
       </div>
       <div class="modal-footer">
-        <div class="modal-hint">Можно включить обратно, очистив настройку в LocalStorage.</div>
+        <div class="modal-hint" data-i18n="You can enable this again by clearing the LocalStorage setting.">You can enable this again by clearing the LocalStorage setting.</div>
         <div class="modal-actions">
-          <button id="deleteCancel" class="btn" type="button">Отмена</button>
-          <button id="deleteConfirm" class="btn danger" type="button">Удалить</button>
+          <button id="deleteCancel" class="btn" type="button" data-i18n="Cancel">Cancel</button>
+          <button id="deleteConfirm" class="btn danger" type="button" data-i18n="Delete">Delete</button>
         </div>
       </div>
     </div>
@@ -157,16 +157,16 @@
   <!-- Просмотр изображения -->
   <div id="viewerModal" class="modal" hidden>
     <div class="modal-backdrop" data-close="1"></div>
-    <div class="modal-card viewer-card" role="dialog" aria-modal="true" aria-label="Просмотр изображения">
+    <div class="modal-card viewer-card" role="dialog" aria-modal="true" aria-label="Image viewer" data-i18n-aria-label="Image viewer">
       <div class="modal-header">
         <div class="modal-title-wrap">
-          <div class="modal-title">Просмотр</div>
+          <div class="modal-title" data-i18n="Viewer">Viewer</div>
           <div class="modal-sub">
             <span id="viewerLabel" class="modal-subtext"></span>
-            <a id="viewerOpen" class="modal-sublink" href="#" target="_blank" rel="noreferrer" hidden>Открыть в новой вкладке</a>
+            <a id="viewerOpen" class="modal-sublink" href="#" target="_blank" rel="noreferrer" hidden data-i18n="Open in new tab">Open in new tab</a>
           </div>
         </div>
-        <button id="viewerClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+        <button id="viewerClose" class="modal-x" type="button" aria-label="Close" data-i18n-aria-label="Close">×</button>
       </div>
       <div class="modal-body viewer-body">
         <img id="viewerImg" class="viewer-img" alt="" />
@@ -183,74 +183,74 @@
   <partial name="Features/_CropModal" />
   <div id="helpModal" class="modal" hidden>
     <div class="modal-backdrop" data-close="1"></div>
-    <div class="modal-card help-card" role="dialog" aria-modal="true" aria-label="Справка по Jmaka">
+    <div class="modal-card help-card" role="dialog" aria-modal="true" aria-label="Jmaka Help" data-i18n-aria-label="Jmaka Help">
       <div class="modal-header">
         <div class="modal-title-wrap">
-          <div class="modal-title">Справка по Jmaka</div>
+          <div class="modal-title" data-i18n="Jmaka Help">Jmaka Help</div>
           <div class="modal-sub">
-            <span class="modal-subtext">Практическая шпаргалка по функциям, статусам и быстрым действиям.</span>
+            <span class="modal-subtext" data-i18n="Practical cheat sheet for features, statuses and quick actions.">Practical cheat sheet for features, statuses and quick actions.</span>
           </div>
         </div>
-        <button id="helpClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+        <button id="helpClose" class="modal-x" type="button" aria-label="Close" data-i18n-aria-label="Close">×</button>
       </div>
       <div class="modal-body help-body">
         <div class="help-intro">
-          <p class="help-lead"><strong>Jmaka</strong> — рабочий инструмент для быстрой подготовки изображений и видео в одном окне.</p>
+          <p class="help-lead"><strong>Jmaka</strong> <span data-i18n="— a practical tool for quickly preparing images and video in one place.">— a practical tool for quickly preparing images and video in one place.</span></p>
           <div class="help-chip-row">
             <span class="help-chip">RU / EN / ES</span>
-            <span class="help-chip">Изображения + видео</span>
-            <span class="help-chip">История + автоочистка</span>
+            <span class="help-chip" data-i18n="Images + video">Images + video</span>
+            <span class="help-chip" data-i18n="History + auto-cleanup">History + auto-cleanup</span>
           </div>
         </div>
 
         <div class="help-grid">
           <section class="help-section">
-            <h3>Быстрый старт</h3>
+            <h3 data-i18n="Quick start">Quick start</h3>
             <ul>
-              <li>Нажмите на кнопку-дискету, перетащите файлы или вставьте изображение из буфера обмена (Ctrl+V).</li>
-              <li>Выберите язык в правом верхнем углу: русский, английский или испанский.</li>
-              <li>Клик по строке в таблице делает её активной для всех инструментов.</li>
+              <li data-i18n="Press the disk button, drag files, or paste an image from clipboard (Ctrl+V).">Press the disk button, drag files, or paste an image from clipboard (Ctrl+V).</li>
+              <li data-i18n="Choose language in the top-right corner: Russian, English, or Spanish.">Choose language in the top-right corner: Russian, English, or Spanish.</li>
+              <li data-i18n="Clicking a table row makes it active for all tools.">Clicking a table row makes it active for all tools.</li>
             </ul>
           </section>
 
           <section class="help-section">
-            <h3>Файлы и таблицы</h3>
+            <h3 data-i18n="Files and tables">Files and tables</h3>
             <ul>
-              <li>Слева: Original / Crop / размеры 1280, 1920, 2440.</li>
-              <li>Справа: история Split, Split3, OknoFix, OknoScale, Edit и Video Edit.</li>
-              <li>Любой результат можно открыть, скачать или удалить.</li>
+              <li data-i18n="Left: Original / Crop / sizes 1280, 1920, 2440.">Left: Original / Crop / sizes 1280, 1920, 2440.</li>
+              <li data-i18n="Right: Split, Split3, OknoFix, OknoScale, Edit, and Video Edit history.">Right: Split, Split3, OknoFix, OknoScale, Edit, and Video Edit history.</li>
+              <li data-i18n="Any result can be opened, downloaded, or deleted.">Any result can be opened, downloaded, or deleted.</li>
             </ul>
           </section>
 
           <section class="help-section">
-            <h3>Инструменты изображений</h3>
+            <h3 data-i18n="Image tools">Image tools</h3>
             <ul>
-              <li><strong>Crop</strong> — кадрирование исходника (1:1, 2:3, 16:9).</li>
-              <li><strong>Split / Split3</strong> — компоновка 2 или 3 изображений в 1280×720 с белыми разделителями.</li>
-              <li><strong>OknoFix / OknoScale</strong> — вертикальные карточки с позиционированием и масштабом под шаблон.</li>
-              <li><strong>Edit</strong> — тонкая настройка цвета, света, деталей и эффектов с сохранением результата как нового файла.</li>
+              <li><strong>Crop</strong> <span data-i18n="— crop original image (1:1, 2:3, 16:9).">— crop original image (1:1, 2:3, 16:9).</span></li>
+              <li><strong>Split / Split3</strong> <span data-i18n="— compose 2 or 3 images into 1280×720 with white dividers.">— compose 2 or 3 images into 1280×720 with white dividers.</span></li>
+              <li><strong>OknoFix / OknoScale</strong> <span data-i18n="— vertical cards with positioning and scale by template.">— vertical cards with positioning and scale by template.</span></li>
+              <li><strong>Edit</strong> <span data-i18n="— fine tuning of color, light, detail and effects, saved as a new file.">— fine tuning of color, light, detail and effects, saved as a new file.</span></li>
             </ul>
           </section>
 
           <section class="help-section">
             <h3>Video Edit</h3>
             <ul>
-              <li>Trim с несколькими сегментами, Crop, Rotate, Flip, Speed, Mute и Reset.</li>
-              <li>Склейка нескольких оригиналов в один результат: добавление клипов кнопкой «+» в конце таймлайна.</li>
-              <li>Для каждого клипа можно задать свои сегменты и свой вертикальный сдвиг в окне превью.</li>
-              <li>Позиция по высоте запоминается отдельно для режимов Vidcov и Episod (10/20/30 MB).</li>
-              <li>Overlay Upload: загрузка PNG/WebP/JPEG шаблона поверх видео.</li>
-              <li>Vidcov режим и быстрый выбор лимита размера (Episod 10/20/30 MB).</li>
-              <li>Статусы обработки показывают очередь, прогресс и оставшееся время.</li>
+              <li data-i18n="Trim with multiple segments, Crop, Rotate, Flip, Speed, Mute and Reset.">Trim with multiple segments, Crop, Rotate, Flip, Speed, Mute and Reset.</li>
+              <li data-i18n="Merge multiple originals into one result: add clips with the '+' button at the end of timeline.">Merge multiple originals into one result: add clips with the '+' button at the end of timeline.</li>
+              <li data-i18n="Each clip can have its own segments and vertical offset in preview.">Each clip can have its own segments and vertical offset in preview.</li>
+              <li data-i18n="Vertical position is stored separately for Vidcov and Episod modes (10/20/30 MB).">Vertical position is stored separately for Vidcov and Episod modes (10/20/30 MB).</li>
+              <li data-i18n="Overlay Upload: upload PNG/WebP/JPEG template over video.">Overlay Upload: upload PNG/WebP/JPEG template over video.</li>
+              <li data-i18n="Vidcov mode and quick size limit selection (Episod 10/20/30 MB).">Vidcov mode and quick size limit selection (Episod 10/20/30 MB).</li>
+              <li data-i18n="Processing statuses show queue, progress and remaining time.">Processing statuses show queue, progress and remaining time.</li>
             </ul>
           </section>
 
           <section class="help-section help-section-wide">
-            <h3>Полезные мелочи</h3>
+            <h3 data-i18n="Useful details">Useful details</h3>
             <ul>
-              <li>Старые записи и файлы очищаются автоматически по времени хранения.</li>
-              <li>Если обработка завершилась только что, нажмите Refresh в Video Edit или обновите список результатов.</li>
-              <li>Кнопка удаления удаляет запись и связанные файлы безвозвратно.</li>
+              <li data-i18n="Old records and files are cleaned automatically by retention period.">Old records and files are cleaned automatically by retention period.</li>
+              <li data-i18n="If processing has just finished, press Refresh in Video Edit or refresh results list.">If processing has just finished, press Refresh in Video Edit or refresh results list.</li>
+              <li data-i18n="Delete button removes the record and related files permanently.">Delete button removes the record and related files permanently.</li>
             </ul>
           </section>
         </div>

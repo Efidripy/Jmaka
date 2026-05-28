@@ -1,12 +1,12 @@
   <div id="videoEditModal" class="modal" hidden>
     <div class="modal-backdrop" data-close="1"></div>
-    <div class="modal-card video-edit-card" role="dialog" aria-modal="true" aria-label="Video Edit">
+    <div class="modal-card video-edit-card" role="dialog" aria-modal="true" aria-labelledby="videoEditModalTitle" aria-describedby="videoStatusText">
       <div class="modal-header">
         <div class="modal-title-wrap">
-          <div class="modal-title">Video Edit</div>
-          <div class="modal-sub"><span class="modal-subtext">Trim, crop, rotate and size tuning.</span></div>
+          <div id="videoEditModalTitle" class="modal-title" data-i18n="Video Edit">Video Edit</div>
+          <div class="modal-sub"><span class="modal-subtext" data-i18n="Trim, crop, rotate and size tuning.">Trim, crop, rotate and size tuning.</span></div>
         </div>
-        <button id="videoEditClose" class="modal-x" type="button" aria-label="Закрыть">×</button>
+        <button id="videoEditClose" class="modal-x" type="button" aria-label="Close" data-i18n-aria-label="Close">×</button>
       </div>
 
       <div class="video-edit-toolbar">
@@ -47,16 +47,16 @@
           </button>
         </div>
         <div class="video-tool-group video-tool-group-right">
-          <button id="videoOverlayUploadBtn" class="tool-btn" type="button" title="Upload overlay">Overlay Upload</button>
-          <button id="videoOverlayRenameBtn" class="tool-btn" type="button" title="Rename selected overlay">Rename</button>
-          <button id="videoOverlayDeleteBtn" class="tool-btn video-overlay-delete-btn" type="button" title="Delete selected overlay" aria-label="Delete selected overlay">×</button>
-          <select id="videoOverlaySelect" class="video-overlay-select" aria-label="Overlay template">
-            <option value="">No overlay</option>
+          <button id="videoOverlayUploadBtn" class="tool-btn" type="button" title="Upload overlay" data-i18n-title="Upload overlay" data-i18n="Overlay Upload">Overlay Upload</button>
+          <button id="videoOverlayRenameBtn" class="tool-btn" type="button" title="Rename selected overlay" data-i18n-title="Rename selected overlay" data-i18n="Rename">Rename</button>
+          <button id="videoOverlayDeleteBtn" class="tool-btn video-overlay-delete-btn" type="button" title="Delete selected overlay" aria-label="Delete selected overlay" data-i18n-title="Delete selected overlay" data-i18n-aria-label="Delete selected overlay">×</button>
+          <select id="videoOverlaySelect" class="video-overlay-select" aria-label="Overlay template" data-i18n-aria-label="Overlay template">
+            <option value="" data-i18n="No overlay">No overlay</option>
           </select>
         </div>
       </div>
 
-      <div class="video-helper-text">Use timeline below to select video segments</div>
+      <div class="video-helper-text" data-i18n="Use timeline below to select video segments">Use timeline below to select video segments</div>
 
       <div class="modal-body video-edit-body">
         <section class="video-edit-main">
@@ -84,9 +84,9 @@
                 <span id="videoTimelineZoomLabel" class="timeline-zoom-label">1.0x</span>
               </div>
               <div class="timeline-zoom-center timeline-clip-controls">
-                <div id="videoTimelineClips" class="timeline-clips" aria-label="Выбранные клипы таймлайна"></div>
+                <div id="videoTimelineClips" class="timeline-clips" aria-label="Selected timeline clips" data-i18n-aria-label="Selected timeline clips"></div>
               </div>
-              <div class="timeline-zoom-hint">Колесо: зум, Shift+колесо: панорама</div>
+              <div class="timeline-zoom-hint" data-i18n="Wheel: zoom, Shift+wheel: pan">Wheel: zoom, Shift+wheel: pan</div>
             </div>
             <div class="timeline-strip-wrap">
               <div class="timeline-strip" id="videoTimelineStrip">
@@ -95,7 +95,7 @@
                 <div id="videoTimelinePlayhead" class="timeline-playhead"></div>
               </div>
               <div class="timeline-strip-add">
-                <button id="videoTimelineAddBtn" class="timeline-add-btn" type="button" title="Добавить видео в конец" aria-label="Добавить видео в конец">+</button>
+                <button id="videoTimelineAddBtn" class="timeline-add-btn" type="button" title="Add video to end" aria-label="Add video to end" data-i18n-title="Add video to end" data-i18n-aria-label="Add video to end">+</button>
                 <div id="videoTimelineAddMenu" class="timeline-add-menu" hidden></div>
               </div>
             </div>
@@ -106,16 +106,16 @@
               <div class="timeline-range">IN <span id="videoTrimStartLabel">00:00</span> - OUT <span id="videoTrimEndLabel">00:00</span></div>
               <div class="timeline-help">Drag boundaries to set segment.</div>
               <div class="timeline-segment-controls">
-                <button id="videoAddSegment" class="btn small" type="button" title="Добавить сегмент">+ Сегмент</button>
-                <button id="videoRemoveSegment" class="btn small" type="button" title="Удалить активный сегмент">- Сегмент</button>
-                <span id="videoSegmentsInfo" class="timeline-segments-info">1 сегмент</span>
+                <button id="videoAddSegment" class="btn small" type="button" title="Add segment" data-i18n-title="Add segment" data-i18n="+ Segment">+ Segment</button>
+                <button id="videoRemoveSegment" class="btn small" type="button" title="Remove active segment" data-i18n-title="Remove active segment" data-i18n="- Segment">- Segment</button>
+                <span id="videoSegmentsInfo" class="timeline-segments-info">1 segment</span>
               </div>
             </div>
           </div>
 
           <div class="video-edit-controls">
             <div class="video-controls-left">
-              <button id="videoPlayToggle" class="btn icon-btn" type="button">▶</button>
+              <button id="videoPlayToggle" class="btn icon-btn" type="button" aria-label="Play or pause preview">▶</button>
               <div class="video-timecode"><span id="videoCurrentTime">00:00</span> / <span id="videoDuration">00:00</span></div>
             </div>
             <div class="video-controls-right">
@@ -169,16 +169,16 @@
           <div class="sidebar-libraries">
             <div class="sidebar-section">
               <div class="sidebar-header">
-                <span>Originals</span>
-                <button id="videoUploadBtn" class="btn small" type="button">Upload</button>
-                <button id="videoHistoryRefresh" class="btn small" type="button">Refresh</button>
+                <span data-i18n="Originals">Originals</span>
+                <button id="videoUploadBtn" class="btn small" type="button" data-i18n="Upload">Upload</button>
+                <button id="videoHistoryRefresh" class="btn small" type="button" data-i18n="Refresh">Refresh</button>
               </div>
               <div id="videoOriginalsList" class="video-list"></div>
             </div>
             <div class="sidebar-section video-column">
               <div class="sidebar-header">
-                <span>Processed</span>
-                <button id="videoProcessedRefresh" class="btn small" type="button">Refresh</button>
+                <span data-i18n="Processed">Processed</span>
+                <button id="videoProcessedRefresh" class="btn small" type="button" data-i18n="Refresh">Refresh</button>
               </div>
               <div id="videoProcessedList" class="video-list"></div>
             </div>
@@ -195,17 +195,17 @@
               <path d="M3 12a9 9 0 1 0 3-6.708" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
               <path d="M3 4v4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            <span>Reset</span>
+            <span data-i18n="Reset">Reset</span>
           </button>
         </div>
         <div id="videoStatusLine" class="video-status-line" aria-live="polite">
-          <div id="videoStatusText" class="video-status-text">Ready</div>
+          <div id="videoStatusText" class="video-status-text" data-i18n="Ready">Ready</div>
           <div class="video-status-track"><div id="videoStatusBar" class="video-status-bar"></div></div>
         </div>
         <div class="video-footer-right">
-          <button id="videoEditSave" class="btn primary video-process-btn" type="button" disabled>Process</button>
+          <button id="videoEditSave" class="btn primary video-process-btn" type="button" disabled data-i18n="Process">Process</button>
           <input id="videoTargetSize" type="number" min="0.1" max="2048" step="0.1" value="10" hidden />
-          <button id="videoEditCancel" class="btn" type="button" hidden>Close</button>
+          <button id="videoEditCancel" class="btn" type="button" hidden data-i18n="Close">Close</button>
         </div>
       </div>
     </div>
