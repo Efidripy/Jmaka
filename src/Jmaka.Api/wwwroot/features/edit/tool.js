@@ -173,17 +173,42 @@ function cloneParams(params) {
   return JSON.parse(JSON.stringify(params));
 }
 
+function getSafeParamPath(path) {
+  if (typeof path !== 'string') return null;
+  const parts = path.split('.');
+  const blockedKeys = new Set(['__proto__', 'prototype', 'constructor']);
+  if (parts.length === 0 || parts.some((key) => (
+    !/^[A-Za-z][A-Za-z0-9_]*$/.test(key) || blockedKeys.has(key)
+  ))) return null;
+  return parts;
+}
+
 function getParamByPath(params, path) {
-  return path.split('.').reduce((acc, key) => (acc ? acc[key] : undefined), params);
+  const parts = getSafeParamPath(path);
+  if (!parts) return undefined;
+
+  let current = params;
+  for (const key of parts) {
+    if (current === null || typeof current !== 'object'
+      || !Object.prototype.hasOwnProperty.call(current, key)) return undefined;
+    current = current[key];
+  }
+  return current;
 }
 
 function setParamByPath(params, path, value) {
-  const parts = path.split('.');
+  const parts = getSafeParamPath(path);
+  if (!parts || params === null || typeof params !== 'object') return false;
+
   let current = params;
   for (let i = 0; i < parts.length - 1; i++) {
-    current = current[parts[i]];
+    const key = parts[i];
+    if (!Object.prototype.hasOwnProperty.call(current, key)
+      || current[key] === null || typeof current[key] !== 'object') return false;
+    current = current[key];
   }
   current[parts[parts.length - 1]] = value;
+  return true;
 }
 
 function resetImageEditParams() {
