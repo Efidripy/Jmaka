@@ -123,7 +123,7 @@ Follow-up optional pass:
 
 - `task_id`: `TASK-20260528-JMAKA-UI-NORMALIZATION`
 - `intent`: `refactor`
-- `repository`: `E:\GitHub\repos\Jmaka`
+- `repository`: `<repo>`
 - `change_stream`: create a dedicated branch before implementation, suggested `ui-normalization`
 - `single_integrator`: Codex or the active final integrator for the session
 - `initial_risk`: `medium`
@@ -133,55 +133,55 @@ Follow-up optional pass:
 
 ## Source Context
 
-- Workspace bootstrap: `E:\GitHub\START-HERE.md`, `E:\GitHub\WORKSPACE.md`, `E:\GitHub\workspace\WORKSPACE-OPERATING-SYSTEM.md`
-- Workspace agent rules: `E:\GitHub\AGENTS.md`
-- Project card: `E:\GitHub\workspace\knowledge\projects\Jmaka.md`
-- Project manifest: `E:\GitHub\workspace\control\manifests\projects\Jmaka\Jmaka.md`
-- Repository agent notes: `E:\GitHub\repos\Jmaka\AGENTS.md`
-- Repository overview: `E:\GitHub\repos\Jmaka\README.md`
+- Workspace bootstrap: `<workspace>/START-HERE.md`, `<workspace>/WORKSPACE.md`, `<workspace>/WORKSPACE-OPERATING-SYSTEM.md`
+- Workspace agent rules: `<workspace>/AGENTS.md`
+- Project card: `<workspace>/knowledge/projects/Jmaka.md`
+- Project manifest: `<workspace>/control/manifests/projects/Jmaka/Jmaka.md`
+- Repository agent notes: `<repo>/AGENTS.md`
+- Repository overview: `<repo>/README.md`
 
 ## Required Skills
 
 Use these skills in this order:
 
 1. `design-system-patterns`  
-   Path: `E:\GitHub\workspace\knowledge\.agents\skills\design-system-patterns\SKILL.md`  
+   Path: `<workspace>/knowledge/.agents/skills/design-system-patterns/SKILL.md`
    Purpose: define tokens for color, spacing, radii, shadows, focus, tool surfaces, status states.
 
 2. `visual-design-foundations`  
-   Path: `E:\GitHub\workspace\knowledge\.agents\skills\visual-design-foundations\SKILL.md`  
+   Path: `<workspace>/knowledge/.agents/skills/visual-design-foundations/SKILL.md`
    Purpose: normalize typography, hierarchy, density, alignment, icon/button treatment.
 
 3. `web-coder`  
-   Path: `E:\GitHub\workspace\knowledge\.agents\skills\web-coder\SKILL.md`  
+   Path: `<workspace>/knowledge/.agents/skills/web-coder/SKILL.md`
    Purpose: implement changes in Razor, CSS, and vanilla JS without assuming React/Tailwind.
 
 4. `responsive-design`  
-   Path: `E:\GitHub\workspace\knowledge\.agents\skills\responsive-design\SKILL.md`  
+   Path: `<workspace>/knowledge/.agents/skills/responsive-design/SKILL.md`
    Purpose: make the tool layout usable across desktop, tablet, and mobile.
 
 5. `accessibility-compliance`  
-   Path: `E:\GitHub\workspace\knowledge\.agents\skills\accessibility-compliance\SKILL.md`  
+   Path: `<workspace>/knowledge/.agents/skills/accessibility-compliance/SKILL.md`
    Purpose: normalize focus, labels, ARIA, keyboard operation, contrast, target sizes.
 
 6. `accessibility-compliance-accessibility-audit`  
-   Path: `E:\GitHub\workspace\knowledge\.agents\skills\accessibility-compliance-accessibility-audit\SKILL.md`  
+   Path: `<workspace>/knowledge/.agents/skills/accessibility-compliance-accessibility-audit/SKILL.md`
    Purpose: audit findings after implementation and map them to remediation steps.
 
 7. `web-design-reviewer`  
-   Path: `E:\GitHub\workspace\knowledge\.agents\skills\web-design-reviewer\SKILL.md`  
+   Path: `<workspace>/knowledge/.agents/skills/web-design-reviewer/SKILL.md`
    Purpose: inspect the running UI visually and fix layout/consistency defects.
 
 8. `ui-visual-validator`  
-   Path: `E:\GitHub\workspace\knowledge\.agents\skills\ui-visual-validator\SKILL.md`  
+   Path: `<workspace>/knowledge/.agents/skills/ui-visual-validator/SKILL.md`
    Purpose: verify before/after screenshots and catch visual regressions.
 
 9. `webapp-testing`  
-   Path: `E:\GitHub\workspace\knowledge\.agents\skills\webapp-testing\SKILL.md`  
+   Path: `<workspace>/knowledge/.agents/skills/webapp-testing/SKILL.md`
    Purpose: run local browser automation against the ASP.NET app.
 
 10. `gstack-design-review`  
-    Path: `E:\GitHub\workspace\knowledge\.agents\portable\codex-home-skills\gstack-design-review\SKILL.md`  
+    Path: `<workspace>/knowledge/.agents/portable/codex-home-skills/gstack-design-review/SKILL.md`
     Purpose: final designer-eye polish pass after the core normalization is stable.
 
 Optional backup skills:
@@ -519,7 +519,7 @@ Normalize the interface around these targets:
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\smoke-api-version.ps1`
 - Local browser smoke at `http://localhost:5189/`
 - Workspace gate if finalizing through workspace process:
-  `powershell -NoProfile -ExecutionPolicy Bypass -File E:\GitHub\workspace\control\scripts\shared\validate-mix-gate.ps1 -ProjectName Jmaka`
+  `powershell -NoProfile -ExecutionPolicy Bypass -File <workspace>/control/scripts/shared/validate-mix-gate.ps1 -ProjectName Jmaka`
 
 **Commit:**
 
