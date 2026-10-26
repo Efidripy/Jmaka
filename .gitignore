@@ -58,9 +58,16 @@ src/Jmaka.Api/upload-original/*
 !src/Jmaka.Api/upload-original/.gitkeep
 
 # History (runtime files)
-src/Jmaka.Api/data/history.json
-src/Jmaka.Api/data/composites.json
+src/Jmaka.Api/data/*.json
 !src/Jmaka.Api/data/.gitkeep
+
+# User data (runtime files)
+src/Jmaka.Api/uploads/*
+!src/Jmaka.Api/uploads/.gitkeep
+src/Jmaka.Api/output/*
+!src/Jmaka.Api/output/.gitkeep
+src/Jmaka.Api/trashimg/*
+!src/Jmaka.Api/trashimg/.gitkeep
 
 # OknoFix/OknoScale composites (runtime files)
 src/Jmaka.Api/oknofix/*
