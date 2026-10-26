@@ -87,17 +87,7 @@ jobs:
 
       - name: Vulnerability audit
         shell: bash
-        run: |
-          set -euo pipefail
-          audit_file="${RUNNER_TEMP}/nuget-vulnerability-audit.json"
-          dotnet list Jmaka.slnx package --vulnerable --include-transitive --format json > "${audit_file}"
-          jq . "${audit_file}"
-
-          vulnerability_count="$(jq '[.. | objects | .vulnerabilities? | select(type == "array") | length] | add // 0' "${audit_file}")"
-          if (( vulnerability_count > 0 )); then
-            echo "NuGet audit found ${vulnerability_count} vulnerable package entries." >&2
-            exit 1
-          fi
+        run: bash .github/scripts/nuget-audit.sh
 
       - name: Build
         run: dotnet build Jmaka.slnx -c Release --no-restore

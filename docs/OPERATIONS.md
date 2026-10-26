@@ -38,3 +38,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\smoke-api-version.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\deploy-safety-contract.ps1
 node .\tests\ui\jmaka-ui-matrix.js
 ```
+
+## Аудит зависимостей
+
+CI и release запускают `.github/scripts/nuget-audit.sh`. Он падает на любом уязвимом NuGet-пакете, которого нет в `.github/nuget-audit-allowlist.txt` (формат `пакет|версия|GHSA`). Сейчас принято 5 advisory `SixLabors.ImageSharp` 3.1.12 (см. `docs/decisions/0002-nuget-audit-allowlist.md`). Пока пакет не заменён, `dotnet build -warnaserror` из раздела «Проверки» падает на NU1902/NU1903. При обновлении или замене ImageSharp пересмотреть и очистить allowlist.
