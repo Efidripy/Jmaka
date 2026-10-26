@@ -38,6 +38,11 @@ PORT="5010"
 # Default tarball location: user's home, so it can be downloaded without root.
 APP_TAR="${ORIG_HOME}/jmaka.tar.gz"
 BASE_DIR=""
+INSTALL_ROOT="${JMAKA_INSTALL_ROOT:-/var/www/jmaka}"
+APP_SHA256=""
+AUTH_USERNAME="jmaka"
+AUTH_PASSWORD=""
+AUTH_PASSWORD_GENERATED=0
 
 # Optional interactive mode (for non-technical users)
 INTERACTIVE=0
@@ -119,7 +124,7 @@ expand_user_path() {
     echo "$ORIG_HOME"
     return
   fi
-  if [[ "$p" == "~/"* ]]; then
+  if [[ "${p:0:1}" == "~" && "${p:1:1}" == "/" ]]; then
     echo "$ORIG_HOME/${p:2}"
     return
   fi
@@ -136,6 +141,256 @@ require_cmd() {
     echo "ERROR: missing required command: $c" >&2
     exit 1
   fi
+}
+
+canonical_path() {
+  realpath -m -- "$1"
+}
+
+assert_no_symlink_components() {
+  python3 - "$1" <<'PY'
+import os
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+current = pathlib.Path(path.anchor)
+for part in path.parts[1:]:
+    current /= part
+    if current.is_symlink():
+        raise SystemExit(f"ERROR: symbolic link in deployment path: {current}")
+PY
+}
+
+validate_install_paths() {
+  local raw_install_root="$INSTALL_ROOT"
+  local raw_base_dir="$BASE_DIR"
+  if [[ "$INSTALL_ROOT" != /* || "$BASE_DIR" != /* ]]; then
+    echo "ERROR: install root and base dir must be absolute paths." >&2
+    exit 1
+  fi
+
+  if ! [[ "$raw_install_root" =~ ^/[A-Za-z0-9._/-]+$ && "$raw_base_dir" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+    echo "ERROR: deployment paths may contain only letters, digits, dot, underscore, dash and slash." >&2
+    exit 1
+  fi
+  assert_no_symlink_components "$raw_install_root"
+  assert_no_symlink_components "$raw_base_dir"
+
+  INSTALL_ROOT="$(canonical_path "$INSTALL_ROOT")"
+  BASE_DIR="$(canonical_path "$BASE_DIR")"
+
+  if [[ "$INSTALL_ROOT" == "/" ]]; then
+    echo "ERROR: install root cannot be /." >&2
+    exit 1
+  fi
+
+  case "$BASE_DIR" in
+    "$INSTALL_ROOT"/*) ;;
+    *)
+      echo "ERROR: base dir must be below install root: $INSTALL_ROOT" >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ -L "$BASE_DIR" || -L "$BASE_DIR/app" ]]; then
+    echo "ERROR: base dir and app dir must not be symbolic links." >&2
+    exit 1
+  fi
+}
+
+resolve_expected_sha256() {
+  local spec="$APP_SHA256"
+  local sidecar="${APP_TAR}.sha256"
+  local expected=""
+
+  if [[ -z "$spec" && -f "$sidecar" ]]; then
+    spec="$sidecar"
+    echo "Using SHA256 sidecar: $sidecar" >&2
+  fi
+
+  if [[ -z "$spec" ]]; then
+    return 1
+  fi
+
+  if [[ -f "$spec" ]]; then
+    expected="$(awk 'match($0, /[[:xdigit:]]{64}/) { print substr($0, RSTART, RLENGTH); exit }' "$spec")"
+  else
+    expected="$spec"
+  fi
+
+  expected="$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')"
+  if ! [[ "$expected" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "ERROR: invalid SHA256 value or checksum file: $spec" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$expected"
+}
+
+verify_bundle_checksum() {
+  local expected=""
+  local actual=""
+
+  if [[ -z "$APP_SHA256" && ! -f "${APP_TAR}.sha256" ]]; then
+    echo "ERROR: SHA256 is required; pass --sha256 or provide ${APP_TAR}.sha256." >&2
+    exit 1
+  fi
+  expected="$(resolve_expected_sha256)"
+
+  actual="$(sha256sum -- "$APP_TAR" | awk '{print $1}')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "ERROR: bundle SHA256 mismatch." >&2
+    echo "  expected: $expected" >&2
+    echo "  actual:   $actual" >&2
+    exit 1
+  fi
+  echo "Bundle SHA256 verified: $actual"
+}
+
+safe_extract_bundle() {
+  local archive="$1"
+  local destination="$2"
+
+  python3 - "$archive" "$destination" <<'PY'
+import os
+import pathlib
+import shutil
+import sys
+import tarfile
+
+archive, destination = sys.argv[1], sys.argv[2]
+destination_path = pathlib.Path(destination).resolve()
+max_entries = 100_000
+max_total_size = 8 * 1024 * 1024 * 1024
+
+with tarfile.open(archive, mode="r:gz") as bundle:
+    members = bundle.getmembers()
+    if not members or len(members) > max_entries:
+        raise SystemExit("ERROR: bundle is empty or contains too many entries")
+
+    total_size = 0
+    validated = []
+    for member in members:
+        name = member.name
+        path = pathlib.PurePosixPath(name)
+        if (
+            not name
+            or name.startswith(("/", "\\"))
+            or "\\" in name
+            or any(part in ("", ".", "..") for part in path.parts)
+            or (path.parts and ":" in path.parts[0])
+        ):
+            raise SystemExit(f"ERROR: unsafe bundle path: {name!r}")
+        if not (member.isfile() or member.isdir()):
+            raise SystemExit(f"ERROR: links and special archive entries are forbidden: {name!r}")
+
+        target = (destination_path / pathlib.Path(*path.parts)).resolve()
+        if target != destination_path and destination_path not in target.parents:
+            raise SystemExit(f"ERROR: bundle entry escapes staging directory: {name!r}")
+
+        if member.isfile():
+            total_size += member.size
+            if total_size > max_total_size:
+                raise SystemExit("ERROR: uncompressed bundle exceeds 8 GiB safety limit")
+        validated.append((member, target))
+
+    for member, target in validated:
+        if member.isdir():
+            target.mkdir(parents=True, exist_ok=True)
+            os.chmod(target, member.mode & 0o755 or 0o755)
+            continue
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source = bundle.extractfile(member)
+        if source is None:
+            raise SystemExit(f"ERROR: cannot read bundle entry: {member.name!r}")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(target, flags, member.mode & 0o755 or 0o644)
+        with source, os.fdopen(fd, "wb") as output:
+            shutil.copyfileobj(source, output)
+PY
+
+  if [[ ! -f "$destination/Jmaka.Api.dll" ]]; then
+    echo "ERROR: bundle root does not contain Jmaka.Api.dll." >&2
+    return 1
+  fi
+}
+
+health_url() {
+  local path="/health/ready"
+  if [[ "$BASE_PATH_ENV" != "/" ]]; then
+    path="${BASE_PATH_ENV}/health/ready"
+  fi
+  printf 'http://127.0.0.1:%s%s\n' "$PORT" "$path"
+}
+
+wait_for_application() {
+  local url
+  local response=""
+  local curl_config=""
+  local -a curl_args=()
+  url="$(health_url)"
+
+  curl_config="$(mktemp)"
+  chmod 0600 "$curl_config"
+  printf 'user = "%s:%s"\n' "$AUTH_USERNAME" "$AUTH_PASSWORD" >"$curl_config"
+  curl_args=(--config "$curl_config" --fail --silent --show-error --max-time 2)
+
+  for _attempt in $(seq 1 30); do
+    if response="$(curl "${curl_args[@]}" "$url" 2>/dev/null)" \
+      && printf '%s' "$response" | grep -q '"version"'; then
+      rm -f -- "$curl_config"
+      echo "Readiness check passed: $url"
+      return 0
+    fi
+    sleep 1
+  done
+
+  rm -f -- "$curl_config"
+  echo "ERROR: readiness check failed after 30 seconds: $url" >&2
+  return 1
+}
+
+read_env_value() {
+  local file="$1"
+  local key="$2"
+  sed -n "s/^${key}=//p" "$file" | tail -n 1
+}
+
+prepare_auth_credentials() {
+  local existing_user=""
+  local existing_password=""
+
+  if [[ -f "$AUTH_ENV_FILE" && ! -L "$AUTH_ENV_FILE" ]]; then
+    existing_user="$(read_env_value "$AUTH_ENV_FILE" JMAKA_AUTH_USERNAME)"
+    existing_password="$(read_env_value "$AUTH_ENV_FILE" JMAKA_AUTH_PASSWORD)"
+  fi
+
+  if [[ -z "$AUTH_USERNAME" ]]; then AUTH_USERNAME="${existing_user:-jmaka}"; fi
+  if [[ -z "$AUTH_PASSWORD" && -n "$existing_password" ]]; then
+    AUTH_PASSWORD="$existing_password"
+  fi
+  if [[ -z "$AUTH_PASSWORD" ]]; then
+    AUTH_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+    AUTH_PASSWORD_GENERATED=1
+  fi
+
+  if ! [[ "$AUTH_USERNAME" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+    echo "ERROR: auth username must match [A-Za-z0-9._-] and be <= 64 chars." >&2
+    exit 1
+  fi
+  if ! [[ "$AUTH_PASSWORD" =~ ^[A-Za-z0-9._~-]{20,128}$ ]]; then
+    echo "ERROR: auth password must be 20-128 URL-safe characters." >&2
+    exit 1
+  fi
+
+  AUTH_ENV_STAGING="$(mktemp "${AUTH_ENV_DIR}/.${SERVICE_NAME}.env.XXXXXX")"
+  chmod 0600 "$AUTH_ENV_STAGING"
+  printf 'JMAKA_AUTH_USERNAME=%s\nJMAKA_AUTH_PASSWORD=%s\n' \
+    "$AUTH_USERNAME" "$AUTH_PASSWORD" >"$AUTH_ENV_STAGING"
 }
 
 detect_platform() {
@@ -166,7 +421,7 @@ ensure_packages() {
   # Minimal packages for this installer and port detection.
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y ca-certificates curl tar iproute2 ffmpeg
+  apt-get install -y ca-certificates curl tar iproute2 ffmpeg python3
 }
 
 ensure_nginx_if_needed() {
@@ -257,6 +512,10 @@ while [[ $# -gt 0 ]]; do
     --port) PORT="$2"; shift 2;;
     --tar) APP_TAR="$2"; shift 2;;
     --base-dir) BASE_DIR="$2"; shift 2;;
+    --install-root) INSTALL_ROOT="$2"; shift 2;;
+    --sha256) APP_SHA256="$2"; shift 2;;
+    --auth-username) AUTH_USERNAME="$2"; shift 2;;
+    --auth-password) AUTH_PASSWORD="$2"; shift 2;;
 
     --domain) NGINX_DOMAIN="$2"; shift 2;;
     --path-prefix) PATH_PREFIX="$2"; shift 2;;
@@ -370,6 +629,8 @@ if [[ -z "$BASE_DIR" ]]; then
   BASE_DIR="/var/www/jmaka/${NAME}"
 fi
 
+validate_install_paths
+
 if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
   echo "ERROR: --port must be a number" >&2
   exit 1
@@ -392,6 +653,10 @@ if [[ ! -f "$APP_TAR" ]]; then
 fi
 
 ensure_packages
+require_cmd realpath
+require_cmd sha256sum
+require_cmd python3
+verify_bundle_checksum
 
 # service user (shared for all instances)
 if ! id -u jmaka >/dev/null 2>&1; then
@@ -412,7 +677,7 @@ fi
 APP_DIR="${BASE_DIR}/app"
 DATA_DIR="${BASE_DIR}/storage"
 
-mkdir -p "$APP_DIR" "$DATA_DIR"
+mkdir -p "$BASE_DIR" "$DATA_DIR"
 
 # Pre-create storage subfolders (helps when migrating existing installs and avoids permissions surprises)
 mkdir -p \
@@ -430,18 +695,30 @@ mkdir -p \
   "$DATA_DIR/resized" \
   "$DATA_DIR/data"
 
-# App files are read-only and owned by root.
-chown -R root:root "$BASE_DIR"
-chmod -R a=rX "$APP_DIR"
-
 # Storage must be writable by the service user.
 chown -R jmaka:jmaka "$DATA_DIR"
 chmod -R u+rwX,go-rwx "$DATA_DIR"
 
-rm -rf "$APP_DIR"/*
-tar -xzf "$APP_TAR" -C "$APP_DIR"
-chown -R root:root "$APP_DIR"
-chmod -R a=rX "$APP_DIR"
+STAGING_DIR="$(mktemp -d "${BASE_DIR}/.app.stage.XXXXXX")"
+UNIT_STAGING=""
+AUTH_ENV_STAGING=""
+cleanup_staging() {
+  if [[ -n "${STAGING_DIR:-}" && -d "$STAGING_DIR" ]]; then
+    rm -rf -- "$STAGING_DIR"
+  fi
+  if [[ -n "${UNIT_STAGING:-}" && -f "$UNIT_STAGING" ]]; then
+    rm -f -- "$UNIT_STAGING"
+  fi
+  if [[ -n "${AUTH_ENV_STAGING:-}" && -f "$AUTH_ENV_STAGING" ]]; then
+    rm -f -- "$AUTH_ENV_STAGING"
+  fi
+}
+trap cleanup_staging EXIT
+
+echo "Validating and extracting bundle into staging: $STAGING_DIR"
+safe_extract_bundle "$APP_TAR" "$STAGING_DIR"
+chown -R root:root "$STAGING_DIR"
+chmod -R a=rX "$STAGING_DIR"
 
 escape_systemd_unit_name() {
   # Legacy helper (no longer used): we now keep unit names human-readable,
@@ -457,6 +734,13 @@ escape_systemd_unit_name() {
 # Human-readable service name: jmaka-<name>.service (без systemd-escape)
 SERVICE_NAME="jmaka-${NAME}"
 SERVICE_UNIT="${SERVICE_NAME}.service"
+SERVICE_UNIT_PATH="/etc/systemd/system/${SERVICE_UNIT}"
+AUTH_ENV_DIR="/etc/jmaka"
+AUTH_ENV_FILE="${AUTH_ENV_DIR}/${SERVICE_NAME}.env"
+mkdir -p "$AUTH_ENV_DIR"
+chown root:root "$AUTH_ENV_DIR"
+chmod 0700 "$AUTH_ENV_DIR"
+prepare_auth_credentials
 
 # Base path for app: "/" or "/jmaka" (without trailing slash)
 BASE_PATH_ENV="/"
@@ -464,10 +748,12 @@ if [[ "$PATH_PREFIX" != "/" ]]; then
   BASE_PATH_ENV="${PATH_PREFIX%/}"
 fi
 
-cat >/etc/systemd/system/${SERVICE_UNIT} <<EOF
+UNIT_STAGING="$(mktemp "/etc/systemd/system/.${SERVICE_UNIT}.XXXXXX")"
+cat >"$UNIT_STAGING" <<EOF
 [Unit]
 Description=Jmaka API (${NAME})
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 WorkingDirectory=${APP_DIR}
@@ -476,20 +762,124 @@ Restart=always
 RestartSec=10
 KillSignal=SIGINT
 User=jmaka
+Group=jmaka
+UMask=0077
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=ASPNETCORE_URLS=http://127.0.0.1:${PORT}
 Environment=DOTNET_ROOT=${DOTNET_DIR}
 Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+Environment=DOTNET_SKIP_FIRST_TIME_EXPERIENCE=true
 Environment=JMAKA_STORAGE_ROOT=${DATA_DIR}
 Environment=JMAKA_BASE_PATH=${BASE_PATH_ENV}
+EnvironmentFile=${AUTH_ENV_FILE}
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=${DATA_DIR}
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 require_cmd systemctl
-systemctl daemon-reload
-systemctl enable --now "${SERVICE_UNIT}"
+APP_BACKUP=""
+UNIT_BACKUP=""
+AUTH_ENV_BACKUP=""
+HAD_EXISTING_UNIT=0
+HAD_EXISTING_AUTH_ENV=0
+
+if [[ -e "$APP_DIR" ]]; then
+  if [[ ! -d "$APP_DIR" || -L "$APP_DIR" ]]; then
+    echo "ERROR: existing app path is not a safe directory: $APP_DIR" >&2
+    exit 1
+  fi
+fi
+
+if [[ -f "$SERVICE_UNIT_PATH" ]]; then
+  HAD_EXISTING_UNIT=1
+  UNIT_BACKUP="${SERVICE_UNIT_PATH}.bak-$(date +%Y%m%d-%H%M%S)-$$"
+  cp -a -- "$SERVICE_UNIT_PATH" "$UNIT_BACKUP"
+  if systemctl is-active --quiet "$SERVICE_UNIT"; then
+    systemctl stop "$SERVICE_UNIT"
+  fi
+fi
+
+if [[ -f "$AUTH_ENV_FILE" && ! -L "$AUTH_ENV_FILE" ]]; then
+  HAD_EXISTING_AUTH_ENV=1
+  AUTH_ENV_BACKUP="${AUTH_ENV_FILE}.bak-$(date +%Y%m%d-%H%M%S)-$$"
+  cp -a -- "$AUTH_ENV_FILE" "$AUTH_ENV_BACKUP"
+elif [[ -e "$AUTH_ENV_FILE" ]]; then
+  echo "ERROR: unsafe credentials path: $AUTH_ENV_FILE" >&2
+  exit 1
+fi
+
+if [[ -e "$APP_DIR" ]]; then
+  APP_BACKUP="${APP_DIR}.bak-$(date +%Y%m%d-%H%M%S)-$$"
+  echo "Creating mandatory app backup by rename: $APP_BACKUP"
+  if ! mv -- "$APP_DIR" "$APP_BACKUP"; then
+    echo "ERROR: mandatory app backup failed." >&2
+    if [[ "$HAD_EXISTING_UNIT" -eq 1 ]]; then systemctl start "$SERVICE_UNIT" || true; fi
+    exit 1
+  fi
+fi
+
+mv -- "$STAGING_DIR" "$APP_DIR"
+STAGING_DIR=""
+install -o root -g root -m 0644 "$UNIT_STAGING" "$SERVICE_UNIT_PATH"
+rm -f -- "$UNIT_STAGING"
+install -o root -g root -m 0600 "$AUTH_ENV_STAGING" "$AUTH_ENV_FILE"
+rm -f -- "$AUTH_ENV_STAGING"
+
+rollback_install() {
+  echo "Deployment failed; rolling back ${SERVICE_UNIT}..." >&2
+  systemctl stop "$SERVICE_UNIT" >/dev/null 2>&1 || true
+  rm -rf -- "$APP_DIR"
+  if [[ -n "$APP_BACKUP" && -d "$APP_BACKUP" ]]; then
+    mv -- "$APP_BACKUP" "$APP_DIR"
+  fi
+  if [[ "$HAD_EXISTING_UNIT" -eq 1 && -f "$UNIT_BACKUP" ]]; then
+    mv -- "$UNIT_BACKUP" "$SERVICE_UNIT_PATH"
+  else
+    rm -f -- "$SERVICE_UNIT_PATH"
+  fi
+  if [[ "$HAD_EXISTING_AUTH_ENV" -eq 1 && -f "$AUTH_ENV_BACKUP" ]]; then
+    mv -- "$AUTH_ENV_BACKUP" "$AUTH_ENV_FILE"
+  else
+    rm -f -- "$AUTH_ENV_FILE"
+  fi
+  systemctl daemon-reload || true
+  if [[ "$HAD_EXISTING_UNIT" -eq 1 ]]; then
+    systemctl start "$SERVICE_UNIT" || true
+  else
+    systemctl disable "$SERVICE_UNIT" >/dev/null 2>&1 || true
+  fi
+}
+
+if ! systemctl daemon-reload \
+  || ! systemctl enable "$SERVICE_UNIT" \
+  || ! systemctl start "$SERVICE_UNIT" \
+  || ! wait_for_application; then
+  rollback_install
+  exit 1
+fi
+
+if [[ -n "$UNIT_BACKUP" ]]; then
+  rm -f -- "$UNIT_BACKUP"
+fi
+if [[ -n "$AUTH_ENV_BACKUP" ]]; then
+  rm -f -- "$AUTH_ENV_BACKUP"
+fi
 
 echo ""
 echo "OK. Service started: ${SERVICE_UNIT} (listening on 127.0.0.1:${PORT})"
@@ -498,10 +888,19 @@ echo "  app:     ${APP_DIR}"
 echo "  storage: ${DATA_DIR}"
 echo "Status: systemctl status ${SERVICE_UNIT} --no-pager"
 echo "Logs:   journalctl -u ${SERVICE_UNIT} -n 200 --no-pager"
+echo "Credentials file (root-only): ${AUTH_ENV_FILE}"
+if [[ "$AUTH_PASSWORD_GENERATED" -eq 1 ]]; then
+  echo "Generated username: ${AUTH_USERNAME}"
+  echo "Generated password (shown once): ${AUTH_PASSWORD}"
+else
+  echo "Existing or explicitly supplied credentials retained."
+fi
+echo "Rotate credentials by editing ${AUTH_ENV_FILE} as root, then restart ${SERVICE_UNIT}."
 nginx_snippet() {
   if [[ "$PATH_PREFIX" == "/" ]]; then
     cat <<NGINX
-client_max_body_size 80m;
+client_max_body_size 1600m;
+client_body_timeout 60s;
 location / {
     proxy_redirect off;
     proxy_intercept_errors off;
@@ -520,7 +919,8 @@ NGINX
     local prefix="${PATH_PREFIX%/}"
     local prefix_slash="${prefix}/"
     cat <<NGINX
-client_max_body_size 80m;
+client_max_body_size 1600m;
+client_body_timeout 60s;
 location ${prefix} {
     return 301 ${prefix_slash};
 }

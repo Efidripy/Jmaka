@@ -3,11 +3,18 @@ using System.Text.Json;
 using System.Globalization;
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
+using System.Net;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
 using Jmaka.Api.Services;
+using Jmaka.Api.Security;
+using Jmaka.Api.Storage;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.StaticFiles;
+using System.Threading.RateLimiting;
 
 // Jmaka Minimal API entry point.
 // RU: Этот файл настраивает веб-приложение и описывает все HTTP‑эндпоинты и работу с файловым хранилищем.
@@ -40,13 +47,53 @@ builder.WebHost.ConfigureKestrel(options =>
 builder.Services.AddOpenApi();
 builder.Services.AddAntiforgery();
 builder.Services.AddRazorPages();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 180,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("media", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 12,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("media-interactive", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
 builder.Services.AddSingleton<ImagePipelineService>();
 builder.Services.Configure<FfmpegQueueOptions>(builder.Configuration.GetSection("Ffmpeg"));
 builder.Services.AddSingleton<FfmpegJobQueueService>();
 builder.Services.AddSingleton<IFfmpegJobQueue>(sp => sp.GetRequiredService<FfmpegJobQueueService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<FfmpegJobQueueService>());
+builder.Services.AddSingleton<UploadNormalizeQueueService>();
+builder.Services.AddSingleton<IUploadNormalizeQueue>(sp => sp.GetRequiredService<UploadNormalizeQueueService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<UploadNormalizeQueueService>());
+builder.Services.AddHostedService<StorageMaintenanceService>();
 
 var app = builder.Build();
+var accessControl = BasicAccessControlOptions.FromEnvironment(app.Environment.IsDevelopment());
 
 // Optional base path (e.g. "/jmaka") for running behind Nginx under a sub-path.
 // If not set or equals "/" -> app is mounted at root.
@@ -111,11 +158,27 @@ foreach (var w in resizeWidths)
     Directory.CreateDirectory(Path.Combine(resizedDir, w.ToString()));
 }
 
-var historyLock = new SemaphoreSlim(1, 1);
-var compositesLock = new SemaphoreSlim(1, 1);
-var videoHistoryLock = new SemaphoreSlim(1, 1);
-var overlayNamesLock = new SemaphoreSlim(1, 1);
-var uploadNormalizeJobs = new ConcurrentDictionary<Guid, UploadNormalizeJobState>();
+var historyStore = new AtomicJsonFileStore<List<UploadHistoryItem>>(
+    historyPath,
+    static () => [],
+    app.Services.GetRequiredService<ILogger<AtomicJsonFileStore<List<UploadHistoryItem>>>>());
+var compositesStore = new AtomicJsonFileStore<List<CompositeHistoryItem>>(
+    compositesPath,
+    static () => [],
+    app.Services.GetRequiredService<ILogger<AtomicJsonFileStore<List<CompositeHistoryItem>>>>());
+var videoHistoryStore = new AtomicJsonFileStore<List<VideoHistoryItem>>(
+    videoHistoryPath,
+    static () => [],
+    app.Services.GetRequiredService<ILogger<AtomicJsonFileStore<List<VideoHistoryItem>>>>());
+var overlayNamesStore = new AtomicJsonFileStore<Dictionary<string, string>>(
+    overlayNamesPath,
+    static () => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+    app.Services.GetRequiredService<ILogger<AtomicJsonFileStore<Dictionary<string, string>>>>());
+
+await historyStore.InitializeAsync();
+await compositesStore.InitializeAsync();
+await videoHistoryStore.InitializeAsync();
+await overlayNamesStore.InitializeAsync();
 
 // Retention: delete entries/files older than N hours (default 48h)
 var retentionHours = 48;
@@ -185,74 +248,40 @@ string? GetCompositeAbsolutePath(CompositeHistoryItem it)
     return Path.Combine(splitDir, fileName);
 }
 
-void DeleteCompositesForStoredName(string storedName)
+async Task DeleteCompositesForStoredNameAsync(string storedName, CancellationToken ct)
 {
-    // Remove composite outputs that were created from this storedName.
-    compositesLock.Wait();
-    try
+    List<CompositeHistoryItem> removed = [];
+    await compositesStore.UpdateAsync(items =>
     {
-        if (!File.Exists(compositesPath))
-        {
-            return;
-        }
+        removed = items
+            .Where(x => x.Sources != null && x.Sources.Any(s => string.Equals(s, storedName, StringComparison.Ordinal)))
+            .ToList();
+        return items.Except(removed).ToList();
+    }, ct);
 
-        var json = File.ReadAllText(compositesPath);
-        if (string.IsNullOrWhiteSpace(json))
+    foreach (var it in removed)
+    {
+        try
         {
-            return;
-        }
-
-        var items = JsonSerializer.Deserialize<List<CompositeHistoryItem>>(json) ?? new List<CompositeHistoryItem>();
-        if (items.Count == 0)
-        {
-            return;
-        }
-
-        var removed = items.Where(x => x.Sources != null && x.Sources.Any(s => string.Equals(s, storedName, StringComparison.Ordinal))).ToList();
-        if (removed.Count == 0)
-        {
-            return;
-        }
-
-        var kept = items.Where(x => !(x.Sources != null && x.Sources.Any(s => string.Equals(s, storedName, StringComparison.Ordinal)))).ToList();
-        var outJson = JsonSerializer.Serialize(kept, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(compositesPath, outJson);
-
-        foreach (var it in removed)
-        {
-            try
+            var abs = GetCompositeAbsolutePath(it);
+            if (!string.IsNullOrWhiteSpace(abs))
             {
-                var abs = GetCompositeAbsolutePath(it);
-                if (!string.IsNullOrWhiteSpace(abs))
+                TryDeleteFile(abs);
+            }
+            if (!string.IsNullOrWhiteSpace(it.PreviewRelativePath) && string.Equals(it.Kind, "edit", StringComparison.OrdinalIgnoreCase))
+            {
+                var previewName = Path.GetFileName(it.PreviewRelativePath);
+                if (!string.IsNullOrWhiteSpace(previewName))
                 {
-                    TryDeleteFile(abs);
-                }
-                if (!string.IsNullOrWhiteSpace(it.PreviewRelativePath) && string.Equals(it.Kind, "edit", StringComparison.OrdinalIgnoreCase))
-                {
-                    var previewName = Path.GetFileName(it.PreviewRelativePath);
-                    if (!string.IsNullOrWhiteSpace(previewName))
-                    {
-                        TryDeleteFile(Path.Combine(editsPreviewDir, previewName));
-                    }
+                    TryDeleteFile(Path.Combine(editsPreviewDir, previewName));
                 }
             }
-            catch
-            {
-                // ignore
-            }
         }
-    }
-    catch
-    {
-        // ignore
-    }
-    finally
-    {
-        compositesLock.Release();
+        catch { }
     }
 }
 
-void DeleteAllFilesForStoredName(string storedName)
+async Task DeleteAllFilesForStoredNameAsync(string storedName, CancellationToken ct)
 {
     // originals
     TryDeleteFile(Path.Combine(uploadDir, storedName));
@@ -266,7 +295,7 @@ void DeleteAllFilesForStoredName(string storedName)
     TryDeleteFile(Path.Combine(split3Dir, GetSplit3FileName(storedName)));
 
     // composites created from this image
-    DeleteCompositesForStoredName(storedName);
+    await DeleteCompositesForStoredNameAsync(storedName, ct);
 
     // resized
     foreach (var w in resizeWidths)
@@ -284,27 +313,8 @@ async Task Migrate1260To1280Async(CancellationToken ct)
     await migrate1260Lock.WaitAsync(ct);
     try
     {
-        await historyLock.WaitAsync(ct);
-        try
+        await historyStore.UpdateAsync(items =>
         {
-            if (!File.Exists(historyPath))
-            {
-                return;
-            }
-
-            var json = await File.ReadAllTextAsync(historyPath, ct);
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return;
-            }
-
-            var items = JsonSerializer.Deserialize<List<UploadHistoryItem>>(json) ?? new List<UploadHistoryItem>();
-            if (items.Count == 0)
-            {
-                return;
-            }
-
-            var changed = false;
             for (var i = 0; i < items.Count; i++)
             {
                 var it = items[i];
@@ -349,25 +359,9 @@ async Task Migrate1260To1280Async(CancellationToken ct)
                 newResized.Remove(1260);
                 newResized[1280] = $"resized/1280/{it.StoredName}";
                 items[i] = it with { Resized = newResized };
-                changed = true;
             }
-
-            if (!changed)
-            {
-                return;
-            }
-
-            var outJson = JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(historyPath, outJson, ct);
-        }
-        catch
-        {
-            // ignore
-        }
-        finally
-        {
-            historyLock.Release();
-        }
+            return items;
+        }, ct);
     }
     finally
     {
@@ -385,70 +379,24 @@ async Task PruneExpiredAsync(CancellationToken ct)
 
     // 1) Prune upload history
     List<UploadHistoryItem> removedUploads = new();
-    await historyLock.WaitAsync(ct);
-    try
+    await historyStore.UpdateAsync(items =>
     {
-        if (File.Exists(historyPath))
-        {
-            var json = await File.ReadAllTextAsync(historyPath, ct);
-            if (!string.IsNullOrWhiteSpace(json))
-            {
-                var items = JsonSerializer.Deserialize<List<UploadHistoryItem>>(json) ?? new List<UploadHistoryItem>();
-                removedUploads = items.Where(x => x.CreatedAt < cutoff).ToList();
-
-                if (removedUploads.Count > 0)
-                {
-                    var kept = items.Where(x => x.CreatedAt >= cutoff).ToList();
-                    var outJson = JsonSerializer.Serialize(kept, new JsonSerializerOptions { WriteIndented = true });
-                    await File.WriteAllTextAsync(historyPath, outJson, ct);
-                }
-            }
-        }
-    }
-    catch
-    {
-        // ignore retention failures
-    }
-    finally
-    {
-        historyLock.Release();
-    }
+        removedUploads = items.Where(x => x.CreatedAt < cutoff).ToList();
+        return items.Where(x => x.CreatedAt >= cutoff).ToList();
+    }, ct);
 
     foreach (var it in removedUploads)
     {
-        try { DeleteAllFilesForStoredName(it.StoredName); } catch { /* ignore */ }
+        try { await DeleteAllFilesForStoredNameAsync(it.StoredName, ct); } catch { /* ignore */ }
     }
 
     // 2) Prune composites (Split/Split3 outputs)
     List<CompositeHistoryItem> removedComposites = new();
-    await compositesLock.WaitAsync(ct);
-    try
+    await compositesStore.UpdateAsync(items =>
     {
-        if (File.Exists(compositesPath))
-        {
-            var json = await File.ReadAllTextAsync(compositesPath, ct);
-            if (!string.IsNullOrWhiteSpace(json))
-            {
-                var items = JsonSerializer.Deserialize<List<CompositeHistoryItem>>(json) ?? new List<CompositeHistoryItem>();
-                removedComposites = items.Where(x => x.CreatedAt < cutoff).ToList();
-
-                if (removedComposites.Count > 0)
-                {
-                    var kept = items.Where(x => x.CreatedAt >= cutoff).ToList();
-                    var outJson = JsonSerializer.Serialize(kept, new JsonSerializerOptions { WriteIndented = true });
-                    await File.WriteAllTextAsync(compositesPath, outJson, ct);
-                }
-            }
-        }
-    }
-    catch
-    {
-        // ignore
-    }
-    finally
-    {
-        compositesLock.Release();
-    }
+        removedComposites = items.Where(x => x.CreatedAt < cutoff).ToList();
+        return items.Where(x => x.CreatedAt >= cutoff).ToList();
+    }, ct);
 
     foreach (var it in removedComposites)
     {
@@ -473,12 +421,27 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownIPNetworks.Clear();
+#pragma warning disable ASPDEPR005
+forwardedHeadersOptions.KnownNetworks.Clear();
+#pragma warning restore ASPDEPR005
+forwardedHeadersOptions.KnownProxies.Clear();
+forwardedHeadersOptions.KnownProxies.Add(IPAddress.Parse("127.0.0.1"));
+forwardedHeadersOptions.KnownProxies.Add(IPAddress.Parse("::1"));
+app.UseForwardedHeaders(forwardedHeadersOptions);
+
 // Web UI (static files)
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
 app.UseRouting();
+app.UseRateLimiter();
+app.UseJmakaAccessControl(accessControl);
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -609,6 +572,11 @@ app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(videoOutDir),
     RequestPath = "/video-out",
+    ContentTypeProvider = new FileExtensionContentTypeProvider(
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [".mp4"] = "video/mp4"
+        }),
     OnPrepareResponse = ctx =>
     {
         ctx.Context.Response.Headers["Cache-Control"] = "no-store";
@@ -631,17 +599,45 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseAntiforgery();
 app.MapRazorPages();
 
+// PNG-шаблон для OknoFix (готовая карточка с рамкой/тенью)
+var oknoFixOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "jmaka-template-oknofix-001.png");
+
 // Version API endpoint
 app.MapGet("/api/version", () =>
 {
-    var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.5.3";
+    var version = HealthEndpoints.GetAppVersion();
     return Results.Ok(new { version });
 });
 
-app.MapGet("/favicon.ico", () => Results.NoContent());
+app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 
-// PNG-шаблон для OknoFix (готовая карточка с рамкой/тенью)
-var oknoFixOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "jmaka-template-oknofix-001.png");
+app.MapGet("/health/ready", async Task<IResult> (CancellationToken ct) =>
+{
+    var failures = new List<string>();
+    foreach (var path in new[] { uploadDir, resizedDir, videoDir, videoOutDir, dataDir })
+    {
+        try
+        {
+            var probe = Path.Combine(path, $".ready-{Guid.NewGuid():N}.tmp");
+            await File.WriteAllTextAsync(probe, "ready", ct);
+            File.Delete(probe);
+        }
+        catch { failures.Add($"storage:{Path.GetFileName(path)}"); }
+    }
+    try
+    {
+        _ = await historyStore.ReadAsync(ct);
+        _ = await compositesStore.ReadAsync(ct);
+        _ = await videoHistoryStore.ReadAsync(ct);
+        _ = await overlayNamesStore.ReadAsync(ct);
+    }
+    catch { failures.Add("json-store"); }
+    if (!File.Exists(oknoFixOverlayPath)) failures.Add("oknofix-template");
+    if (!HasCommand("ffmpeg") || !HasCommand("ffprobe")) failures.Add("ffmpeg");
+    return HealthEndpoints.CreateReadyResult(failures);
+});
+
+app.MapGet("/favicon.ico", () => Results.NoContent());
 
 // --- History & composites endpoints ---
 // RU: Эти эндпоинты отдают историю загрузок и историю составных изображений.
@@ -649,14 +645,14 @@ var oknoFixOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot"
 app.MapGet("/history", async Task<IResult> (CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
-    var items = await ReadHistoryAsync(historyPath, historyLock, ct);
+    var items = await historyStore.ReadAsync(ct);
     return Results.Ok(items.OrderByDescending(x => x.CreatedAt).Take(200));
 });
 
 app.MapGet("/composites", async Task<IResult> (CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
-    var items = await ReadCompositesAsync(compositesPath, compositesLock, ct);
+    var items = await compositesStore.ReadAsync(ct);
     return Results.Ok(items.OrderByDescending(x => x.CreatedAt).Take(200));
 });
 
@@ -677,7 +673,7 @@ app.MapPost("/delete-composite", async Task<IResult> (CompositeDeleteRequest req
         return Results.BadRequest(new { error = "invalid relativePath" });
     }
 
-    var items = await ReadCompositesAsync(compositesPath, compositesLock, ct);
+    var items = await compositesStore.ReadAsync(ct);
     if (items.Count == 0)
     {
         return Results.NotFound(new { error = "not found" });
@@ -696,8 +692,9 @@ app.MapPost("/delete-composite", async Task<IResult> (CompositeDeleteRequest req
         return Results.NotFound(new { error = "not found" });
     }
 
-    var kept = items.Where(x => !ReferenceEquals(x, toRemove)).ToList();
-    await WriteCompositesAsync(compositesPath, compositesLock, kept, ct);
+    await compositesStore.UpdateAsync(current => current
+        .Where(x => !string.Equals(x.RelativePath.Replace('\\', '/'), toRemove.RelativePath.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase))
+        .ToList(), ct);
 
     try
     {
@@ -735,14 +732,14 @@ app.MapPost("/delete", async Task<IResult> (DeleteRequest req, CancellationToken
         return Results.BadRequest(new { error = "invalid storedName" });
     }
 
-    var removed = await RemoveHistoryEntryAsync(historyPath, historyLock, storedName, ct);
+    var removed = await RemoveHistoryEntryAsync(historyStore, storedName, ct);
     if (!removed)
     {
         return Results.NotFound(new { error = "not found" });
     }
 
     // Delete all related files
-    DeleteAllFilesForStoredName(storedName);
+    await DeleteAllFilesForStoredNameAsync(storedName, ct);
 
     return Results.Ok(new { ok = true, storedName });
 })
@@ -806,11 +803,15 @@ app.MapPost("/upload", async Task<IResult> (HttpRequest request, ImagePipelineSe
             await file.CopyToAsync(stream, ct);
         }
 
-        var imageInfo = await TryGetImageInfoAsync(tempPath, ct);
-        if (imageInfo.Width <= 0 || imageInfo.Height <= 0)
+        ImageIdentification imageInfo;
+        try
+        {
+            imageInfo = await imagePipeline.IdentifyAndValidateAsync(tempPath, ImageValidationLimits.Default, ct);
+        }
+        catch (InvalidDataException)
         {
             TryDeleteFile(tempPath);
-            throw new InvalidOperationException("file is not a supported image");
+            throw new InvalidOperationException("file is not a supported image or exceeds image limits");
         }
 
         await imagePipeline.ConvertToJpegSrgbAsync(tempPath, originalAbsolutePath, ct);
@@ -840,7 +841,7 @@ app.MapPost("/upload", async Task<IResult> (HttpRequest request, ImagePipelineSe
             IsCropped: false
         );
 
-        await AppendHistoryAsync(historyPath, historyLock, entry, ct);
+        await AppendHistoryAsync(historyStore, entry, ct);
 
         return new
         {
@@ -873,11 +874,12 @@ app.MapPost("/upload", async Task<IResult> (HttpRequest request, ImagePipelineSe
 })
 .DisableAntiforgery()
 .Accepts<IFormFileCollection>("multipart/form-data")
+.RequireRateLimiting("media")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
 
 // --- Video upload endpoint ---
-app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, ILogger<Program> logger, CancellationToken ct) =>
+app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, ILogger<Program> logger, IUploadNormalizeQueue normalizeQueue, CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
 
@@ -929,125 +931,28 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, ILogger<P
             await file.CopyToAsync(stream, ct);
         }
         var duration = await TryGetVideoDurationSecondsAsync(uploadTempPath, ct, logger);
-        var createdAt = DateTimeOffset.UtcNow;
-        var jobId = Guid.NewGuid();
-        var normalizeJob = new UploadNormalizeJobState(
-            jobId,
-            createdAt,
-            createdAt.AddHours(6),
-            file.FileName,
-            uploadTempPath,
-            storedName,
-            absolutePath,
-            duration
-        );
-        uploadNormalizeJobs[jobId] = normalizeJob;
-
-        _ = Task.Run(async () =>
+        var normalizeJob = normalizeQueue.Enqueue(file.FileName, uploadTempPath, storedName, absolutePath, duration);
+        if (normalizeJob is null)
         {
-            normalizeJob.Status = UploadNormalizeJobStatus.RUNNING;
-            normalizeJob.UpdatedAtUtc = DateTimeOffset.UtcNow;
-            try
-            {
-                var ffmpegArgs = new List<string>
-                {
-                    "-y",
-                    "-progress", "pipe:2",
-                    "-nostats",
-                    "-i", uploadTempPath,
-                    "-map", "0:v:0",
-                    "-map", "0:a?",
-                    "-c:v", "libx264",
-                    "-preset", "superfast",
-                    "-crf", "24",
-                    "-pix_fmt", "yuv420p",
-                    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-                    "-c:a", "aac",
-                    "-b:a", "96k",
-                    "-movflags", "+faststart",
-                    absolutePath
-                };
+            TryDeleteFile(uploadTempPath);
+            return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+        }
 
-                var convert = await RunProcessAsync(
-                    "ffmpeg",
-                    ffmpegArgs,
-                    CancellationToken.None,
-                    logger,
-                    "upload-video normalize",
-                    null,
-                    (line) =>
-                    {
-                        if (normalizeJob.DurationSeconds <= 0) return;
-                        var pct = ParseFfmpegProgressPercent(line, normalizeJob.DurationSeconds);
-                        if (!pct.HasValue) return;
-                        normalizeJob.ProgressPercent = Math.Clamp(pct.Value, 0, 99);
-                        normalizeJob.UpdatedAtUtc = DateTimeOffset.UtcNow;
-                    });
-                if (!convert.Success || !File.Exists(absolutePath))
-                {
-                    TryDeleteFile(absolutePath);
-                    var error = string.IsNullOrWhiteSpace(convert.Error) ? "ffmpeg normalize failed" : convert.Error;
-                    normalizeJob.Status = UploadNormalizeJobStatus.FAILED;
-                    normalizeJob.Error = error;
-                    normalizeJob.UpdatedAtUtc = DateTimeOffset.UtcNow;
-                    return;
-                }
-
-                var outputSize = new FileInfo(absolutePath).Length;
-                var outputDuration = await TryGetVideoDurationSecondsAsync(absolutePath, CancellationToken.None, logger);
-                var relativePath = $"video/{storedName}";
-                var entry = new VideoHistoryItem(
-                    Kind: "upload",
-                    StoredName: storedName,
-                    OriginalName: file.FileName,
-                    CreatedAt: DateTimeOffset.UtcNow,
-                    Size: outputSize,
-                    RelativePath: relativePath,
-                    DurationSeconds: outputDuration
-                );
-                await AppendVideoHistoryAsync(videoHistoryPath, videoHistoryLock, entry, CancellationToken.None);
-
-                normalizeJob.ProgressPercent = 100;
-                normalizeJob.Status = UploadNormalizeJobStatus.SUCCEEDED;
-                normalizeJob.RelativePath = relativePath;
-                normalizeJob.Size = outputSize;
-                normalizeJob.DurationSeconds = outputDuration;
-                normalizeJob.UpdatedAtUtc = DateTimeOffset.UtcNow;
-            }
-            catch (Exception ex)
-            {
-                TryDeleteFile(absolutePath);
-                normalizeJob.Status = UploadNormalizeJobStatus.FAILED;
-                normalizeJob.Error = ex.Message;
-                normalizeJob.UpdatedAtUtc = DateTimeOffset.UtcNow;
-            }
-            finally
-            {
-                TryDeleteFile(uploadTempPath);
-            }
-        });
-
-        return Results.Accepted($"/video/upload-jobs/{jobId}", new
+        return Results.Accepted($"/video/upload-jobs/{normalizeJob.JobId}", new
         {
-            jobId,
+            jobId = normalizeJob.JobId,
             status = normalizeJob.Status,
             createdAt = normalizeJob.CreatedAtUtc
         });
     }
     finally
     {
-        foreach (var key in uploadNormalizeJobs.Keys.ToArray())
-        {
-            if (!uploadNormalizeJobs.TryGetValue(key, out var j)) continue;
-            if (j.TtlAtUtc <= DateTimeOffset.UtcNow)
-            {
-                uploadNormalizeJobs.TryRemove(key, out _);
-            }
-        }
+        // The hosted queue owns job retention and cleanup.
     }
 })
 .DisableAntiforgery()
 .Accepts<IFormFile>("multipart/form-data")
+.RequireRateLimiting("media")
 .Produces(StatusCodes.Status202Accepted)
 .Produces(StatusCodes.Status400BadRequest);
 
@@ -1055,7 +960,7 @@ app.MapPost("/upload-video", async Task<IResult> (HttpRequest request, ILogger<P
 app.MapGet("/video-overlay-templates", async Task<IResult> (CancellationToken ct) =>
 {
     var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".png", ".webp", ".jpg", ".jpeg" };
-    var names = await ReadOverlayNamesAsync(overlayNamesPath, overlayNamesLock, ct);
+    var names = await overlayNamesStore.ReadAsync(ct);
     var items = Directory.EnumerateFiles(videoOverlayDir, "*.*", SearchOption.TopDirectoryOnly)
         .Where(path => allowed.Contains(Path.GetExtension(path)))
         .Select(path =>
@@ -1117,10 +1022,14 @@ app.MapPost("/upload-video-overlay-template", async Task<IResult> (HttpRequest r
         await file.CopyToAsync(stream, ct);
     }
 
-    var names = await ReadOverlayNamesAsync(overlayNamesPath, overlayNamesLock, ct);
+    var names = await overlayNamesStore.ReadAsync(ct);
     var baseDisplayName = Path.GetFileNameWithoutExtension(file.FileName);
     names[storedName] = string.IsNullOrWhiteSpace(baseDisplayName) ? Path.GetFileNameWithoutExtension(storedName) : baseDisplayName.Trim();
-    await WriteOverlayNamesAsync(overlayNamesPath, overlayNamesLock, names, ct);
+    await overlayNamesStore.UpdateAsync(current =>
+    {
+        current[storedName] = names[storedName];
+        return current;
+    }, ct);
 
     return Results.Ok(new
     {
@@ -1134,6 +1043,7 @@ app.MapPost("/upload-video-overlay-template", async Task<IResult> (HttpRequest r
 })
 .DisableAntiforgery()
 .Accepts<IFormFile>("multipart/form-data")
+.RequireRateLimiting("media")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
 
@@ -1169,9 +1079,11 @@ app.MapPost("/video-overlay-templates/{fileName}/rename", async Task<IResult> (s
         displayName = displayName[..80];
     }
 
-    var names = await ReadOverlayNamesAsync(overlayNamesPath, overlayNamesLock, ct);
-    names[safeFileName] = displayName;
-    await WriteOverlayNamesAsync(overlayNamesPath, overlayNamesLock, names, ct);
+    await overlayNamesStore.UpdateAsync(names =>
+    {
+        names[safeFileName] = displayName;
+        return names;
+    }, ct);
 
     return Results.Ok(new
     {
@@ -1216,11 +1128,11 @@ app.MapDelete("/video-overlay-templates/{fileName}", async Task<IResult> (string
         return Results.BadRequest(new { error = $"failed to delete overlay: {ex.Message}" });
     }
 
-    var names = await ReadOverlayNamesAsync(overlayNamesPath, overlayNamesLock, ct);
-    if (names.Remove(safeFileName))
+    await overlayNamesStore.UpdateAsync(names =>
     {
-        await WriteOverlayNamesAsync(overlayNamesPath, overlayNamesLock, names, ct);
-    }
+        names.Remove(safeFileName);
+        return names;
+    }, ct);
 
     return Results.Ok(new { deleted = true, fileName = safeFileName });
 })
@@ -1233,8 +1145,8 @@ app.MapDelete("/video-overlay-templates/{fileName}", async Task<IResult> (string
 app.MapGet("/images", async Task<IResult> (CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
-    var history = await ReadHistoryAsync(historyPath, historyLock, ct);
-    var composites = await ReadCompositesAsync(compositesPath, compositesLock, ct);
+    var history = await historyStore.ReadAsync(ct);
+    var composites = await compositesStore.ReadAsync(ct);
 
     var items = new List<object>();
     foreach (var it in history)
@@ -1289,13 +1201,13 @@ app.MapPost("/images/{id}/render", async Task<IResult> (string id, ImageEditPara
     var resolved = sourceInfo.Value;
     var image = await imagePipeline.LoadImageAsync(resolved.AbsolutePath, ct);
     imagePipeline.ApplyAdjustments(image, EnsureEditParams(req));
-    using var normalized = imagePipeline.NormalizeToSrgb(image, resolved.AbsolutePath);
-    await imagePipeline.SaveJpegAsync(normalized, outAbsolutePath, ct);
+    await imagePipeline.SaveCanonicalJpegAtomicAsync(image, outAbsolutePath, resolved.AbsolutePath, ct);
 
     return Results.Ok(new { ok = true, relativePath = relPath });
 })
 .DisableAntiforgery()
 .Accepts<ImageEditParams>("application/json")
+.RequireRateLimiting("media-interactive")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);
 
@@ -1319,13 +1231,11 @@ app.MapPost("/images/{id}/save-edit", async Task<IResult> (string id, ImageEditP
     var image = await imagePipeline.LoadImageAsync(resolved.AbsolutePath, ct);
     var normalized = EnsureEditParams(req);
     imagePipeline.ApplyAdjustments(image, normalized);
-    using var normalizedImage = imagePipeline.NormalizeToSrgb(image, resolved.AbsolutePath);
-    await imagePipeline.SaveJpegAsync(normalizedImage, outAbsolutePath, ct);
+    await imagePipeline.SaveCanonicalJpegAtomicAsync(image, outAbsolutePath, resolved.AbsolutePath, ct);
     await CreatePreviewImageAsync(outAbsolutePath, previewPath, PreviewWidthPx, imagePipeline, ct);
 
     await AppendCompositeAsync(
-        compositesPath,
-        compositesLock,
+        compositesStore,
         new CompositeHistoryItem("edit", createdAt, relPath, resolved.Sources, previewRelativePath, normalized),
         ct);
 
@@ -1333,6 +1243,7 @@ app.MapPost("/images/{id}/save-edit", async Task<IResult> (string id, ImageEditP
 })
 .DisableAntiforgery()
 .Accepts<ImageEditParams>("application/json")
+.RequireRateLimiting("media-interactive")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);
 
@@ -1343,15 +1254,15 @@ app.MapDelete("/images/{id}", async Task<IResult> (string id, CancellationToken 
     var storedName = Path.GetFileName(id);
     if (string.Equals(storedName, id, StringComparison.Ordinal))
     {
-        var removed = await RemoveHistoryEntryAsync(historyPath, historyLock, storedName, ct);
+        var removed = await RemoveHistoryEntryAsync(historyStore, storedName, ct);
         if (removed)
         {
-            DeleteAllFilesForStoredName(storedName);
+            await DeleteAllFilesForStoredNameAsync(storedName, ct);
             return Results.Ok(new { ok = true });
         }
     }
 
-    var removedComposite = await RemoveCompositeByFileNameAsync(compositesPath, compositesLock, storedName, ct);
+    var removedComposite = await RemoveCompositeByFileNameAsync(compositesStore, storedName, ct);
     if (removedComposite)
     {
         TryDeleteFile(Path.Combine(editsDir, storedName));
@@ -1417,18 +1328,19 @@ app.MapPost("/resize", async Task<IResult> (ResizeRequest req, ImagePipelineServ
     // Если уже есть — просто вернём ссылку и обновим историю (идемпотентно)
     if (File.Exists(outPath))
     {
-        await UpsertResizedInHistoryAsync(historyPath, historyLock, storedName, req.Width, relPath, ct);
+        await UpsertResizedInHistoryAsync(historyStore, storedName, req.Width, relPath, ct);
         return Results.Ok(new { width = req.Width, relativePath = relPath });
     }
 
     // Ресайз
     await CreateResizedImageAsync(originalAbsolutePath, outPath, req.Width, imagePipeline, ct);
-    await UpsertResizedInHistoryAsync(historyPath, historyLock, storedName, req.Width, relPath, ct);
+    await UpsertResizedInHistoryAsync(historyStore, storedName, req.Width, relPath, ct);
 
     return Results.Ok(new { width = req.Width, relativePath = relPath });
 })
 .DisableAntiforgery()
 .Accepts<ResizeRequest>("application/json")
+.RequireRateLimiting("media")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
@@ -1541,12 +1453,11 @@ app.MapPost("/split", async Task<IResult> (SplitRequest req, ImagePipelineServic
             }
         });
 
-        await SaveImageWithSafeTempAsync(output, outAbsolutePath, imagePipeline, ct);
+        await imagePipeline.SaveCanonicalJpegAtomicAsync(output, outAbsolutePath, "split", ct);
 
         var createdAt = DateTimeOffset.UtcNow;
         await AppendCompositeAsync(
-            compositesPath,
-            compositesLock,
+            compositesStore,
             new CompositeHistoryItem("split", createdAt, relPath, new[] { storedNameA, storedNameB }),
             ct);
 
@@ -1559,6 +1470,7 @@ app.MapPost("/split", async Task<IResult> (SplitRequest req, ImagePipelineServic
 })
 .DisableAntiforgery()
 .Accepts<SplitRequest>("application/json")
+.RequireRateLimiting("media")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
 
@@ -1687,12 +1599,11 @@ app.MapPost("/split3", async Task<IResult> (Split3Request req, ImagePipelineServ
             }
         });
 
-        await SaveImageWithSafeTempAsync(output, outAbsolutePath, imagePipeline, ct);
+        await imagePipeline.SaveCanonicalJpegAtomicAsync(output, outAbsolutePath, "split3", ct);
 
         var createdAt = DateTimeOffset.UtcNow;
         await AppendCompositeAsync(
-            compositesPath,
-            compositesLock,
+            compositesStore,
             new CompositeHistoryItem("split3", createdAt, relPath, new[] { storedNameA, storedNameB, storedNameC }),
             ct);
 
@@ -1705,6 +1616,7 @@ app.MapPost("/split3", async Task<IResult> (Split3Request req, ImagePipelineServ
 })
 .DisableAntiforgery()
 .Accepts<Split3Request>("application/json")
+.RequireRateLimiting("media")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest);
 
@@ -1788,7 +1700,7 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, ImagePipelineService 
         image.Mutate(ctx => ctx.Crop(new Rectangle(x, y, w, h)));
 
         // Сохраняем результат в upload/<storedName> (атомарно)
-        await SaveImageWithSafeTempAsync(image, outAbsolutePath, imagePipeline, ct);
+        await imagePipeline.SaveCanonicalJpegAtomicAsync(image, outAbsolutePath, "crop", ct);
 
         // Пересоздаём preview
         var previewAbsolutePath = Path.Combine(previewDir, storedName);
@@ -1803,10 +1715,10 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, ImagePipelineService 
         // Удаляем старые split/split3 + composites, созданные из этого изображения.
         TryDeleteFile(Path.Combine(splitDir, GetSplitFileName(storedName)));
         TryDeleteFile(Path.Combine(split3Dir, GetSplit3FileName(storedName)));
-        DeleteCompositesForStoredName(storedName);
+        await DeleteCompositesForStoredNameAsync(storedName, ct);
 
         // Обновляем историю: размеры и сброс resized
-        await UpdateHistoryAfterCropAsync(historyPath, historyLock, storedName, w, h, ct);
+        await UpdateHistoryAfterCropAsync(historyStore, storedName, w, h, ct);
 
         return Results.Ok(new
         {
@@ -1822,6 +1734,7 @@ app.MapPost("/crop", async Task<IResult> (CropRequest req, ImagePipelineService 
 })
 .DisableAntiforgery()
 .Accepts<CropRequest>("application/json")
+.RequireRateLimiting("media")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
@@ -1969,12 +1882,11 @@ app.MapPost("/oknofix", async Task<IResult> (WindowCropRequest req, ImagePipelin
         var outAbsolutePath = Path.Combine(oknoFixDir, fileName);
         var relPath = $"oknofix/{fileName}";
 
-        await SaveImageWithSafeTempAsync(output, outAbsolutePath, imagePipeline, ct);
+        await imagePipeline.SaveCanonicalJpegAtomicAsync(output, outAbsolutePath, "oknofix", ct);
 
         var createdAt = DateTimeOffset.UtcNow;
         await AppendCompositeAsync(
-            compositesPath,
-            compositesLock,
+            compositesStore,
             new CompositeHistoryItem("oknofix", createdAt, relPath, new[] { storedName }),
             ct);
 
@@ -1987,6 +1899,7 @@ app.MapPost("/oknofix", async Task<IResult> (WindowCropRequest req, ImagePipelin
 })
 .DisableAntiforgery()
 .Accepts<WindowCropRequest>("application/json")
+.RequireRateLimiting("media")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
@@ -2145,11 +2058,10 @@ app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, ImagePipel
         var outAbsolutePath = Path.Combine(oknoScaleDir, fileName);
         var relPath = $"oknoscale/{fileName}";
 
-        await SaveImageWithSafeTempAsync(output, outAbsolutePath, imagePipeline, ct);
+        await imagePipeline.SaveCanonicalJpegAtomicAsync(output, outAbsolutePath, "oknoscale", ct);
 
         await AppendCompositeAsync(
-            compositesPath,
-            compositesLock,
+            compositesStore,
             new CompositeHistoryItem("oknoscale", createdAt, relPath, new[] { storedName }),
             ct);
 
@@ -2162,6 +2074,7 @@ app.MapPost("/oknoscale", async Task<IResult> (WindowCropRequest req, ImagePipel
 })
 .DisableAntiforgery()
 .Accepts<WindowCropRequest>("application/json")
+.RequireRateLimiting("media")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status400BadRequest)
 .Produces(StatusCodes.Status404NotFound);
@@ -2304,6 +2217,7 @@ app.MapPost("/video-process", (VideoProcessRequest req, HttpContext http, IFfmpe
     });
 })
 .DisableAntiforgery()
+.RequireRateLimiting("media")
 .Accepts<VideoProcessRequest>("application/json")
 .Produces(StatusCodes.Status202Accepted)
 .Produces(StatusCodes.Status400BadRequest)
@@ -2336,16 +2250,16 @@ app.MapGet("/video/jobs/{jobId:guid}", (Guid jobId, IFfmpegJobQueue queue) =>
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);
 
-app.MapGet("/video/upload-jobs/{jobId:guid}", (Guid jobId) =>
+app.MapGet("/video/upload-jobs/{jobId:guid}", (Guid jobId, IUploadNormalizeQueue normalizeQueue) =>
 {
-    if (!uploadNormalizeJobs.TryGetValue(jobId, out var job))
+    var job = normalizeQueue.Get(jobId);
+    if (job is null)
     {
         return Results.NotFound(new { error = "job not found" });
     }
 
     if (job.TtlAtUtc <= DateTimeOffset.UtcNow)
     {
-        uploadNormalizeJobs.TryRemove(jobId, out _);
         return Results.NotFound(new { error = "job expired" });
     }
 
@@ -2363,6 +2277,14 @@ app.MapGet("/video/upload-jobs/{jobId:guid}", (Guid jobId) =>
         job.DurationSeconds
     });
 })
+.Produces(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound);
+
+app.MapPost("/video/upload-jobs/{jobId:guid}/cancel", (Guid jobId, IUploadNormalizeQueue normalizeQueue) =>
+    normalizeQueue.Cancel(jobId)
+        ? Results.Ok(new { ok = true, jobId })
+        : Results.NotFound(new { error = "job not found or cannot be canceled" }))
+.DisableAntiforgery()
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);
 
@@ -2384,7 +2306,7 @@ app.MapPost("/video/jobs/{jobId:guid}/cancel", (Guid jobId, IFfmpegJobQueue queu
 app.MapGet("/video-history", async Task<IResult> (CancellationToken ct) =>
 {
     await PruneExpiredAsync(ct);
-    var items = await ReadVideoHistoryAsync(videoHistoryPath, videoHistoryLock, ct);
+    var items = await videoHistoryStore.ReadAsync(ct);
 
     var knownProcessed = new HashSet<string>(
         items.Where(x => string.Equals(x.Kind, "processed", StringComparison.OrdinalIgnoreCase))
@@ -2417,8 +2339,13 @@ app.MapGet("/video-history", async Task<IResult> (CancellationToken ct) =>
 
     if (discoveredProcessed.Count > 0)
     {
-        items.AddRange(discoveredProcessed);
-        await WriteVideoHistoryAsync(videoHistoryPath, videoHistoryLock, items, ct);
+        await videoHistoryStore.UpdateAsync(current =>
+        {
+            var known = new HashSet<string>(current.Select(x => x.StoredName), StringComparer.OrdinalIgnoreCase);
+            current.AddRange(discoveredProcessed.Where(x => known.Add(x.StoredName)));
+            return current;
+        }, ct);
+        items = await videoHistoryStore.ReadAsync(ct);
     }
 
     return Results.Ok(items.OrderByDescending(x => x.CreatedAt));
@@ -2439,7 +2366,7 @@ app.MapPost("/delete-video", async Task<IResult> (VideoDeleteRequest req, Cancel
         return Results.BadRequest(new { error = "invalid storedName" });
     }
 
-    var removed = await RemoveVideoHistoryEntryAsync(videoHistoryPath, videoHistoryLock, storedName, ct);
+    var removed = await RemoveVideoHistoryEntryAsync(videoHistoryStore, storedName, ct);
     if (removed is null)
     {
         return Results.NotFound(new { error = "not found" });
@@ -2515,27 +2442,6 @@ static int GetEnvInt(string name, int fallback)
         return parsed;
     }
     return fallback;
-}
-
-static int? ParseFfmpegProgressPercent(string line, double durationSeconds)
-{
-    if (string.IsNullOrWhiteSpace(line) || durationSeconds <= 0) return null;
-
-    var msMatch = Regex.Match(line, @"out_time_ms=(\d+)", RegexOptions.CultureInvariant);
-    if (msMatch.Success && long.TryParse(msMatch.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var outTimeUs))
-    {
-        var elapsedSec = outTimeUs / 1_000_000.0;
-        var pct = (int)Math.Round(Math.Clamp((elapsedSec / durationSeconds) * 100.0, 0, 100));
-        return pct;
-    }
-
-    var timeMatch = Regex.Match(line, @"time=(\d+):(\d+):(\d+(?:\.\d+)?)", RegexOptions.CultureInvariant);
-    if (!timeMatch.Success) return null;
-    if (!double.TryParse(timeMatch.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var hh)) return null;
-    if (!double.TryParse(timeMatch.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var mm)) return null;
-    if (!double.TryParse(timeMatch.Groups[3].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var ss)) return null;
-    var elapsed = hh * 3600 + mm * 60 + ss;
-    return (int)Math.Round(Math.Clamp((elapsed / durationSeconds) * 100.0, 0, 100));
 }
 
 static async Task<ProcessResult> RunProcessAsync(
@@ -2747,7 +2653,7 @@ static async Task CreateResizedImageAsync(
 
     image.Mutate(x => x.Resize(targetWidthPx, newHeight));
 
-    await SaveImageWithSafeTempAsync(image, outAbsolutePath, imagePipeline, ct);
+    await imagePipeline.SaveCanonicalJpegAtomicAsync(image, outAbsolutePath, originalAbsolutePath, ct);
 }
 
 static async Task CreatePreviewImageAsync(
@@ -2777,36 +2683,7 @@ static async Task CreatePreviewImageAsync(
 
     image.Mutate(x => x.Resize(targetWidthPx, newHeight));
 
-    await SaveImageWithSafeTempAsync(image, outAbsolutePath, imagePipeline, ct);
-}
-
-static async Task SaveImageWithSafeTempAsync(Image image, string outAbsolutePath, ImagePipelineService imagePipeline, CancellationToken ct)
-{
-    // CRITICAL: Always normalize to sRGB before saving JPEG
-    using var normalized = imagePipeline.NormalizeToSrgb(image, "composite");
-
-    var ext = Path.GetExtension(outAbsolutePath);
-    var dir = Path.GetDirectoryName(outAbsolutePath) ?? throw new InvalidOperationException("Invalid output path");
-    var fileNoExt = Path.GetFileNameWithoutExtension(outAbsolutePath);
-
-    // Важно: расширение temp-файла должно оставаться "картинным" (например .jpg),
-    // иначе ImageSharp не сможет подобрать encoder при SaveAsync().
-    var tempPath = Path.Combine(dir, $"{fileNoExt}.tmp{ext}");
-
-    await normalized.SaveAsync(tempPath, ct);
-
-    // Prefer atomic replace.
-    // On Linux, this should succeed even if the old file is being read.
-    try
-    {
-        File.Move(tempPath, outAbsolutePath, overwrite: true);
-    }
-    catch
-    {
-        // Fallback for platforms/filesystems where Move-overwrite isn't supported.
-        File.Copy(tempPath, outAbsolutePath, overwrite: true);
-        File.Delete(tempPath);
-    }
+    await imagePipeline.SaveCanonicalJpegAtomicAsync(image, outAbsolutePath, originalAbsolutePath, ct);
 }
 
 static string SanitizeExtension(string? ext)
@@ -2835,102 +2712,22 @@ static string SanitizeExtension(string? ext)
     return cleaned;
 }
 
-static async Task<List<UploadHistoryItem>> ReadHistoryAsync(string historyPath, SemaphoreSlim historyLock, CancellationToken ct)
+static async Task AppendHistoryAsync(AtomicJsonFileStore<List<UploadHistoryItem>> store, UploadHistoryItem entry, CancellationToken ct)
 {
-    await historyLock.WaitAsync(ct);
-    try
+    await store.UpdateAsync(items =>
     {
-        if (!File.Exists(historyPath))
-        {
-            return new List<UploadHistoryItem>();
-        }
-
-        var json = await File.ReadAllTextAsync(historyPath, ct);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return new List<UploadHistoryItem>();
-        }
-
-        return JsonSerializer.Deserialize<List<UploadHistoryItem>>(json) ?? new List<UploadHistoryItem>();
-    }
-    catch
-    {
-        return new List<UploadHistoryItem>();
-    }
-    finally
-    {
-        historyLock.Release();
-    }
+        items.Add(entry);
+        return items;
+    }, ct);
 }
 
-static async Task WriteHistoryAsync(string historyPath, SemaphoreSlim historyLock, List<UploadHistoryItem> items, CancellationToken ct)
+static async Task AppendCompositeAsync(AtomicJsonFileStore<List<CompositeHistoryItem>> store, CompositeHistoryItem entry, CancellationToken ct)
 {
-    await historyLock.WaitAsync(ct);
-    try
+    await store.UpdateAsync(items =>
     {
-        var json = JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(historyPath, json, ct);
-    }
-    finally
-    {
-        historyLock.Release();
-    }
-}
-
-static async Task AppendHistoryAsync(string historyPath, SemaphoreSlim historyLock, UploadHistoryItem entry, CancellationToken ct)
-{
-    var items = await ReadHistoryAsync(historyPath, historyLock, ct);
-    items.Add(entry);
-    await WriteHistoryAsync(historyPath, historyLock, items, ct);
-}
-
-static async Task<List<CompositeHistoryItem>> ReadCompositesAsync(string compositesPath, SemaphoreSlim compositesLock, CancellationToken ct)
-{
-    await compositesLock.WaitAsync(ct);
-    try
-    {
-        if (!File.Exists(compositesPath))
-        {
-            return new List<CompositeHistoryItem>();
-        }
-
-        var json = await File.ReadAllTextAsync(compositesPath, ct);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return new List<CompositeHistoryItem>();
-        }
-
-        return JsonSerializer.Deserialize<List<CompositeHistoryItem>>(json) ?? new List<CompositeHistoryItem>();
-    }
-    catch
-    {
-        return new List<CompositeHistoryItem>();
-    }
-    finally
-    {
-        compositesLock.Release();
-    }
-}
-
-static async Task WriteCompositesAsync(string compositesPath, SemaphoreSlim compositesLock, List<CompositeHistoryItem> items, CancellationToken ct)
-{
-    await compositesLock.WaitAsync(ct);
-    try
-    {
-        var json = JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(compositesPath, json, ct);
-    }
-    finally
-    {
-        compositesLock.Release();
-    }
-}
-
-static async Task AppendCompositeAsync(string compositesPath, SemaphoreSlim compositesLock, CompositeHistoryItem entry, CancellationToken ct)
-{
-    var items = await ReadCompositesAsync(compositesPath, compositesLock, ct);
-    items.Add(entry);
-    await WriteCompositesAsync(compositesPath, compositesLock, items, ct);
+        items.Add(entry);
+        return items;
+    }, ct);
 }
 
 static ImageEditParams EnsureEditParams(ImageEditParams req)
@@ -2950,40 +2747,18 @@ static ImageEditParams EnsureEditParams(ImageEditParams req)
 }
 
 static async Task<bool> RemoveCompositeByFileNameAsync(
-    string compositesPath,
-    SemaphoreSlim compositesLock,
+    AtomicJsonFileStore<List<CompositeHistoryItem>> store,
     string fileName,
     CancellationToken ct)
 {
-    await compositesLock.WaitAsync(ct);
-    try
+    var removed = false;
+    await store.UpdateAsync(items =>
     {
-        if (!File.Exists(compositesPath))
-        {
-            return false;
-        }
-
-        var json = await File.ReadAllTextAsync(compositesPath, ct);
-        var items = JsonSerializer.Deserialize<List<CompositeHistoryItem>>(json) ?? new List<CompositeHistoryItem>();
-        var removed = items.FirstOrDefault(x => string.Equals(Path.GetFileName(x.RelativePath), fileName, StringComparison.Ordinal));
-        if (removed is null)
-        {
-            return false;
-        }
-
-        items = items.Where(x => !string.Equals(Path.GetFileName(x.RelativePath), fileName, StringComparison.Ordinal)).ToList();
-        var outJson = JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(compositesPath, outJson, ct);
-        return true;
-    }
-    catch
-    {
-        return false;
-    }
-    finally
-    {
-        compositesLock.Release();
-    }
+        var updated = items.Where(x => !string.Equals(Path.GetFileName(x.RelativePath), fileName, StringComparison.Ordinal)).ToList();
+        removed = updated.Count != items.Count;
+        return updated;
+    }, ct);
+    return removed;
 }
 
 async Task<(string AbsolutePath, string[] Sources)?> ResolveImageEditSourceAsync(string id, CancellationToken ct)
@@ -3006,7 +2781,7 @@ async Task<(string AbsolutePath, string[] Sources)?> ResolveImageEditSourceAsync
         return (uploadPath, new[] { storedName });
     }
 
-    var composites = await ReadCompositesAsync(compositesPath, compositesLock, ct);
+    var composites = await compositesStore.ReadAsync(ct);
     var match = composites.FirstOrDefault(x => string.Equals(Path.GetFileName(x.RelativePath), storedName, StringComparison.OrdinalIgnoreCase));
     if (match is null)
     {
@@ -3022,123 +2797,20 @@ async Task<(string AbsolutePath, string[] Sources)?> ResolveImageEditSourceAsync
     return (abs, match.Sources ?? Array.Empty<string>());
 }
 
-static async Task<List<VideoHistoryItem>> ReadVideoHistoryAsync(string historyPath, SemaphoreSlim historyLock, CancellationToken ct)
+static async Task<VideoHistoryItem?> RemoveVideoHistoryEntryAsync(AtomicJsonFileStore<List<VideoHistoryItem>> store, string storedName, CancellationToken ct)
 {
-    await historyLock.WaitAsync(ct);
-    try
+    VideoHistoryItem? removed = null;
+    await store.UpdateAsync(items =>
     {
-        if (!File.Exists(historyPath))
+        var idx = items.FindIndex(x => string.Equals(x.StoredName, storedName, StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0)
         {
-            return new List<VideoHistoryItem>();
+            removed = items[idx];
+            items.RemoveAt(idx);
         }
-
-        var json = await File.ReadAllTextAsync(historyPath, ct);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return new List<VideoHistoryItem>();
-        }
-
-        return JsonSerializer.Deserialize<List<VideoHistoryItem>>(json) ?? new List<VideoHistoryItem>();
-    }
-    catch
-    {
-        return new List<VideoHistoryItem>();
-    }
-    finally
-    {
-        historyLock.Release();
-    }
-}
-
-static async Task WriteVideoHistoryAsync(string historyPath, SemaphoreSlim historyLock, List<VideoHistoryItem> items, CancellationToken ct)
-{
-    await historyLock.WaitAsync(ct);
-    try
-    {
-        var json = JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(historyPath, json, ct);
-    }
-    finally
-    {
-        historyLock.Release();
-    }
-}
-
-static async Task AppendVideoHistoryAsync(string historyPath, SemaphoreSlim historyLock, VideoHistoryItem entry, CancellationToken ct)
-{
-    var items = await ReadVideoHistoryAsync(historyPath, historyLock, ct);
-    items.Add(entry);
-    await WriteVideoHistoryAsync(historyPath, historyLock, items, ct);
-}
-
-static async Task<VideoHistoryItem?> RemoveVideoHistoryEntryAsync(string historyPath, SemaphoreSlim historyLock, string storedName, CancellationToken ct)
-{
-    var items = await ReadVideoHistoryAsync(historyPath, historyLock, ct);
-    var idx = items.FindIndex(x => string.Equals(x.StoredName, storedName, StringComparison.OrdinalIgnoreCase));
-    if (idx < 0)
-    {
-        return null;
-    }
-
-    var removed = items[idx];
-    items.RemoveAt(idx);
-    await WriteVideoHistoryAsync(historyPath, historyLock, items, ct);
+        return items;
+    }, ct);
     return removed;
-}
-
-static async Task<Dictionary<string, string>> ReadOverlayNamesAsync(string namesPath, SemaphoreSlim namesLock, CancellationToken ct)
-{
-    await namesLock.WaitAsync(ct);
-    try
-    {
-        if (!File.Exists(namesPath))
-        {
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        }
-
-        var json = await File.ReadAllTextAsync(namesPath, ct);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        }
-
-        var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(json)
-            ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        return new Dictionary<string, string>(parsed, StringComparer.OrdinalIgnoreCase);
-    }
-    catch
-    {
-        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    }
-    finally
-    {
-        namesLock.Release();
-    }
-}
-
-static async Task WriteOverlayNamesAsync(string namesPath, SemaphoreSlim namesLock, Dictionary<string, string> names, CancellationToken ct)
-{
-    await namesLock.WaitAsync(ct);
-    try
-    {
-        var normalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pair in names)
-        {
-            var key = Path.GetFileName(pair.Key ?? string.Empty);
-            var value = (pair.Value ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
-            {
-                continue;
-            }
-            normalized[key] = value.Length > 80 ? value[..80] : value;
-        }
-        var json = JsonSerializer.Serialize(normalized, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(namesPath, json, ct);
-    }
-    finally
-    {
-        namesLock.Release();
-    }
 }
 
 static void DeleteVideoFilesForEntry(VideoHistoryItem entry, string videoDir, string videoOutDir)
@@ -3175,75 +2847,73 @@ static void TryDeleteFile(string path)
 }
 
 static async Task<bool> RemoveHistoryEntryAsync(
-    string historyPath,
-    SemaphoreSlim historyLock,
+    AtomicJsonFileStore<List<UploadHistoryItem>> store,
     string storedName,
     CancellationToken ct)
 {
-    // Делается под lock через Read/Write, чтобы не ломать файл при параллельных запросах.
-    var items = await ReadHistoryAsync(historyPath, historyLock, ct);
-    var before = items.Count;
-    items = items.Where(x => !string.Equals(x.StoredName, storedName, StringComparison.Ordinal)).ToList();
-    if (items.Count == before)
+    var removed = false;
+    await store.UpdateAsync(items =>
     {
-        return false;
-    }
-
-    await WriteHistoryAsync(historyPath, historyLock, items, ct);
-    return true;
+        var updated = items.Where(x => !string.Equals(x.StoredName, storedName, StringComparison.Ordinal)).ToList();
+        removed = updated.Count != items.Count;
+        return updated;
+    }, ct);
+    return removed;
 }
 
 static async Task UpsertResizedInHistoryAsync(
-    string historyPath,
-    SemaphoreSlim historyLock,
+    AtomicJsonFileStore<List<UploadHistoryItem>> store,
     string storedName,
     int width,
     string relativePath,
     CancellationToken ct)
 {
-    var items = await ReadHistoryAsync(historyPath, historyLock, ct);
-    for (var i = items.Count - 1; i >= 0; i--)
+    await store.UpdateAsync(items =>
     {
-        if (!string.Equals(items[i].StoredName, storedName, StringComparison.Ordinal))
+        for (var i = items.Count - 1; i >= 0; i--)
         {
-            continue;
-        }
+            if (!string.Equals(items[i].StoredName, storedName, StringComparison.Ordinal))
+            {
+                continue;
+            }
 
-        var resized = items[i].Resized ?? new Dictionary<int, string>();
-        resized[width] = relativePath;
-        items[i] = items[i] with { Resized = resized };
-        await WriteHistoryAsync(historyPath, historyLock, items, ct);
-        return;
-    }
+            var resized = new Dictionary<int, string>(items[i].Resized ?? new Dictionary<int, string>());
+            resized[width] = relativePath;
+            items[i] = items[i] with { Resized = resized };
+            break;
+        }
+        return items;
+    }, ct);
 }
 
 static async Task UpdateHistoryAfterCropAsync(
-    string historyPath,
-    SemaphoreSlim historyLock,
+    AtomicJsonFileStore<List<UploadHistoryItem>> store,
     string storedName,
     int newWidth,
     int newHeight,
     CancellationToken ct)
 {
-    var items = await ReadHistoryAsync(historyPath, historyLock, ct);
-    for (var i = items.Count - 1; i >= 0; i--)
+    await store.UpdateAsync(items =>
     {
-        if (!string.Equals(items[i].StoredName, storedName, StringComparison.Ordinal))
+        for (var i = items.Count - 1; i >= 0; i--)
         {
-            continue;
-        }
+            if (!string.Equals(items[i].StoredName, storedName, StringComparison.Ordinal))
+            {
+                continue;
+            }
 
-        items[i] = items[i] with
-        {
-            ImageWidth = newWidth,
-            ImageHeight = newHeight,
-            PreviewRelativePath = $"preview/{storedName}",
-            Resized = new Dictionary<int, string>(),
-            IsCropped = true
-        };
-        await WriteHistoryAsync(historyPath, historyLock, items, ct);
-        return;
-    }
+            items[i] = items[i] with
+            {
+                ImageWidth = newWidth,
+                ImageHeight = newHeight,
+                PreviewRelativePath = $"preview/{storedName}",
+                Resized = new Dictionary<int, string>(),
+                IsCropped = true
+            };
+            break;
+        }
+        return items;
+    }, ct);
 }
 
 record ImageInfo(int Width, int Height);
@@ -3343,47 +3013,22 @@ public record VideoProcessClip(
     VideoProcessSegment[]? Segments
 );
 
-enum UploadNormalizeJobStatus { QUEUED, RUNNING, SUCCEEDED, FAILED }
+record ProcessResult(bool Success, string Output, string Error);
 
-sealed class UploadNormalizeJobState
+public static class HealthEndpoints
 {
-    public UploadNormalizeJobState(
-        Guid jobId,
-        DateTimeOffset createdAtUtc,
-        DateTimeOffset ttlAtUtc,
-        string originalName,
-        string uploadTempPath,
-        string storedName,
-        string outputPath,
-        double durationSeconds)
-    {
-        JobId = jobId;
-        CreatedAtUtc = createdAtUtc;
-        UpdatedAtUtc = createdAtUtc;
-        TtlAtUtc = ttlAtUtc;
-        OriginalName = originalName;
-        UploadTempPath = uploadTempPath;
-        StoredName = storedName;
-        OutputPath = outputPath;
-        DurationSeconds = durationSeconds;
-        Status = UploadNormalizeJobStatus.QUEUED;
-        ProgressPercent = 0;
-    }
+    public static string GetAppVersion() =>
+        typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.5.3";
 
-    public Guid JobId { get; }
-    public DateTimeOffset CreatedAtUtc { get; }
-    public DateTimeOffset UpdatedAtUtc { get; set; }
-    public DateTimeOffset TtlAtUtc { get; }
-    public string OriginalName { get; }
-    public string UploadTempPath { get; }
-    public string StoredName { get; }
-    public string OutputPath { get; }
-    public double DurationSeconds { get; set; }
-    public UploadNormalizeJobStatus Status { get; set; }
-    public int ProgressPercent { get; set; }
-    public string? Error { get; set; }
-    public string? RelativePath { get; set; }
-    public long? Size { get; set; }
+    public static IResult CreateReadyResult(IReadOnlyList<string> failures)
+    {
+        var version = GetAppVersion();
+        if (failures.Count > 0)
+        {
+            return Results.Json(new { status = "not-ready", failures }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        return Results.Ok(new { status = "ready", version });
+    }
 }
 
-record ProcessResult(bool Success, string Output, string Error);
+public partial class Program { }

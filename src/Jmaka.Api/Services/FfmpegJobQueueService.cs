@@ -76,6 +76,8 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
     private readonly SemaphoreSlim _signal = new(0);
     private readonly SemaphoreSlim _concurrency;
     private readonly object _persistLock = new();
+    private readonly object _admissionLock = new();
+    private readonly ConcurrentDictionary<Guid, Task> _workerTasks = new();
     private readonly string _videoOverlayDir;
 
     public FfmpegJobQueueService(ILogger<FfmpegJobQueueService> logger, IOptions<FfmpegQueueOptions> opts, IWebHostEnvironment env)
@@ -86,60 +88,70 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         var storageRoot = Environment.GetEnvironmentVariable("JMAKA_STORAGE_ROOT");
         if (string.IsNullOrWhiteSpace(storageRoot)) storageRoot = env.ContentRootPath;
         var videoOut = Path.Combine(storageRoot, "video-out");
+        var dataDir = Path.Combine(storageRoot, "data");
         _videoOverlayDir = Path.Combine(storageRoot, "video-overlays");
         Directory.CreateDirectory(videoOut);
+        Directory.CreateDirectory(dataDir);
         Directory.CreateDirectory(_videoOverlayDir);
-        _jobsPath = Path.Combine(videoOut, "jobs.json");
+        _jobsPath = Path.Combine(dataDir, "ffmpeg-jobs.json");
+        var legacyJobsPath = Path.Combine(videoOut, "jobs.json");
+        if (!File.Exists(_jobsPath) && File.Exists(legacyJobsPath))
+        {
+            File.Move(legacyJobsPath, _jobsPath);
+        }
         LoadJobs();
     }
 
     public EnqueueResult Enqueue(VideoProcessRequest request, IReadOnlyList<string> inputPaths, string outputPath, string correlationId)
     {
-        ExpireQueuedJobs();
-        var queuedCount = _jobs.Values.Count(j => j.Status == FfmpegJobStatus.QUEUED);
-        if (queuedCount >= _opts.FfmpegQueueMaxLength)
+        lock (_admissionLock)
         {
-            if (string.Equals(_opts.FfmpegQueueOnOverflow, "DROP_OLDEST", StringComparison.OrdinalIgnoreCase))
+            ExpireQueuedJobs();
+            var queuedCount = _jobs.Values.Count(j => j.Status == FfmpegJobStatus.QUEUED);
+            if (queuedCount >= _opts.FfmpegQueueMaxLength)
             {
-                DropOldestQueued();
+                if (string.Equals(_opts.FfmpegQueueOnOverflow, "DROP_OLDEST", StringComparison.OrdinalIgnoreCase))
+                {
+                    DropOldestQueued();
+                }
+                else
+                {
+                    return new EnqueueResult(false, true, null);
+                }
             }
-            else
+
+            var normalizedInputPaths = (inputPaths ?? Array.Empty<string>())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (normalizedInputPaths.Count == 0)
             {
-                return new EnqueueResult(false, true, null);
+                throw new InvalidOperationException("input paths are required");
             }
+
+            var job = new FfmpegJob
+            {
+                JobId = Guid.NewGuid(),
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                TtlAtUtc = DateTimeOffset.UtcNow.AddMinutes(Math.Max(1, _opts.FfmpegQueueJobTtlMinutes)),
+                RequestedMode = ParseMode(request.EncodingMode) ?? _opts.DefaultEncodingMode,
+                ResolvedMode = _opts.DefaultEncodingMode,
+                InputPath = normalizedInputPaths[0],
+                InputPaths = normalizedInputPaths,
+                OutputPath = outputPath,
+                Status = FfmpegJobStatus.QUEUED,
+                CorrelationId = correlationId,
+                Request = request
+            };
+
+            _jobs[job.JobId] = job;
+            _queue.Enqueue(job.JobId);
+            _signal.Release();
+            PersistJobs();
+            _logger.LogInformation("Queue enqueue: jobId={id}, len={len}, mode={requestedMode}", job.JobId, _queue.Count, job.RequestedMode);
+            return new EnqueueResult(true, false, job);
         }
-
-        var normalizedInputPaths = (inputPaths ?? Array.Empty<string>())
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim())
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-        if (normalizedInputPaths.Count == 0)
-        {
-            throw new InvalidOperationException("input paths are required");
-        }
-
-        var job = new FfmpegJob
-        {
-            JobId = Guid.NewGuid(),
-            CreatedAtUtc = DateTimeOffset.UtcNow,
-            TtlAtUtc = DateTimeOffset.UtcNow.AddMinutes(Math.Max(1, _opts.FfmpegQueueJobTtlMinutes)),
-            RequestedMode = ParseMode(request.EncodingMode) ?? _opts.DefaultEncodingMode,
-            ResolvedMode = _opts.DefaultEncodingMode,
-            InputPath = normalizedInputPaths[0],
-            InputPaths = normalizedInputPaths,
-            OutputPath = outputPath,
-            Status = FfmpegJobStatus.QUEUED,
-            CorrelationId = correlationId,
-            Request = request
-        };
-
-        _jobs[job.JobId] = job;
-        _queue.Enqueue(job.JobId);
-        _signal.Release();
-        PersistJobs();
-        _logger.LogInformation("Queue enqueue: jobId={id}, len={len}, mode={requestedMode}", job.JobId, _queue.Count, job.RequestedMode);
-        return new EnqueueResult(true, false, job);
     }
 
     public FfmpegJob? Get(Guid jobId) => _jobs.TryGetValue(jobId, out var job) ? job : null;
@@ -171,10 +183,9 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            ExpireQueuedJobs();
             if (!_queue.TryDequeue(out var jobId))
             {
-                await Task.Delay(Math.Max(50, _opts.FfmpegQueuePollIntervalMs), stoppingToken);
+                await _signal.WaitAsync(stoppingToken);
                 continue;
             }
 
@@ -188,7 +199,7 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
 
             await _concurrency.WaitAsync(stoppingToken);
             _logger.LogInformation("Semaphore: acquired, running={runningCount}, max={max}", _opts.MaxConcurrentFfmpegJobs - _concurrency.CurrentCount, _opts.MaxConcurrentFfmpegJobs);
-            _ = Task.Run(async () =>
+            var worker = Task.Run(async () =>
             {
                 var sw = Stopwatch.StartNew();
                 try
@@ -215,7 +226,28 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
                     _logger.LogInformation("Semaphore: released, running={runningCount}, max={max}", _opts.MaxConcurrentFfmpegJobs - _concurrency.CurrentCount, _opts.MaxConcurrentFfmpegJobs);
                     _logger.LogInformation("Queue done: jobId={id}, status={status}, ms={elapsed}", job.JobId, job.Status, sw.ElapsedMilliseconds);
                 }
-            }, stoppingToken);
+            }, CancellationToken.None);
+            _workerTasks[job.JobId] = worker;
+            _ = worker.ContinueWith(
+                completedTask => _workerTasks.TryRemove(job.JobId, out var _),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        foreach (var process in _runningProcesses.Values)
+        {
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+        }
+
+        await base.StopAsync(cancellationToken);
+        var workers = _workerTasks.Values.ToArray();
+        if (workers.Length > 0)
+        {
+            await Task.WhenAll(workers).WaitAsync(cancellationToken);
         }
     }
 
@@ -826,41 +858,56 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         if (!process.Start()) throw new InvalidOperationException("failed to start process");
         _runningProcesses[job.JobId] = process;
         var outputTask = process.StandardOutput.ReadToEndAsync(ct);
-        var stderrBuilder = new StringBuilder();
+        const int MaxDiagnosticChars = 32 * 1024;
+        var stderrBuilder = new StringBuilder(MaxDiagnosticChars);
         var errorTask = Task.Run(async () =>
         {
             while (true)
             {
                 var line = await process.StandardError.ReadLineAsync();
                 if (line is null) break;
-                stderrBuilder.AppendLine(line);
+                if (stderrBuilder.Length < MaxDiagnosticChars)
+                {
+                    var remaining = MaxDiagnosticChars - stderrBuilder.Length;
+                    stderrBuilder.AppendLine(line.Length <= remaining ? line : line[..remaining]);
+                }
                 TryUpdateProgressFromFfmpegLine(job, line);
             }
         }, ct);
-        var waitExit = process.WaitForExitAsync(ct);
-        while (!waitExit.IsCompleted)
+        try
         {
-            await Task.WhenAny(waitExit, Task.Delay(1000, ct));
-            if (waitExit.IsCompleted) break;
-
-            // Emergency guard to avoid whole-host freeze on low-RAM VMs.
-            var memMb = ReadAvailableRamMb();
-            if (memMb > 0 && memMb < 520)
+            var waitExit = process.WaitForExitAsync(ct);
+            while (!waitExit.IsCompleted)
             {
-                _logger.LogWarning("Emergency stop: low available RAM during ffmpeg (jobId={jobId}, memAvailable={memMb}MB)", job.JobId, memMb);
-                try { process.Kill(entireProcessTree: true); } catch { }
-                throw new InvalidOperationException($"aborted_low_memory: available RAM dropped to {memMb}MB");
+                await Task.WhenAny(waitExit, Task.Delay(1000, ct));
+                if (waitExit.IsCompleted) break;
+
+                // Emergency guard to avoid whole-host freeze on low-RAM VMs.
+                var memMb = ReadAvailableRamMb();
+                if (memMb > 0 && memMb < 520)
+                {
+                    _logger.LogWarning("Emergency stop: low available RAM during ffmpeg (jobId={jobId}, memAvailable={memMb}MB)", job.JobId, memMb);
+                    try { process.Kill(entireProcessTree: true); } catch { }
+                    throw new InvalidOperationException($"aborted_low_memory: available RAM dropped to {memMb}MB");
+                }
             }
+            await waitExit;
+            await errorTask;
+            var err = stderrBuilder.ToString();
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(err) ? $"process failed: {process.ExitCode}" : err);
+            }
+            _ = await outputTask;
         }
-        await waitExit;
-        await errorTask;
-        _runningProcesses.TryRemove(job.JobId, out _);
-        var err = stderrBuilder.ToString();
-        if (process.ExitCode != 0)
+        finally
         {
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(err) ? $"process failed: {process.ExitCode}" : err);
+            if (!process.HasExited)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+            }
+            _runningProcesses.TryRemove(job.JobId, out _);
         }
-        _ = await outputTask;
     }
 
     private static void TryUpdateProgressFromFfmpegLine(FfmpegJob job, string line)
@@ -1047,12 +1094,14 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
     private void ExpireQueuedJobs()
     {
         var now = DateTimeOffset.UtcNow;
+        var changed = false;
         foreach (var job in _jobs.Values.Where(j => j.Status == FfmpegJobStatus.QUEUED && j.TtlAtUtc < now))
         {
             job.Status = FfmpegJobStatus.EXPIRED;
             job.Error = "ttl_expired";
+            changed = true;
         }
-        PersistJobs();
+        if (changed) PersistJobs();
     }
 
     private void DropOldestQueued()
@@ -1072,9 +1121,19 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
             var jobs = JsonSerializer.Deserialize<List<FfmpegJob>>(File.ReadAllText(_jobsPath)) ?? new();
             foreach (var job in jobs)
             {
-                if (job.Status == FfmpegJobStatus.RUNNING) job.Status = FfmpegJobStatus.FAILED;
+                if (job.Status == FfmpegJobStatus.RUNNING)
+                {
+                    job.Status = FfmpegJobStatus.FAILED;
+                    job.Error = "service_restarted";
+                }
                 _jobs[job.JobId] = job;
+                if (job.Status == FfmpegJobStatus.QUEUED && job.TtlAtUtc > DateTimeOffset.UtcNow)
+                {
+                    _queue.Enqueue(job.JobId);
+                    _signal.Release();
+                }
             }
+            PersistJobs();
         }
         catch { }
     }
@@ -1084,10 +1143,19 @@ internal sealed class FfmpegJobQueueService : BackgroundService, IFfmpegJobQueue
         lock (_persistLock)
         {
             var snapshot = _jobs.Values.OrderByDescending(x => x.CreatedAtUtc).Take(_opts.JobHistoryCap).ToList();
-            var tmp = _jobsPath + ".tmp";
+            var tmp = Path.Combine(
+                Path.GetDirectoryName(_jobsPath) ?? ".",
+                $".{Path.GetFileName(_jobsPath)}.{Guid.NewGuid():N}.tmp");
             var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(tmp, json);
-            File.Move(tmp, _jobsPath, true);
+            try
+            {
+                File.WriteAllText(tmp, json);
+                File.Move(tmp, _jobsPath, true);
+            }
+            finally
+            {
+                TryDeleteFile(tmp);
+            }
         }
     }
 }

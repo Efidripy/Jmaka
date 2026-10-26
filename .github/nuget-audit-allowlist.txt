@@ -1,0 +1,7 @@
+# Accepted NuGet advisories (ADR-0002). package|resolved version|GHSA id
+# Review when SixLabors.ImageSharp is upgraded or replaced; any new advisory fails CI.
+SixLabors.ImageSharp|3.1.12|GHSA-gwg2-r3hj-4w44
+SixLabors.ImageSharp|3.1.12|GHSA-j3p4-wp97-rph4
+SixLabors.ImageSharp|3.1.12|GHSA-j9gm-c75j-xc9q
+SixLabors.ImageSharp|3.1.12|GHSA-jjfr-hcj7-qf5w
+SixLabors.ImageSharp|3.1.12|GHSA-wmxv-xphr-5c9g

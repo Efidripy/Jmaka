@@ -900,6 +900,152 @@ async function fetchWithFallback(relativePath, options) {
   return lastRes || fetch(toAbsoluteUrl(relativePath), options);
 }
 
+// Shared modal lifecycle for every active feature dialog. Feature scripts keep
+// ownership of their open/close actions; this controller adds the keyboard and
+// focus contract whenever the modal's `hidden` state changes.
+const JMAKA_FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'area[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[contenteditable="true"]',
+  '[tabindex]:not([tabindex="-1"])'
+].join(',');
+
+const jmakaDialogState = {
+  activeModal: null,
+  returnFocus: new WeakMap(),
+  inerted: []
+};
+
+function getModalDialog(modal) {
+  return modal && modal.querySelector('[role="dialog"]');
+}
+
+function getDialogFocusable(dialog) {
+  if (!dialog) return [];
+  return Array.from(dialog.querySelectorAll(JMAKA_FOCUSABLE_SELECTOR)).filter((el) => {
+    if (el.hidden || el.getAttribute('aria-hidden') === 'true') return false;
+    return el.getClientRects().length > 0;
+  });
+}
+
+function clearDialogBackgroundInert() {
+  jmakaDialogState.inerted.forEach(({ element, previousInert, previousAriaHidden }) => {
+    element.inert = previousInert;
+    if (previousAriaHidden == null) element.removeAttribute('aria-hidden');
+    else element.setAttribute('aria-hidden', previousAriaHidden);
+  });
+  jmakaDialogState.inerted = [];
+}
+
+function setDialogBackgroundInert(activeModal) {
+  clearDialogBackgroundInert();
+  Array.from(document.body.children).forEach((element) => {
+    if (element === activeModal || element.tagName === 'SCRIPT') return;
+    jmakaDialogState.inerted.push({
+      element,
+      previousInert: !!element.inert,
+      previousAriaHidden: element.getAttribute('aria-hidden')
+    });
+    element.inert = true;
+    element.setAttribute('aria-hidden', 'true');
+  });
+}
+
+function activateDialog(modal) {
+  if (!modal || modal.hidden) return;
+  const dialog = getModalDialog(modal);
+  if (!dialog) return;
+
+  if (!jmakaDialogState.returnFocus.has(modal)) {
+    const candidate = document.activeElement;
+    jmakaDialogState.returnFocus.set(modal, candidate instanceof HTMLElement ? candidate : null);
+  }
+
+  jmakaDialogState.activeModal = modal;
+  setDialogBackgroundInert(modal);
+  dialog.setAttribute('aria-modal', 'true');
+  if (!dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
+
+  window.requestAnimationFrame(() => {
+    if (modal.hidden || jmakaDialogState.activeModal !== modal) return;
+    const target = dialog.querySelector('[autofocus]') || getDialogFocusable(dialog)[0] || dialog;
+    target.focus({ preventScroll: true });
+  });
+}
+
+function deactivateDialog(modal) {
+  if (!modal || jmakaDialogState.activeModal !== modal) return;
+  jmakaDialogState.activeModal = null;
+  clearDialogBackgroundInert();
+
+  const returnTarget = jmakaDialogState.returnFocus.get(modal);
+  jmakaDialogState.returnFocus.delete(modal);
+  window.requestAnimationFrame(() => {
+    if (returnTarget && returnTarget.isConnected && typeof returnTarget.focus === 'function') {
+      returnTarget.focus({ preventScroll: true });
+    }
+  });
+}
+
+function initializeDialogController() {
+  document.querySelectorAll('.modal').forEach((modal) => {
+    const dialog = getModalDialog(modal);
+    if (!dialog) return;
+    if (!dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
+
+    const observer = new MutationObserver(() => {
+      if (modal.hidden) deactivateDialog(modal);
+      else activateDialog(modal);
+    });
+    observer.observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+    if (!modal.hidden) activateDialog(modal);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    const modal = jmakaDialogState.activeModal;
+    if (!modal || modal.hidden) return;
+    const dialog = getModalDialog(modal);
+    if (!dialog) return;
+
+    if (event.key === 'Escape') {
+      const closeControl = modal.querySelector('.modal-x:not([disabled]), [data-dialog-close]:not([disabled])');
+      if (closeControl) closeControl.click();
+      else {
+        const backdrop = modal.querySelector('[data-close]');
+        if (backdrop) backdrop.click();
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if (event.key !== 'Tab') return;
+    const focusable = getDialogFocusable(dialog);
+    if (focusable.length === 0) {
+      dialog.focus({ preventScroll: true });
+      event.preventDefault();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !dialog.contains(active))) {
+      last.focus({ preventScroll: true });
+      event.preventDefault();
+    } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+      first.focus({ preventScroll: true });
+      event.preventDefault();
+    }
+  }, true);
+}
+
+initializeDialogController();
+
 function isLikelyImageUrl(url) {
   if (!url) return false;
   // Strip query/hash (we often add ?v=... for cache-busting)

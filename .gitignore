@@ -58,7 +58,7 @@ src/Jmaka.Api/upload-original/*
 !src/Jmaka.Api/upload-original/.gitkeep
 
 # History (runtime files)
-src/Jmaka.Api/data/*.json
+src/Jmaka.Api/data/*
 !src/Jmaka.Api/data/.gitkeep
 
 # User data (runtime files)

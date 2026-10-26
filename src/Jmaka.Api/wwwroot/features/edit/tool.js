@@ -646,7 +646,8 @@ async function saveImageEdit(itemOverride) {
 async function deleteImageEditItem(item) {
   if (!item) return;
   try {
-    await fetch(toAbsoluteUrl(`images/${encodeURIComponent(item.id)}`), { method: 'DELETE' });
+    const res = await fetch(toAbsoluteUrl(`images/${encodeURIComponent(item.id)}`), { method: 'DELETE' });
+    if (!res.ok) throw new Error(`delete failed (${res.status})`);
     await loadImageEditList();
   } catch (err) {
     if (imageEditHint) imageEditHint.textContent = t('imageEditDeleteError');
