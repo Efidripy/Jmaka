@@ -3,7 +3,9 @@ using System.Text.Json;
 using System.Globalization;
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
+using System.Net;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
@@ -45,6 +47,7 @@ builder.WebHost.ConfigureKestrel(options =>
 builder.Services.AddOpenApi();
 builder.Services.AddAntiforgery();
 builder.Services.AddRazorPages();
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -58,13 +61,26 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
-    options.AddFixedWindowLimiter("media", limiter =>
-    {
-        limiter.PermitLimit = 12;
-        limiter.Window = TimeSpan.FromMinutes(1);
-        limiter.QueueLimit = 0;
-        limiter.AutoReplenishment = true;
-    });
+    options.AddPolicy("media", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 12,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("media-interactive", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 builder.Services.AddSingleton<ImagePipelineService>();
 builder.Services.Configure<FfmpegQueueOptions>(builder.Configuration.GetSection("Ffmpeg"));
@@ -405,14 +421,27 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownIPNetworks.Clear();
+#pragma warning disable ASPDEPR005
+forwardedHeadersOptions.KnownNetworks.Clear();
+#pragma warning restore ASPDEPR005
+forwardedHeadersOptions.KnownProxies.Clear();
+forwardedHeadersOptions.KnownProxies.Add(IPAddress.Parse("127.0.0.1"));
+forwardedHeadersOptions.KnownProxies.Add(IPAddress.Parse("::1"));
+app.UseForwardedHeaders(forwardedHeadersOptions);
+
 // Web UI (static files)
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
 app.UseRouting();
-app.UseJmakaAccessControl(accessControl);
 app.UseRateLimiter();
+app.UseJmakaAccessControl(accessControl);
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -576,7 +605,7 @@ var oknoFixOverlayPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot"
 // Version API endpoint
 app.MapGet("/api/version", () =>
 {
-    var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.5.3";
+    var version = HealthEndpoints.GetAppVersion();
     return Results.Ok(new { version });
 });
 
@@ -605,8 +634,7 @@ app.MapGet("/health/ready", async Task<IResult> (CancellationToken ct) =>
     catch { failures.Add("json-store"); }
     if (!File.Exists(oknoFixOverlayPath)) failures.Add("oknofix-template");
     if (!HasCommand("ffmpeg") || !HasCommand("ffprobe")) failures.Add("ffmpeg");
-    if (failures.Count > 0) return Results.Json(new { status = "not-ready", failures }, statusCode: StatusCodes.Status503ServiceUnavailable);
-    return Results.Ok(new { status = "ready" });
+    return HealthEndpoints.CreateReadyResult(failures);
 });
 
 app.MapGet("/favicon.ico", () => Results.NoContent());
@@ -1179,7 +1207,7 @@ app.MapPost("/images/{id}/render", async Task<IResult> (string id, ImageEditPara
 })
 .DisableAntiforgery()
 .Accepts<ImageEditParams>("application/json")
-.RequireRateLimiting("media")
+.RequireRateLimiting("media-interactive")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);
 
@@ -1215,7 +1243,7 @@ app.MapPost("/images/{id}/save-edit", async Task<IResult> (string id, ImageEditP
 })
 .DisableAntiforgery()
 .Accepts<ImageEditParams>("application/json")
-.RequireRateLimiting("media")
+.RequireRateLimiting("media-interactive")
 .Produces(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound);
 
@@ -2986,3 +3014,21 @@ public record VideoProcessClip(
 );
 
 record ProcessResult(bool Success, string Output, string Error);
+
+public static class HealthEndpoints
+{
+    public static string GetAppVersion() =>
+        typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.5.3";
+
+    public static IResult CreateReadyResult(IReadOnlyList<string> failures)
+    {
+        var version = GetAppVersion();
+        if (failures.Count > 0)
+        {
+            return Results.Json(new { status = "not-ready", failures }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        return Results.Ok(new { status = "ready", version });
+    }
+}
+
+public partial class Program { }

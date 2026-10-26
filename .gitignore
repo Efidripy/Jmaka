@@ -58,7 +58,7 @@ src/Jmaka.Api/upload-original/*
 !src/Jmaka.Api/upload-original/.gitkeep
 
 # History (runtime files)
-src/Jmaka.Api/data/*.json
+src/Jmaka.Api/data/*
 !src/Jmaka.Api/data/.gitkeep
 
 # User data (runtime files)
@@ -94,11 +94,3 @@ src/Jmaka.Api/video-out/*
 
 # Misc
 *.tmp
-# Local runtime state (never publish)
-src/Jmaka.Api/data/
-src/Jmaka.Api/upload/
-src/Jmaka.Api/upload-original/
-src/Jmaka.Api/resized/
-src/Jmaka.Api/preview/
-src/Jmaka.Api/video/
-src/Jmaka.Api/video-out/
