@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Vulnerability audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit_file="${RUNNER_TEMP}/nuget-vulnerability-audit.json"
+          dotnet list Jmaka.slnx package --vulnerable --include-transitive --format json > "${audit_file}"
+          jq . "${audit_file}"
+
+          vulnerability_count="$(jq '[.. | objects | .vulnerabilities? | select(type == "array") | length] | add // 0' "${audit_file}")"
+          if (( vulnerability_count > 0 )); then
+            echo "NuGet audit found ${vulnerability_count} vulnerable package entries." >&2
+            exit 1
+          fi
+
+      - name: Build
+        run: dotnet build Jmaka.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test Jmaka.slnx -c Release --no-build --no-restore
+
+      - name: Smoke
+        shell: pwsh
+        run: ./tests/smoke-api-version.ps1

@@ -20,7 +20,7 @@ $listener.Stop()
 $psi = [System.Diagnostics.ProcessStartInfo]::new()
 $psi.FileName = "dotnet"
 $psi.WorkingDirectory = $repoRoot
-$psi.Arguments = "run --project `"$projectPath`" --no-launch-profile --urls http://127.0.0.1:$port"
+$psi.Arguments = "run --project `"$projectPath`" -c Release --no-build --no-launch-profile --urls http://127.0.0.1:$port"
 $psi.UseShellExecute = $false
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true

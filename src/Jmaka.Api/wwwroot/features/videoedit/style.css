@@ -1074,6 +1074,12 @@
 }
 
 @media (max-width: 760px) {
+  .video-edit-card {
+    width: calc(100vw - 12px);
+    max-width: calc(100vw - 12px);
+    margin: 6px auto;
+  }
+
   #videoEditModal .modal-title {
     font-size: 21px;
   }
@@ -1151,9 +1157,9 @@
   .video-footer {
     position: static;
     z-index: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
-    flex-direction: column;
-    justify-content: flex-start;
     padding: 8px 10px 10px;
     gap: 8px;
   }
@@ -1161,12 +1167,20 @@
   .video-footer-left,
   .video-footer-right {
     width: 100%;
+    min-width: 0;
     flex-wrap: wrap;
     white-space: normal;
   }
 
   .video-footer-right {
     justify-content: flex-start;
+    margin: 0;
+  }
+
+  .video-footer-right .video-process-btn {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
   }
 
   .video-edit-controls {
@@ -1186,8 +1200,14 @@
   .video-status-line {
     order: 2;
     width: 100%;
+    min-width: 0;
     max-width: none;
     flex-basis: 100%;
+  }
+
+  .video-status-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .sidebar-libraries {
@@ -1201,6 +1221,21 @@
   .video-footer .video-process-btn,
   .video-footer .btn {
     min-height: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #videoEditModal *,
+  #videoEditModal *::before,
+  #videoEditModal *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .video-status-bar.is-indeterminate {
+    animation: none;
   }
 }
 

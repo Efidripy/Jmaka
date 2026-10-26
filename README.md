@@ -71,7 +71,7 @@
 
 Правая таблица показывает историю результатов Split / Split3 / OknoFix / OknoScale / Edits, каждый результат можно открыть, скачать или удалить.
 
-## 🎨 Color Management
+## 🎨 Управление цветом
 
 **Image output is always JPEG + sRGB with embedded ICC profile.**
 
@@ -209,6 +209,6 @@ curl -L -o ~/jmaka.tar.gz \
 ### Известная особенность (file lock)
 Если `dotnet build -c Release` падает с ошибкой, что файл `Jmaka.Api.exe` занят — значит запущен процесс из `bin/Release`. Остановите его и пересоберите.
 
-## Contributors
+## Участники
 
 - [@Efidripy](https://github.com/Efidripy) — Efidripy

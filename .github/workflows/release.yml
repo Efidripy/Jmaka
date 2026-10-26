@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v0.2.0-rc3)"
+        description: "Release tag (e.g. 0.5.4 or v0.5.4)"
         required: true
   release:
     types: [published]
   push:
     tags:
+      - "[0-9]*"
       - "v*"
 
 permissions:
@@ -20,40 +21,147 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Determine release tag
+        id: release
+        shell: bash
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          case "${GITHUB_EVENT_NAME}" in
+            workflow_dispatch) tag="${DISPATCH_TAG}" ;;
+            release) tag="${RELEASE_TAG}" ;;
+            push) tag="${GITHUB_REF_NAME}" ;;
+            *) echo "Unsupported event: ${GITHUB_EVENT_NAME}" >&2; exit 1 ;;
+          esac
+
+          if [[ ! "${tag}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must use SemVer format [v]MAJOR.MINOR.PATCH[-PRERELEASE]: ${tag}" >&2
+            exit 1
+          fi
+
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${tag#v}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout release tag
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.release.outputs.tag }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
 
+      - name: Bind tag, project version, and commit
+        id: source
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          project_version="$(dotnet msbuild src/Jmaka.Api/Jmaka.Api.csproj -getProperty:Version -nologo | tr -d '\r')"
+          checkout_sha="$(git rev-parse HEAD)"
+          tag_sha="$(git rev-list -n 1 "${RELEASE_TAG}")"
+
+          if [[ "${project_version}" != "${RELEASE_VERSION}" ]]; then
+            echo "Tag version ${RELEASE_VERSION} does not match project version ${project_version}." >&2
+            exit 1
+          fi
+
+          if [[ "${checkout_sha}" != "${tag_sha}" ]]; then
+            echo "Checked out commit ${checkout_sha} does not match ${RELEASE_TAG} target ${tag_sha}." >&2
+            exit 1
+          fi
+
+          echo "sha=${checkout_sha}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${checkout_sha:0:12}" >> "${GITHUB_OUTPUT}"
+
       - name: Restore
         run: dotnet restore
 
-      - name: Publish linux-x64
+      - name: Vulnerability audit
+        shell: bash
         run: |
-          dotnet publish src/Jmaka.Api -c Release -r linux-x64 --self-contained false -o artifacts/publish
+          set -euo pipefail
+          audit_file="${RUNNER_TEMP}/nuget-vulnerability-audit.json"
+          dotnet list Jmaka.slnx package --vulnerable --include-transitive --format json > "${audit_file}"
+          jq . "${audit_file}"
+
+          vulnerability_count="$(jq '[.. | objects | .vulnerabilities? | select(type == "array") | length] | add // 0' "${audit_file}")"
+          if (( vulnerability_count > 0 )); then
+            echo "NuGet audit found ${vulnerability_count} vulnerable package entries." >&2
+            exit 1
+          fi
+
+      - name: Build
+        run: dotnet build Jmaka.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test Jmaka.slnx -c Release --no-build --no-restore
+
+      - name: Smoke
+        shell: pwsh
+        run: ./tests/smoke-api-version.ps1
+
+      - name: Publish linux-x64
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_SHORT_SHA: ${{ steps.source.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+
+          dotnet publish src/Jmaka.Api/Jmaka.Api.csproj \
+            -c Release \
+            -r linux-x64 \
+            --self-contained false \
+            -o artifacts/publish \
+            -p:ContinuousIntegrationBuild=true \
+            -p:SourceRevisionId="${SOURCE_SHA}" \
+            -p:IncludeSourceRevisionInInformationalVersion=false \
+            -p:InformationalVersion="${RELEASE_VERSION}+sha.${SOURCE_SHORT_SHA}"
+
           mkdir -p artifacts
           tar -czf artifacts/jmaka-linux-x64.tar.gz -C artifacts/publish .
 
-      - name: Determine tag
-        id: tag
+      - name: Create release provenance and checksums
         shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          elif [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
-            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          fi
+          set -euo pipefail
+
+          archive_sha256="$(sha256sum artifacts/jmaka-linux-x64.tar.gz | awk '{print $1}')"
+          printf '%s  %s\n' "${archive_sha256}" "jmaka-linux-x64.tar.gz" > artifacts/jmaka-linux-x64.tar.gz.sha256
+
+          jq -n \
+            --arg tag "${RELEASE_TAG}" \
+            --arg version "${RELEASE_VERSION}" \
+            --arg commit "${SOURCE_SHA}" \
+            --arg archive "jmaka-linux-x64.tar.gz" \
+            --arg sha256 "${archive_sha256}" \
+            '{schema: "jmaka.release-provenance.v1", tag: $tag, version: $version, commit: $commit, artifact: $archive, sha256: $sha256}' \
+            > artifacts/release-provenance.json
+
+          sha256sum artifacts/release-provenance.json > artifacts/release-provenance.json.sha256
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: ${{ steps.tag.outputs.tag }}
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: ${{ steps.release.outputs.tag }}
           files: |
             artifacts/jmaka-linux-x64.tar.gz
+            artifacts/jmaka-linux-x64.tar.gz.sha256
+            artifacts/release-provenance.json
+            artifacts/release-provenance.json.sha256
           generate_release_notes: true

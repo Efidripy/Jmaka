@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+files=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$files" ] && exit 0
+
+content=$(git diff --cached --binary --no-color --text -- $files)
+
+if printf '%s' "$content" | grep -Eiq 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|hf_[A-Za-z0-9]|ghp_[A-Za-z0-9]|xox[baprs]-[A-Za-z0-9-]+|AKIA[0-9A-Z]{16}|[0-9]{8,12}:[A-Za-z0-9_-]{30,}|C:[\\/]Users[\\/][^ <>"/\\]+'; then
+  echo 'pre-commit: possible secret or personal path detected in staged changes' >&2
+  exit 1
+fi
+
+for file in $files; do
+  case "$file" in
+    .env|.env.*)
+      [ "$file" = ".env.example" ] && continue
+      if git show ":$file" | grep -Eq '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*[^#[:space:]].*'; then
+        echo "pre-commit: populated $file is not allowed" >&2
+        exit 1
+      fi
+      ;;
+  esac
+done
+
+exit 0

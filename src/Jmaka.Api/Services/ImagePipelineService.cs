@@ -28,6 +28,8 @@ namespace Jmaka.Api.Services;
 /// </summary>
 public class ImagePipelineService
 {
+    public const int CanonicalJpegQuality = 92;
+
     private readonly ILogger<ImagePipelineService> _logger;
 
     // sRGB ICC profiles are typically small with fewer entries than wide-gamut profiles.
@@ -39,7 +41,7 @@ public class ImagePipelineService
 
     private readonly JpegEncoder _jpegEncoder = new()
     {
-        Quality = 92,
+        Quality = CanonicalJpegQuality,
         Interleaved = true
     };
 
@@ -53,7 +55,63 @@ public class ImagePipelineService
         await using var input = File.OpenRead(inputPath);
         var image = await Image.LoadAsync(input, ct);
         using var normalized = NormalizeToSrgb(image, inputPath);
-        await SaveJpegAsync(normalized, outputPath, ct);
+        await SaveNormalizedJpegAtomicAsync(normalized, outputPath, ct);
+    }
+
+    /// <summary>
+    /// Reads image headers without decoding pixel buffers and rejects images outside the configured limits.
+    /// Call this before <see cref="Image.LoadAsync(string, CancellationToken)"/> for untrusted input.
+    /// </summary>
+    public async Task<ImageIdentification> IdentifyAndValidateAsync(
+        string inputPath,
+        ImageValidationLimits limits,
+        CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
+        ArgumentNullException.ThrowIfNull(limits);
+        limits.Validate();
+
+        var info = await Image.IdentifyAsync(inputPath, ct)
+            ?? throw new InvalidDataException("File is not a supported image.");
+
+        return ValidateImageInfo(info, limits);
+    }
+
+    /// <summary>
+    /// Validates already identified image metadata without allocating pixel buffers.
+    /// </summary>
+    private static ImageIdentification ValidateImageInfo(SixLabors.ImageSharp.ImageInfo info, ImageValidationLimits limits)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        ArgumentNullException.ThrowIfNull(limits);
+        limits.Validate();
+
+        if (info.Width <= 0 || info.Height <= 0)
+        {
+            throw new InvalidDataException("Image dimensions must be positive.");
+        }
+
+        if (info.Width > limits.MaxWidth || info.Height > limits.MaxHeight)
+        {
+            throw new InvalidDataException(
+                $"Image dimensions {info.Width}x{info.Height} exceed the limit {limits.MaxWidth}x{limits.MaxHeight}.");
+        }
+
+        var frameCount = Math.Max(1, info.FrameMetadataCollection.Count);
+        if (frameCount > limits.MaxFrames)
+        {
+            throw new InvalidDataException(
+                $"Image frame count {frameCount} exceeds the limit {limits.MaxFrames}.");
+        }
+
+        var pixelCount = checked((long)info.Width * info.Height * frameCount);
+        if (pixelCount > limits.MaxPixels)
+        {
+            throw new InvalidDataException(
+                $"Image decoded pixel count {pixelCount} exceeds the limit {limits.MaxPixels}.");
+        }
+
+        return new ImageIdentification(info.Width, info.Height, pixelCount, frameCount);
     }
 
     public async Task<Image> LoadImageAsync(string inputPath, CancellationToken ct)
@@ -336,17 +394,102 @@ public class ImagePipelineService
         return (byte)MathF.Round(value);
     }
 
-    public async Task SaveJpegAsync(Image image, string outputPath, CancellationToken ct)
+    /// <summary>
+    /// Normalizes an image exactly once and atomically publishes the canonical JPEG output.
+    /// The caller retains ownership of <paramref name="image"/>; a clone is normalized internally.
+    /// Use <see cref="SaveNormalizedJpegAtomicAsync"/> when the image is already normalized.
+    /// </summary>
+    public async Task SaveCanonicalJpegAtomicAsync(
+        Image image,
+        string outputPath,
+        string? sourcePath,
+        CancellationToken ct)
     {
-        var dir = Path.GetDirectoryName(outputPath);
-        if (!string.IsNullOrWhiteSpace(dir))
-        {
-            Directory.CreateDirectory(dir);
-        }
+        ArgumentNullException.ThrowIfNull(image);
 
-        await image.SaveAsync(outputPath, _jpegEncoder, ct);
+        using var working = image.CloneAs<Rgba32>();
+        using var normalized = NormalizeToSrgb(working, sourcePath);
+        await SaveNormalizedJpegAtomicAsync(normalized, outputPath, ct);
+    }
+
+    /// <summary>
+    /// Atomically publishes an image that has already passed <see cref="NormalizeToSrgb"/>.
+    /// The temporary JPEG uses a GUID name in the destination directory, so concurrent writers cannot collide.
+    /// </summary>
+    public async Task SaveNormalizedJpegAtomicAsync(Image normalizedImage, string outputPath, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(normalizedImage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
+
+        var fullOutputPath = Path.GetFullPath(outputPath);
+        var directory = Path.GetDirectoryName(fullOutputPath)
+            ?? throw new InvalidOperationException("Output path must include a directory.");
+        Directory.CreateDirectory(directory);
+
+        var tempPath = Path.Combine(
+            directory,
+            $".{Path.GetFileNameWithoutExtension(fullOutputPath)}.{Guid.NewGuid():N}.tmp.jpg");
+
+        try
+        {
+            await normalizedImage.SaveAsync(tempPath, _jpegEncoder, ct);
+            File.Move(tempPath, fullOutputPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(tempPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to remove temporary image {TempPath}", tempPath);
+            }
+        }
     }
 }
+
+public sealed record ImageValidationLimits(
+    int MaxWidth,
+    int MaxHeight,
+    long MaxPixels,
+    int MaxFrames)
+{
+    public static ImageValidationLimits Default { get; } = new(
+        MaxWidth: 16_384,
+        MaxHeight: 16_384,
+        MaxPixels: 100_000_000,
+        MaxFrames: 1);
+
+    internal void Validate()
+    {
+        if (MaxWidth <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MaxWidth));
+        }
+
+        if (MaxHeight <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MaxHeight));
+        }
+
+        if (MaxPixels <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MaxPixels));
+        }
+
+        if (MaxFrames <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MaxFrames));
+        }
+    }
+}
+
+public sealed record ImageIdentification(
+    int Width,
+    int Height,
+    long PixelCount,
+    int FrameCount);
 
 public record ImageEditParams(
     string? ImageId,

@@ -76,6 +76,39 @@
     renderTimerId: 0,
     cachedCanvas: null
   };
+  let modalPollingController = null;
+
+  function createModalPollingSignal() {
+    if (!modalPollingController || modalPollingController.signal.aborted) {
+      modalPollingController = new AbortController();
+    }
+    return modalPollingController.signal;
+  }
+
+  function abortModalPolling() {
+    if (modalPollingController) modalPollingController.abort();
+    modalPollingController = null;
+  }
+
+  function waitForPollDelay(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal && signal.aborted) {
+        reject(new DOMException('Polling canceled', 'AbortError'));
+        return;
+      }
+      const onAbort = () => {
+        window.clearTimeout(timer);
+        reject(new DOMException('Polling canceled', 'AbortError'));
+      };
+      const timer = window.setTimeout(() => {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      if (signal) {
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
+  }
 
   const toolButtons = Array.from(videoEditModal.querySelectorAll('[data-tool]'));
   const toolPanels = Array.from(videoEditModal.querySelectorAll('[data-tool-panel]'));
@@ -873,12 +906,12 @@
     return String(rawStatus || '').toUpperCase();
   }
 
-  async function waitForJobCompletion(jobId, timeoutMs = 180000, onProgress, pollMs = 1000) {
+  async function waitForJobCompletion(jobId, timeoutMs = 180000, onProgress, pollMs = 1000, signal) {
     const started = Date.now();
     const terminal = new Set(['SUCCEEDED', 'FAILED', 'CANCELED', 'EXPIRED']);
 
     while (Date.now() - started < timeoutMs) {
-      const res = await fetch(toAbsoluteUrl(`video/jobs/${jobId}`), { cache: 'no-store' });
+      const res = await fetch(toAbsoluteUrl(`video/jobs/${jobId}`), { cache: 'no-store', signal });
       let data;
       try { data = await res.json(); } catch { data = null; }
       if (!res.ok) {
@@ -897,18 +930,18 @@
         return { ...data, status };
       }
 
-      await new Promise((resolve) => setTimeout(resolve, Math.max(150, pollMs)));
+      await waitForPollDelay(Math.max(150, pollMs), signal);
     }
 
     throw new Error(vt('Job completion timeout', 'Job completion timeout'));
   }
 
-  async function waitForUploadNormalizeCompletion(jobId, timeoutMs = 1800000, onProgress, pollMs = 1000) {
+  async function waitForUploadNormalizeCompletion(jobId, timeoutMs = 1800000, onProgress, pollMs = 1000, signal) {
     const started = Date.now();
     const terminal = new Set(['SUCCEEDED', 'FAILED']);
 
     while (Date.now() - started < timeoutMs) {
-      const res = await fetch(toAbsoluteUrl(`video/upload-jobs/${jobId}`), { cache: 'no-store' });
+      const res = await fetch(toAbsoluteUrl(`video/upload-jobs/${jobId}`), { cache: 'no-store', signal });
       let data;
       try { data = await res.json(); } catch { data = null; }
       if (!res.ok) {
@@ -924,7 +957,7 @@
         return { ...data, status };
       }
 
-      await new Promise((resolve) => setTimeout(resolve, Math.max(200, pollMs)));
+      await waitForPollDelay(Math.max(200, pollMs), signal);
     }
 
     throw new Error(vt('videoNormalizeTimeout', 'Video normalization timed out'));
@@ -1237,6 +1270,7 @@
   }
 
   function openModal() {
+    createModalPollingSignal();
     videoEditModal.hidden = false;
     setHint(vt('videoUploadHint', 'Upload a video and drag the segment boundaries on the timeline.'));
     setStatus('Ready', 0);
@@ -1247,6 +1281,7 @@
   }
 
   function closeModal() {
+    abortModalPolling();
     saveActiveClipTrim();
     closeTimelineAddMenu();
     videoEditModal.hidden = true;
@@ -1948,9 +1983,10 @@
         await loadVideoHistory();
         renderOutputControls();
       } catch (err) {
+        if (err && err.name === 'AbortError') return;
         setStatus(`${vt('videoUploadErrorPrefix', 'Video upload error.')} ${String(err || '').trim()}`.trim(), 0, { indeterminate: false });
       }
-    });
+          }, 1000, createModalPollingSignal());
   }
 
   if (videoEditSave) {
@@ -2035,7 +2071,7 @@
             label = vt('videoProcessing', 'Processing video...');
           }
           setStatus(label, pct ?? 0);
-        }, 1000);
+        }, 1000, createModalPollingSignal());
 
         const spentMs = Date.now() - processingStartedAt;
         if (spentMs < minVisualProcessMs) {
@@ -2055,6 +2091,7 @@
         await loadVideoHistory();
         console.info(`Results refreshed (${processed.length})`);
       } catch (err) {
+        if (err && err.name === 'AbortError') return;
         setStatus(`${vt('videoProcessErrorPrefix', 'Video processing error.')} ${String(err || '').trim()}`.trim(), 0);
       } finally {
         setProcessing(false);
