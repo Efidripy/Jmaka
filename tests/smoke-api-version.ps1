@@ -5,7 +5,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$projectPath = Join-Path $repoRoot "src\Jmaka.Api\Jmaka.Api.csproj"
+$projectDir = Join-Path $repoRoot "src/Jmaka.Api"
+$appDll = Join-Path $projectDir "bin/Release/net10.0/Jmaka.Api.dll"
 $smokeRoot = Join-Path $repoRoot ".tmp\smoke-api-version"
 $stdoutPath = Join-Path $smokeRoot "app.stdout.log"
 $stderrPath = Join-Path $smokeRoot "app.stderr.log"
@@ -19,8 +20,9 @@ $listener.Stop()
 
 $psi = [System.Diagnostics.ProcessStartInfo]::new()
 $psi.FileName = "dotnet"
-$psi.WorkingDirectory = $repoRoot
-$psi.Arguments = "run --project `"$projectPath`" -c Release --no-build --no-launch-profile --urls http://127.0.0.1:$port"
+# Run the built dll directly: `dotnet run` leaves a child app alive that holds the redirected pipes open (hangs on Linux).
+$psi.WorkingDirectory = $projectDir
+$psi.Arguments = "`"$appDll`" --urls http://127.0.0.1:$port"
 $psi.UseShellExecute = $false
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
